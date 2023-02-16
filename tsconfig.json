@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    // "isolatedModules": true,
+    "lib": ["es6", "dom", "es2017"],
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "sourceMap": true,
+    // "target": "es2017", // es5
+
+    "resolveJsonModule": true,
+
+    "baseUrl": ".",
+  },
+  "exclude": [
+    "**/*.spec.ts",
+    ".git",
+    "node_modules",
+    "vendor",
+    "public"
+  ],
+  "compileOnSave": false
+}
