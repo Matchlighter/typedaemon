@@ -26,7 +26,7 @@ export function getTypes() {
 export function runtimeProperty(name) {
   const t = getTypes();
   return t.memberExpression(
-    t.identifier("regeneratorRuntime"),
+    t.identifier("resumableRuntime"),
     t.identifier(name),
     false
   );

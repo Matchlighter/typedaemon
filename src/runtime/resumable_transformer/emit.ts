@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import assert from "assert";
+import * as assert from "assert";
 import * as leap from "./leap";
 import * as meta from "./meta";
 import * as util from "./util";
@@ -50,7 +50,8 @@ function Emitter(contextId) {
 }
 
 let Ep = Emitter.prototype;
-exports.Emitter = Emitter;
+
+export { Emitter }
 
 // Offsets into this.listing that could be used as targets for branches or
 // jumps are represented as numeric Literal nodes. This representation has

@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import assert from "assert";
+import * as assert from "assert";
 import { Emitter } from "./emit";
 import { inherits } from "util";
 import { getTypes } from "./util";
@@ -21,7 +21,7 @@ function FunctionEntry(returnLoc) {
 }
 
 inherits(FunctionEntry, Entry);
-exports.FunctionEntry = FunctionEntry;
+export { FunctionEntry }
 
 function LoopEntry(breakLoc, continueLoc, label) {
   Entry.call(this);
@@ -43,7 +43,7 @@ function LoopEntry(breakLoc, continueLoc, label) {
 }
 
 inherits(LoopEntry, Entry);
-exports.LoopEntry = LoopEntry;
+export { LoopEntry }
 
 function SwitchEntry(breakLoc) {
   Entry.call(this);
@@ -52,7 +52,7 @@ function SwitchEntry(breakLoc) {
 }
 
 inherits(SwitchEntry, Entry);
-exports.SwitchEntry = SwitchEntry;
+export { SwitchEntry }
 
 function TryEntry(firstLoc, catchEntry, finallyEntry) {
   Entry.call(this);
@@ -81,7 +81,7 @@ function TryEntry(firstLoc, catchEntry, finallyEntry) {
 }
 
 inherits(TryEntry, Entry);
-exports.TryEntry = TryEntry;
+export { TryEntry }
 
 function CatchEntry(firstLoc, paramId) {
   Entry.call(this);
@@ -96,7 +96,7 @@ function CatchEntry(firstLoc, paramId) {
 }
 
 inherits(CatchEntry, Entry);
-exports.CatchEntry = CatchEntry;
+export { CatchEntry }
 
 function FinallyEntry(firstLoc, afterLoc) {
   Entry.call(this);
@@ -108,7 +108,7 @@ function FinallyEntry(firstLoc, afterLoc) {
 }
 
 inherits(FinallyEntry, Entry);
-exports.FinallyEntry = FinallyEntry;
+export { FinallyEntry }
 
 function LabeledEntry(breakLoc, label) {
   Entry.call(this);
@@ -123,7 +123,7 @@ function LabeledEntry(breakLoc, label) {
 }
 
 inherits(LabeledEntry, Entry);
-exports.LabeledEntry = LabeledEntry;
+export { LabeledEntry }
 
 function LeapManager(emitter) {
   assert.ok(this instanceof LeapManager);
@@ -131,13 +131,14 @@ function LeapManager(emitter) {
   assert.ok(emitter instanceof Emitter);
 
   this.emitter = emitter;
+  // @ts-ignore
   this.entryStack = [new FunctionEntry(emitter.finalLoc)];
 }
 
 let LMp = LeapManager.prototype;
-exports.LeapManager = LeapManager;
+export { LeapManager }
 
-LMp.withEntry = function(entry, callback) {
+LMp.withEntry = function (entry, callback) {
   assert.ok(entry instanceof Entry);
   this.entryStack.push(entry);
   try {
@@ -148,14 +149,14 @@ LMp.withEntry = function(entry, callback) {
   }
 };
 
-LMp._findLeapLocation = function(property, label) {
+LMp._findLeapLocation = function (property, label) {
   for (let i = this.entryStack.length - 1; i >= 0; --i) {
     let entry = this.entryStack[i];
     let loc = entry[property];
     if (loc) {
       if (label) {
         if (entry.label &&
-            entry.label.name === label.name) {
+          entry.label.name === label.name) {
           return loc;
         }
       } else if (entry instanceof LabeledEntry) {
@@ -170,10 +171,10 @@ LMp._findLeapLocation = function(property, label) {
   return null;
 };
 
-LMp.getBreakLoc = function(label) {
+LMp.getBreakLoc = function (label) {
   return this._findLeapLocation("breakLoc", label);
 };
 
-LMp.getContinueLoc = function(label) {
+LMp.getContinueLoc = function (label) {
   return this._findLeapLocation("continueLoc", label);
 };

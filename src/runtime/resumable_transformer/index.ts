@@ -8,7 +8,7 @@
 import { getVisitor } from "./visit";
 
 export default function (context) {
-  const plugin = {
+  const plugin: any = {
     visitor: getVisitor(context),
   };
 
