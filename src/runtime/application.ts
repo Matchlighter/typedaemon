@@ -35,7 +35,7 @@ export class Application {
         const transpiled = await babel.transformFileAsync("transpile_test.ts", {
             ...BABEL_CONFIG,
         })
-        console.log(transpiled)
+        console.log(transpiled.code)
     }
 
     async watch_files() {

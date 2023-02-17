@@ -13,7 +13,7 @@ import { Emitter } from "./emit";
 import replaceShorthandObjectMethod from "./replaceShorthandObjectMethod";
 import * as util from "./util";
 
-exports.getVisitor = ({ types: t }) => ({
+export const getVisitor = ({ types: t }) => ({
   Method(path, state) {
     let node = path.node;
 
@@ -102,10 +102,10 @@ exports.getVisitor = ({ types: t }) => ({
 
       // Turn all declarations into vars, and replace the original
       // declarations with equivalent assignment expressions.
-      let vars = hoist(path);
+      let vars = hoist(path, contextId);
 
       let context = {
-        usesThis: false,
+        usesThis: true, //false,
         usesArguments: false,
         getArgsId: () => t.clone(argsId),
       };
@@ -129,14 +129,14 @@ exports.getVisitor = ({ types: t }) => ({
       let wrapArgs = [emitter.getContextFunction(innerFnId)];
       let tryLocsList = emitter.getTryLocsList();
 
-      if (node.generator) {
-        wrapArgs.push(outerFnExpr);
-      } else if (context.usesThis || tryLocsList || node.async) {
-        // Async functions that are not generators don't care about the
-        // outer function because they don't need it to be marked and don't
-        // inherit from its .prototype.
-        wrapArgs.push(t.nullLiteral());
-      }
+      // if (node.generator) {
+      //   wrapArgs.push(outerFnExpr);
+      // } else if (context.usesThis || tryLocsList || node.async) {
+      //   // Async functions that are not generators don't care about the
+      //   // outer function because they don't need it to be marked and don't
+      //   // inherit from its .prototype.
+      //   wrapArgs.push(t.nullLiteral());
+      // }
       if (context.usesThis) {
         wrapArgs.push(t.thisExpression());
       } else if (tryLocsList || node.async) {
@@ -148,16 +148,16 @@ exports.getVisitor = ({ types: t }) => ({
         wrapArgs.push(t.nullLiteral());
       }
 
-      if (node.async) {
-        // Rename any locally declared "Promise" variable,
-        // to use the global one.
-        let currentScope = path.scope;
-        do {
-          if (currentScope.hasOwnBinding("Promise")) currentScope.rename("Promise");
-        } while (currentScope = currentScope.parent);
+      // if (node.async) {
+      //   // Rename any locally declared "Promise" variable,
+      //   // to use the global one.
+      //   let currentScope = path.scope;
+      //   do {
+      //     if (currentScope.hasOwnBinding("Promise")) currentScope.rename("Promise");
+      //   } while (currentScope = currentScope.parent);
 
-        wrapArgs.push(t.identifier("Promise"));
-      }
+      //   wrapArgs.push(t.identifier("Promise"));
+      // }
 
       let wrapCall = t.callExpression(
         util.runtimeProperty(node.async ? "async" : "wrap"),

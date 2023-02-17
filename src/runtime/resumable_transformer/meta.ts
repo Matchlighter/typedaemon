@@ -5,8 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import assert from "assert";
-import { getTypes } from "./util.js";
+import * as assert from "assert";
+import { getTypes } from "./util";
 
 const mMap = new WeakMap();
 function m(node) {
@@ -106,5 +106,5 @@ for (let type in leapTypes) {
   }
 }
 
-exports.hasSideEffects = makePredicate("hasSideEffects", sideEffectTypes);
-exports.containsLeap = makePredicate("containsLeap", leapTypes);
+export const hasSideEffects = makePredicate("hasSideEffects", sideEffectTypes);
+export const containsLeap = makePredicate("containsLeap", leapTypes);

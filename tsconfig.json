@@ -6,7 +6,7 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "sourceMap": true,
-    // "target": "es2017", // es5
+    "target": "ES2020",
 
     "resolveJsonModule": true,
 
