@@ -1,23 +1,6 @@
 
-import * as babel from "@babel/core"
-import regenerator from './resumable_transformer'
 import { ResumablePromise, Suspend } from "./resumable_promise"
-
-const BABEL_CONFIG: babel.TransformOptions = {
-    targets: {
-        esmodules: true,
-        node: "current",
-    },
-    presets: [
-        ['@babel/preset-env', { targets: { node: 'current' }, modules: 'auto' }],
-        ['@babel/preset-typescript'],
-    ],
-    plugins: [
-        'babel-plugin-macros',
-        ["@babel/plugin-proposal-decorators", { version: "2022-03" }],
-        // regenerator,
-    ],
-}
+import { transpileFile } from "./transformer";
 
 export class Application {
     constructor(readonly app_id: string, readonly app_root: string) {
@@ -37,10 +20,7 @@ export class Application {
     }
 
     async compile() {
-        const transpiled = await babel.transformFileAsync("transpile_test.ts", {
-            ...BABEL_CONFIG,
-        })
-        console.log(transpiled.code)
+        await transpileFile("transpile_test.ts");
     }
 
     async watch_files() {
