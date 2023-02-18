@@ -1,2 +1,2 @@
 
-export { resumable } from './resumable_runtime'
+export { resumable } from './resumable_method'

@@ -36,13 +36,24 @@ ResumablePromise.defineClass({
 
         // TODO How to handle unregistered owner?
 
+        const newIndexedMarks = executor.options?.marked_locs;
+        const oldIndexedMarks = data.marked_locations;
+
+        // Validate that at least counts are the same. We won't be able to perfectly guarantee that there weren't major control/flow changes,
+        //   but checking count should be able to catch most issues and issue a warning
+        if (oldIndexedMarks && oldIndexedMarks.length != newIndexedMarks.length) {
+            console.warn(`Reloading @resumable "${scope.owner}:${scope.method}"; Control flow was obviously changed! You should version your @resumables when making such changes.`);
+            // TODO Prompt, exit, what?
+        }
+
         Object.assign(executor, {
             state: data.state,
             arg: data.arg,
             sent: data.sent,
             actionType: data.actionType,
-            prev: data.prev,
-            next: data.next,
+            // Using mark index makes things more stable if the expressions of the resumable change, but flow changes will still be problematic
+            prev: newIndexedMarks[data.prevIndex] || data.prev,
+            next: newIndexedMarks[data.next] || data.next,
             done: data.done,
             rval: data.rval,
         });
@@ -53,15 +64,23 @@ ResumablePromise.defineClass({
     },
 })
 
+interface ExecutorOptions {
+    self: any;
+    try_locs: number[][];
+    marked_locs: number[];
+}
+
 class Executor<T> extends ResumablePromise<T> {
-    constructor(generator, tryLocsList: any[]) {
+    constructor(generator, readonly options: ExecutorOptions) {
         super();
 
+        this.self = options.self;
         this.generator = generator;
 
         // The root entry object (effectively a try statement without a catch
         // or a finally block) gives us a place to store values thrown from
         // locations where there is no enclosing try statement.
+        const tryLocsList = options.try_locs;
         this.tryEntries = [{ tryLoc: "root" }, ...tryLocsList.map(locs => {
             const entry: any = { tryLoc: locs[0] };
 
@@ -110,8 +129,13 @@ class Executor<T> extends ResumablePromise<T> {
             arg: this.arg,
             sent: this.sent,
             actionType: this.actionType,
+
+            marked_locations: this.options.marked_locs,
             prev: this.prev,
+            prevIndex: this.options.marked_locs.indexOf(this.prev),
             next: this.next,
+            nextIndex: this.options.marked_locs.indexOf(this.next as any),
+
             done: this.done,
             rval: this.rval,
         }
@@ -450,8 +474,8 @@ resumable.register_context = (id: string, thing: any) => {
     RESUMABLE_OWNERS.set(id, thing);
 }
 
-resumable._wrapped_async = (innerFn, self, tryLocsList?) => {
-    return new Executor(innerFn, tryLocsList);
+resumable._wrapped_async = (innerFn, options) => {
+    return new Executor(innerFn, options);
 }
 
 resumable._awrap = (value) => {

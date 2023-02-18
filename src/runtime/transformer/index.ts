@@ -1,10 +1,10 @@
 
-
 import * as babel from "@babel/core"
 import { MacroAttachment, attachableMacrosPlugin } from "./attachable_macros";
 
 import { default as resumableMacro } from "./resumable_transformer"
 
+// TODO Set correctly
 const TDPACKAGE = ['@typedaemon/core', "./src"]
 
 const BABEL_CONFIG: babel.TransformOptions = {
@@ -17,12 +17,11 @@ const BABEL_CONFIG: babel.TransformOptions = {
         ['@babel/preset-typescript'],
     ],
     plugins: [
-        // TODO Modify plugin macro so that we can attach macros to built-in functions w/o affect the user experience
         ['babel-plugin-macros', {}],
         ["@babel/plugin-proposal-decorators", { version: "2022-03" }],
         [attachableMacrosPlugin, {
             macros: [
-                { package: TDPACKAGE, import: "resumable", macro: resumableMacro }
+                { package: TDPACKAGE, import: "resumable", macro: resumableMacro },
             ] as MacroAttachment[],
         }]
     ],

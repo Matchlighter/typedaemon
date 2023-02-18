@@ -44,7 +44,7 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")) => ({
       .unwrapFunctionEnvironment();
   },
   Function: {
-    exit: util.wrapWithTypes(t, function(path, state) {
+    exit: util.wrapWithTypes(t, function (path, state) {
       let node = path.node;
 
       if (!shouldRegenerate(node, state)) return;
@@ -70,10 +70,10 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")) => ({
       let outerBody = [];
       let innerBody = [];
 
-      bodyBlockPath.get("body").forEach(function(childPath) {
+      bodyBlockPath.get("body").forEach(function (childPath) {
         let node = childPath.node;
         if (t.isExpressionStatement(node) &&
-            t.isStringLiteral(node.expression)) {
+          t.isStringLiteral(node.expression)) {
           // Babylon represents directives like "use strict" as elements
           // of a bodyBlockPath.node.directives array, but they could just
           // as easily be represented (by other parsers) as traditional
@@ -128,42 +128,13 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")) => ({
       }
 
       let wrapArgs = [emitter.getContextFunction(innerFnId)];
-      let tryLocsList = emitter.getTryLocsList();
 
-      // if (node.generator) {
-      //   wrapArgs.push(outerFnExpr);
-      // } else if (context.usesThis || tryLocsList || node.async) {
-      //   // Async functions that are not generators don't care about the
-      //   // outer function because they don't need it to be marked and don't
-      //   // inherit from its .prototype.
-      //   wrapArgs.push(t.nullLiteral());
-      // }
-      if (context.usesThis) {
-        wrapArgs.push(t.thisExpression());
-      } else if (tryLocsList || node.async) {
-        wrapArgs.push(t.nullLiteral());
-      }
-      if (tryLocsList) {
-        wrapArgs.push(tryLocsList);
-      } else if (node.async) {
-        wrapArgs.push(t.nullLiteral());
-      }
-
-      // wrapArgs.push(t.objectExpression([
-      //   t.objectProperty(t.identifier("self"), t.identifier("this")),
-      //   t.objectProperty(t.identifier("parameters"), t.arrayExpression()),
-      // ]))
-
-      // if (node.async) {
-      //   // Rename any locally declared "Promise" variable,
-      //   // to use the global one.
-      //   let currentScope = path.scope;
-      //   do {
-      //     if (currentScope.hasOwnBinding("Promise")) currentScope.rename("Promise");
-      //   } while (currentScope = currentScope.parent);
-
-      //   wrapArgs.push(t.identifier("Promise"));
-      // }
+      wrapArgs.push(t.objectExpression([
+        t.objectProperty(t.identifier("self"), t.identifier("this")),
+        t.objectProperty(t.identifier("try_locs"), emitter.getTryLocsList() || t.nullLiteral()),
+        t.objectProperty(t.identifier("marked_locs"), emitter.getLocIndices() || t.nullLiteral()),
+        // t.objectProperty(t.identifier("parameters"), t.arrayExpression()),
+      ]))
 
       let wrapCall = t.callExpression(
         util.runtimeProperty(node.async ? "_wrapped_async" : "wrap"),
@@ -252,7 +223,7 @@ function getOuterFnExpr(funPath) {
   }
 
   if (node.generator && // Non-generator functions don't need to be marked.
-      t.isFunctionDeclaration(node)) {
+    t.isFunctionDeclaration(node)) {
     // Return the identifier returned by runtime.mark(<node.id>).
     return getMarkedFunctionId(funPath);
   }
@@ -316,18 +287,18 @@ function getMarkedFunctionId(funPath) {
 }
 
 let argumentsThisVisitor = {
-  "FunctionExpression|FunctionDeclaration|Method": function(path) {
+  "FunctionExpression|FunctionDeclaration|Method": function (path) {
     path.skip();
   },
 
-  Identifier: function(path, state) {
+  Identifier: function (path, state) {
     if (path.node.name === "arguments" && util.isReference(path)) {
       util.replaceWithOrRemove(path, state.getArgsId());
       state.usesArguments = true;
     }
   },
 
-  ThisExpression: function(path, state) {
+  ThisExpression: function (path, state) {
     state.usesThis = true;
   }
 };
@@ -337,7 +308,7 @@ let functionSentVisitor = {
     let { node } = path;
 
     if (node.meta.name === "function" &&
-        node.property.name === "sent") {
+      node.property.name === "sent") {
       const t = util.getTypes();
       util.replaceWithOrRemove(
         path,
@@ -351,11 +322,11 @@ let functionSentVisitor = {
 };
 
 let awaitVisitor = {
-  Function: function(path) {
+  Function: function (path) {
     path.skip(); // Don't descend into nested function scopes.
   },
 
-  AwaitExpression: function(path) {
+  AwaitExpression: function (path) {
     const t = util.getTypes();
 
     // Convert await expressions to yield expressions.
