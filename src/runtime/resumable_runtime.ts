@@ -1,11 +1,57 @@
-import { ResumablePromise, Suspend } from "./resumable_promise";
+import { ResumablePromise, SerializedResumable, Suspend } from "./resumable_promise";
+import { pojso } from "./util";
+import { InvertedWeakMap } from "./weakmap";
 
 const Op = Object.prototype;
 const hasOwn = Op.hasOwnProperty;
 
+const RESUMABLE_CONTEXT_ID = Symbol("serialized_id");
 const ContinueSentinel = Symbol("continue");
+const UNSTARTED_EXEC = Symbol("builder");
 
 type ResumableMethod = 'next' | 'return' | 'throw';
+
+interface HotScope {
+    owner: any;
+    method: string;
+    parameters: any[];
+}
+
+interface SerializedScope {
+    owner: string;
+    method: string;
+    parameters: any[];
+}
+
+const RESUMABLE_OWNERS = new InvertedWeakMap<string, any>()
+
+ResumablePromise.defineClass({
+    type: "@resumable",
+    resumer: (data, { require }) => {
+        const scope = data.scope as SerializedScope;
+        const dep = data.depends_on[0] ? require(data.depends_on[0]) : null;
+
+        const owner = RESUMABLE_OWNERS.get(scope.owner);
+        const executor: Executor<any> = owner[scope.method][UNSTARTED_EXEC].call(owner, ...scope.parameters);
+
+        // TODO How to handle unregistered owner?
+
+        Object.assign(executor, {
+            state: data.state,
+            arg: data.arg,
+            sent: data.sent,
+            actionType: data.actionType,
+            prev: data.prev,
+            next: data.next,
+            done: data.done,
+            rval: data.rval,
+        });
+
+        executor.resume(dep);
+
+        return executor;
+    },
+})
 
 class Executor<T> extends ResumablePromise<T> {
     constructor(generator, tryLocsList: any[]) {
@@ -16,8 +62,7 @@ class Executor<T> extends ResumablePromise<T> {
         // The root entry object (effectively a try statement without a catch
         // or a finally block) gives us a place to store values thrown from
         // locations where there is no enclosing try statement.
-        this.tryEntries = [{ tryLoc: "root" }];
-        for (let locs of tryLocsList) {
+        this.tryEntries = [{ tryLoc: "root" }, ...tryLocsList.map(locs => {
             const entry: any = { tryLoc: locs[0] };
 
             if (1 in locs) {
@@ -29,90 +74,86 @@ class Executor<T> extends ResumablePromise<T> {
                 entry.afterLoc = locs[3];
             }
 
-            this.tryEntries.push(entry);
-        }
+            return entry;
+        })];
 
         this.reset(true);
-
-        this.invoke('next');
     }
 
-    private method: ResumableMethod;
-    private pending_promise;
+    self: any;
+    generator;
+    private scope: HotScope;
 
-    private scope;
+    state: any = {};
+    private pending_promise;
 
     arg;
     sent;
-    _sent;
-
-    private rval: T;
-
-    generator;
-    self: any;
-
-    state: any = {};
-
+    private actionType: ResumableMethod;
     prev: number;
     next: number | "end";
     done = false;
+    private rval: T;
 
-    tryEntries: any[];
+    readonly tryEntries: any[];
 
-    serialize() {
-        if (!(this.pending_promise instanceof ResumablePromise)) {
-            throw new Error("Can't Happen... theoretically")
-        }
-
+    serialize(): SerializedResumable {
         return {
             type: "@resumable",
-            awaiting: { uid: this.pending_promise.uid },
-            scope: { // TODO
-                owner: this.self.resumable_context_key,
-                method: this.scope.method_name,
-                parameters: [], // TODO
-            },
+            depends_on: [this.pending_promise],
+            scope: {
+                owner: this.scope.owner[RESUMABLE_CONTEXT_ID],
+                method: this.scope.method,
+                parameters: this.scope.parameters,
+            } as SerializedScope,
             state: this.state,
+            arg: this.arg,
+            sent: this.sent,
+            actionType: this.actionType,
             prev: this.prev,
             next: this.next,
+            done: this.done,
+            rval: this.rval,
         }
     }
 
     can_suspend() {
         if (!super.can_suspend()) return false;
-        // TODO If state is not POJSO, return false
+        if (!pojso(this.state)) return false;
         return true;
     }
 
+    private _started = false;
+    start() {
+        if (this._started) throw new Error("Already Started!");
+        this._started = true;
+        this.invoke('next');
+    }
+
+    resume(waitFor?: ResumablePromise<any>) {
+        if (this._started) throw new Error("Already Started!");
+        this._started = true;
+
+        if (waitFor) {
+            this.invoke_promise(waitFor);
+        } else {
+            this.invoke(this.actionType, this.arg);
+        }
+    }
+
     private invoke(method: ResumableMethod, arg?) {
-        this.method = method;
+        this.actionType = method;
         this.arg = arg;
+
+        if (this._suspended) return;
 
         try {
             const result = this.generator_step();
             const value = result.value;
 
             if (value && typeof value === "object" && hasOwn.call(value, "__await")) {
-                const pcontext = runtime._resumable_context;
-                try {
-                    runtime._resumable_context = this;
-                    let awaitable = value.__await;
-                    if (!("then" in awaitable)) awaitable = Promise.resolve(awaitable);
-
-                    this.pending_promise = awaitable;
-
-                    return awaitable.then((value) => {
-                        this.invoke("next", value);
-                    }, (err) => {
-                        if (err instanceof Suspend) {
-                            // TODO Serialize. Should this be triggered here, or by the code that throws Suspend?
-                        } else {
-                            this.invoke("throw", err);
-                        }
-                    });
-                } finally {
-                    runtime._resumable_context = pcontext;
-                }
+                const awaitable = value.__await;
+                this.invoke_promise(awaitable);
             }
 
             return Promise.resolve(value).then(unwrapped => {
@@ -131,15 +172,44 @@ class Executor<T> extends ResumablePromise<T> {
         }
     }
 
+    private invoke_promise(awaitable: PromiseLike<any>) {
+        if (typeof awaitable != 'object' || !("then" in awaitable)) awaitable = Promise.resolve(awaitable);
+
+        this.pending_promise = awaitable;
+
+        if (awaitable instanceof ResumablePromise) {
+            return awaitable.then(
+                (value) => {
+                    this.pending_promise = null;
+                    this.invoke("next", value)
+                },
+                (err) => {
+                    this.pending_promise = null;
+                    if (err instanceof Suspend && this.can_suspend()) {
+                        this.suspend();
+                    } else {
+                        this.invoke("throw", err);
+                    }
+                },
+                this
+            );
+        } else {
+            return awaitable.then(
+                (value) => this.invoke("next", value),
+                (err) => this.invoke("throw", err)
+            );
+        }
+    }
+
     private generator_step() {
         while (true) {
-            if (this.method === "next") {
-                this.sent = this._sent = this.arg;
+            if (this.actionType === "next") {
+                this.sent = this.arg;
 
-            } else if (this.method === "throw") {
+            } else if (this.actionType === "throw") {
                 this.dispatchException(this.arg);
 
-            } else if (this.method === "return") {
+            } else if (this.actionType === "return") {
                 this.abrupt("return", this.arg);
             }
 
@@ -155,7 +225,7 @@ class Executor<T> extends ResumablePromise<T> {
             } catch (err) {
                 // Dispatch the exception by looping back around to the
                 // context.dispatchException(context.arg) call above.
-                this.method = "throw";
+                this.actionType = "throw";
                 this.arg = err;
             }
         }
@@ -189,7 +259,7 @@ class Executor<T> extends ResumablePromise<T> {
             if (caught) {
                 // If the dispatched exception was caught by a catch block,
                 // then let that catch block handle the exception normally.
-                context.method = "next";
+                context.actionType = "next";
                 context.arg = undefined;
             }
 
@@ -258,7 +328,7 @@ class Executor<T> extends ResumablePromise<T> {
         record.arg = arg;
 
         if (finallyEntry) {
-            this.method = "next";
+            this.actionType = "next";
             this.next = finallyEntry.finallyLoc;
             return ContinueSentinel;
         }
@@ -275,7 +345,7 @@ class Executor<T> extends ResumablePromise<T> {
             this.next = record.arg;
         } else if (record.type === "return") {
             this.rval = this.arg = record.arg;
-            this.method = "return";
+            this.actionType = "return";
             this.next = "end";
         } else if (record.type === "normal" && afterLoc) {
             this.next = afterLoc;
@@ -324,13 +394,11 @@ class Executor<T> extends ResumablePromise<T> {
     private reset(skipTempReset) {
         this.prev = 0;
         this.next = 0;
-        // Resetting context._sent for legacy support of Babel's
-        // function.sent implementation.
-        this.sent = this._sent = undefined;
+        this.sent = undefined;
         this.done = false;
         // this.delegate = null;
 
-        this.method = "next";
+        this.actionType = "next";
         this.arg = undefined;
 
         for (let tent of this.tryEntries) {
@@ -350,15 +418,42 @@ class Executor<T> extends ResumablePromise<T> {
     }
 }
 
-export const runtime = global['resumable_runtime'] = {
-    _resumable_context: null,
+export const resumable = (f, context: ClassMethodDecoratorContext) => {
+    function scope_wrapped(...args) {
+        const executor: Executor<any> = f.call(this, ...args);
 
-    async(innerFn, self, tryLocsList?) {
-        const executor = new Executor(innerFn, tryLocsList);
+        if (!(executor instanceof Executor)) {
+            throw new Error(`@resumable method didn't return as expected! Ensure that you're importing it from @typedaemon/macros and not from @typedaemon/core!`)
+        }
+
+        executor['scope'] = {
+            owner: this,
+            method: context.name as string,
+            parameters: args,
+        }
         return executor;
-    },
+    }
 
-    awrap(value) {
-        return { __await: value };
-    },
+    function start_wrapped(...args) {
+        const executor = scope_wrapped.call(this, ...args);
+        executor.start();
+        return executor;
+    }
+
+    start_wrapped[UNSTARTED_EXEC] = f;
+
+    return start_wrapped;
+}
+
+resumable.register_context = (id: string, thing: any) => {
+    thing[RESUMABLE_CONTEXT_ID] = id;
+    RESUMABLE_OWNERS.set(id, thing);
+}
+
+resumable._wrapped_async = (innerFn, self, tryLocsList?) => {
+    return new Executor(innerFn, tryLocsList);
+}
+
+resumable._awrap = (value) => {
+    return { __await: value };
 }

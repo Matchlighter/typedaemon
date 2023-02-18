@@ -13,7 +13,7 @@ import { Emitter } from "./emit";
 import replaceShorthandObjectMethod from "./replaceShorthandObjectMethod";
 import * as util from "./util";
 
-export const getVisitor = ({ types: t }) => ({
+export const getVisitor = ({ types: t }: typeof import("@babel/core")) => ({
   Method(path, state) {
     let node = path.node;
 
@@ -97,6 +97,7 @@ export const getVisitor = ({ types: t }) => ({
       // Note that getOuterFnExpr has the side-effect of ensuring that the
       // function has a name (so node.id will always be an Identifier), even
       // if a temporary name has to be synthesized.
+      // @ts-ignore
       t.assertIdentifier(node.id);
       let innerFnId = t.identifier(node.id.name + "$");
 
@@ -148,6 +149,11 @@ export const getVisitor = ({ types: t }) => ({
         wrapArgs.push(t.nullLiteral());
       }
 
+      // wrapArgs.push(t.objectExpression([
+      //   t.objectProperty(t.identifier("self"), t.identifier("this")),
+      //   t.objectProperty(t.identifier("parameters"), t.arrayExpression()),
+      // ]))
+
       // if (node.async) {
       //   // Rename any locally declared "Promise" variable,
       //   // to use the global one.
@@ -160,7 +166,7 @@ export const getVisitor = ({ types: t }) => ({
       // }
 
       let wrapCall = t.callExpression(
-        util.runtimeProperty(node.async ? "async" : "wrap"),
+        util.runtimeProperty(node.async ? "_wrapped_async" : "wrap"),
         wrapArgs
       );
 
@@ -360,7 +366,7 @@ let awaitVisitor = {
     // can distinguish between awaited and merely yielded values.
     util.replaceWithOrRemove(path, t.yieldExpression(
       t.callExpression(
-        util.runtimeProperty("awrap"),
+        util.runtimeProperty("_awrap"),
         [argument]
       ),
       false
