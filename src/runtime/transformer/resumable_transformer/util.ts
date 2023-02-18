@@ -5,6 +5,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import { types } from "@babel/core";
+
+export type BabelTypes = typeof types;
+
 let currentTypes = null;
 
 export function wrapWithTypes(types, fn) {
