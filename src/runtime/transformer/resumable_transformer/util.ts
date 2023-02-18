@@ -26,7 +26,7 @@ export function getTypes() {
 export function runtimeProperty(name) {
   const t = getTypes();
   return t.memberExpression(
-    t.identifier("_internal_resumable"),
+    t.identifier("resumable"),
     t.identifier(name),
     false
   );
