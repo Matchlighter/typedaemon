@@ -1,9 +1,7 @@
 import { ResumablePromise, SerializedResumable } from "../../runtime/resumable_promise";
 
 export class HomeAssistantIntegration {
-    for_event(event: string) {
 
-    }
 }
 
 class EventAwaiter extends ResumablePromise<any>{
@@ -14,3 +12,5 @@ class EventAwaiter extends ResumablePromise<any>{
         }
     }
 }
+
+export * as entity from "./entity_decorators";

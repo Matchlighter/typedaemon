@@ -3,6 +3,7 @@ import { InvertedWeakMap } from "@matchlighter/common_library/cjs/data/inverted_
 
 import { ResumablePromise, SerializedResumable, Suspend } from "./resumable_promise";
 import { pojso } from "../common/util";
+import { AsyncLocalStorage } from "async_hooks";
 
 const Op = Object.prototype;
 const hasOwn = Op.hasOwnProperty;
@@ -25,7 +26,10 @@ interface SerializedScope {
     parameters: any[];
 }
 
+export type ResumableOwnerLookup = object | ((key: string) => any);
+const ContextResumableOwnerLookup = new AsyncLocalStorage<ResumableOwnerLookup>()
 const RESUMABLE_OWNERS = new InvertedWeakMap<string, any>()
+const defaultResumableOwnerLookup: ResumableOwnerLookup = (key) => RESUMABLE_OWNERS.get(key);
 
 ResumablePromise.defineClass({
     type: "@resumable",
@@ -33,7 +37,10 @@ ResumablePromise.defineClass({
         const scope = data.scope as SerializedScope;
         const dep = data.depends_on[0] ? require(data.depends_on[0]) : null;
 
-        const owner = RESUMABLE_OWNERS.get(scope.owner);
+        const lookupOwner = ContextResumableOwnerLookup.getStore() || defaultResumableOwnerLookup;
+        let owner;
+        if (typeof lookupOwner == 'object') owner = lookupOwner[scope.owner];
+        if (typeof lookupOwner == 'function') owner = lookupOwner(scope.owner);
         const executor: Executor<any> = owner[scope.method][UNSTARTED_EXEC].call(owner, ...scope.parameters);
 
         // TODO How to handle unregistered owner?
@@ -471,9 +478,15 @@ export const resumable = (f, context: ClassMethodDecoratorContext) => {
     return start_wrapped;
 }
 
-resumable.register_context = (id: string, thing: any) => {
+resumable.with_lookup_context = (lookup: ResumableOwnerLookup, f: () => void) => {
+    return ContextResumableOwnerLookup.run(lookup, f);
+}
+
+resumable.register_context = (id: string, thing: any, local = false) => {
     thing[RESUMABLE_CONTEXT_ID] = id;
-    RESUMABLE_OWNERS.set(id, thing);
+    if (!local) {
+        RESUMABLE_OWNERS.set(id, thing);
+    }
 }
 
 resumable._wrapped_async = (innerFn, options) => {

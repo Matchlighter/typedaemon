@@ -4,6 +4,12 @@ import * as VM from "vm2";
 
 export function createUserCodeVM() {
     const vm = new VM.NodeVM({
+        // TODO Disable/fix core scheduling and events (eg setTimeout)
+        //   Provide a proxy to access similar features
+        sandbox: {
+            setTimeout: null,
+            setInterval: null,
+        },
         require: {
             builtin: ['*'],
             context: "host",
@@ -13,6 +19,7 @@ export function createUserCodeVM() {
                 console.log(Object.keys(require.cache))
                 return require(req);
             },
+
             // TODO Will be needed to dynamically compile TS
             // fs: {
             //     resolve: 
