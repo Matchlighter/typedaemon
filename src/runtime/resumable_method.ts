@@ -1,6 +1,8 @@
+
+import { InvertedWeakMap } from "@matchlighter/common_library/cjs/data/inverted_weakmap"
+
 import { ResumablePromise, SerializedResumable, Suspend } from "./resumable_promise";
-import { pojso } from "./util";
-import { InvertedWeakMap } from "./weakmap";
+import { pojso } from "../common/util";
 
 const Op = Object.prototype;
 const hasOwn = Op.hasOwnProperty;

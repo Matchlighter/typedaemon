@@ -1,7 +1,7 @@
 
 import * as process from 'process';
 
-import { Application } from './application';
+import { Application } from './runtime/application';
 
 const arg = process.argv.slice(2);
 const [app_id, application_path] = arg;
