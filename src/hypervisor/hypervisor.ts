@@ -10,7 +10,9 @@ import { Configuration, ConfigMerger, defaultConfig, readConfigFile } from "./co
 import { MultiMap } from "@matchlighter/common_library/cjs/data/multimap"
 import { deep_get } from "@matchlighter/common_library/cjs/deep"
 
-import { AppConfigMerger, defaultAppConfig } from "./config_app";
+import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
+import { ApplicationInstance } from "./application";
+import { LifecycleHelper } from "../common/lifecycle_helper";
 
 const async_throttle = <T extends (...params: any[]) => void>(time: number, func: T): T => {
     let working = false;
@@ -86,20 +88,27 @@ export class Hypervisor {
 
     }
 
-    protected shutdown_tasks: (() => void)[] = [];
+    protected cleanupTasks = new LifecycleHelper();
 
     private _currentConfig: Configuration;
     get currentConfig() {
         return this._currentConfig as DeepReadonly<typeof this._currentConfig>;
     }
 
+    getConfigEntry<T>(entry: string) {
+        return deep_get(this.currentConfig, entry.split('.'));
+    }
+
     private config_watches = new MultiMap<string, ConfigWatchHandler<any>>();
     watchConfigEntry<T>(entry: string, handler: ConfigWatchHandler<T>) {
         this.config_watches.add(entry, handler);
+        return () => {
+            this.config_watches.delete(entry, handler);
+        }
     }
 
     getAndWatchConfigEntry<T>(entry: string, handler: ConfigWatchHandler<T>) {
-        const curcfg = deep_get(this.currentConfig, entry.split('.'));
+        const curcfg = this.getConfigEntry(entry);
         handler(curcfg, null);
         return this.watchConfigEntry(entry, handler);
     }
@@ -114,7 +123,8 @@ export class Hypervisor {
     }
 
     async shutdown() {
-        // TODO Release file watchers
+        // Release file watchers
+        this.cleanupTasks.cleanup()
         // TODO Shutdown apps
         // TODO Shutdown plugins
     }
@@ -139,10 +149,52 @@ export class Hypervisor {
         return await this.readAndWatchConfig(cfg_file)
     }
 
+    protected appInstances: Record<string, ApplicationInstance> = {};
+
+    getApplication(id: string) {
+        return this.appInstances[id];
+    }
+
+    reinitializeApplication(app: string | ApplicationInstance) {
+        if (typeof app == "string") {
+            app = this.appInstances[app];
+        }
+        const id = app.id;
+        this._shutdownApp(app);
+        this._startApp(id);
+    }
+
+    private _startApp(id: string, options?: AppConfiguration) {
+        options ||= this.getConfigEntry(`apps.${id}`)
+        const app = new ApplicationInstance(this, id, options);
+        app._start();
+        this.appInstances[id] = app;
+        return app;
+    }
+
+    private _shutdownApp(app: string | ApplicationInstance) {
+        if (typeof app == "string") {
+            app = this.appInstances[app];
+        }
+        if (app != this.appInstances[app.id]) throw new Error("Attempt to reinitialize an inactive app");
+        app._shutdown();
+    }
+
     private async resyncApps() {
-        // TODO Kill running apps that shouldn't be
+        const currentInstances = { ...this.appInstances }
+        const desiredApps = this.currentConfig.apps;
+
+        // Kill running apps that shouldn't be
+        for (let [id, app] of Object.entries(currentInstances)) {
+            if (!desiredApps[id]) this._shutdownApp(app);
+        }
+
         // TODO Notify apps of config changes. Allow app to decide if it can handle it, or if it needs a reboot. (Do not do if apps utilize their own watchers)
-        // TODO Startup apps that should be running, but aren't
+
+        // Startup apps that should be running, but aren't
+        for (let [id, options] of Object.entries(desiredApps)) {
+            if (!this.appInstances[id]) this._startApp(id, options);
+        }
     }
 
     private async readAndWatchConfig(file: string) {
@@ -197,7 +249,7 @@ export class Hypervisor {
                 console.info("Reloading Typedaemon Config")
                 _loadConfig()
             });
-            this.shutdown_tasks.push(() => watcher.close());
+            this.cleanupTasks.mark(() => watcher.close());
         }
     }
 }
