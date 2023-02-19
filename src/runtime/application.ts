@@ -1,6 +1,6 @@
 
 import { ResumablePromise, Suspend } from "./resumable_promise"
-import { transpileFile } from "./transformer";
+import { transpileFile } from "../app_transformer";
 
 export class Application {
     constructor(readonly app_id: string, readonly app_root: string) {
@@ -13,6 +13,9 @@ export class Application {
 
     async start() {
         await this.compile();
+
+        const process = require('process')
+        console.log(process.memoryUsage())
     }
 
     async serve() {

@@ -1,6 +1,6 @@
 
 import { ExtensiblePromise } from "@matchlighter/common_library/cjs/promises"
-import { pojso } from "./util";
+import { pojso } from "../common/util";
 
 export class Suspend extends Error {
 

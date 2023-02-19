@@ -1,4 +1,5 @@
+import { AppConfiguration } from "./config_app";
 
-export class Application {
-
+export class ApplicationInstance {
+    readonly options: AppConfiguration;
 }

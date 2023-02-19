@@ -6,12 +6,16 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "sourceMap": true,
-    "target": "ES2020",
+    "target": "ES2018",
 
     "resolveJsonModule": true,
 
-    "baseUrl": ".",
+    "baseUrl": "src",
+    "outDir": "build",
   },
+  "include": [
+    "src"
+  ],
   "exclude": [
     "**/*.spec.ts",
     ".git",

@@ -1,8 +1,8 @@
-import { ResumablePromise, SerializedResumable } from "src/runtime/resumable_promise";
+import { ResumablePromise, SerializedResumable } from "../../runtime/resumable_promise";
 
 export class HomeAssistantIntegration {
     for_event(event: string) {
-        
+
     }
 }
 
