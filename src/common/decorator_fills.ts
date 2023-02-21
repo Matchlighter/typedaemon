@@ -14,7 +14,7 @@ export type ClassSetterDecorator<This = any, Value = any> = (
     context: ClassSetterDecoratorContext
 ) => Function | void;
 
-export type ClassMethodDecorator = (
-    value: Function,
-    context: ClassMemberDecoratorContext
-) => Function | void;
+export type ClassMethodDecorator<This = any, Value extends ((...p: any[]) => any) = any> = (
+    value: Value,
+    context: ClassMethodDecoratorContext<This, Value>
+) => Value | void;

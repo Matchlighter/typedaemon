@@ -7,7 +7,7 @@ import { default as resumableMacro } from "./resumable_transformer"
 // TODO Set correctly
 const TDPACKAGE = ['@typedaemon/core', "./src"]
 
-const BABEL_CONFIG: babel.TransformOptions = {
+export const APP_BABEL_CONFIG: babel.TransformOptions = {
     targets: {
         esmodules: true,
         node: "current",
@@ -29,7 +29,7 @@ const BABEL_CONFIG: babel.TransformOptions = {
 
 export async function transpileFile(file) {
     const transpiled = await babel.transformFileAsync(file, {
-        ...BABEL_CONFIG,
+        ...APP_BABEL_CONFIG,
     })
 
     console.log(transpiled.code)

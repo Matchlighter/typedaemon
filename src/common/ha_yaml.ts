@@ -10,3 +10,9 @@ export const HA_YAML_SCHEMA = new jsyaml.Schema([
         },
     }),
 ])
+
+export function parseYaml(source: string, { filename: string }) {
+    jsyaml.load(source, {
+        schema: HA_YAML_SCHEMA,
+    });
+}

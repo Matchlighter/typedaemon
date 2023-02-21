@@ -1,0 +1,187 @@
+
+import { reaction } from "mobx";
+import { HassEntity } from "home-assistant-js-websocket";
+
+import { optional_config_decorator } from "@matchlighter/common_library/cjs/decorators/utils";
+
+import { get_plugin } from "../../runtime/hooks";
+import { ClassAutoAccessorDecorator, ClassGetterDecorator, ClassMethodDecorator } from "../../common/decorator_fills";
+import { HomeAssistantPlugin } from ".";
+
+interface EntityOptions {
+    uuid?: string;
+    friendly_name?: string;
+
+    [key: string]: any;
+}
+
+interface FullState<V> {
+    state: V;
+    [key: string]: any;
+}
+
+export function homeAssistantApi(options: { pluginId: string }) {
+    const id = options.pluginId;
+
+    const _plugin = () => get_plugin<HomeAssistantPlugin>(id);
+
+    function stateOnlyDecorator<O extends {}, V>(domain: string) {
+        return optional_config_decorator([], (options?: EntityOptions & O): ClassGetterDecorator<any, V | FullState<V>> => {
+            return (get, context) => {
+                context.addInitializer(() => {
+                    reaction(() => get.call(this), v => {
+                        let state: V = v;
+                        let rest: any;
+                        if ('state' in v) {
+                            const { state: nstate, ...therest } = v;
+                            state = nstate,
+                                rest = therest;
+                        }
+                        // TODO Push to HA
+                    })
+                })
+                // TODO @computed
+            }
+        });
+    }
+
+    const entities = {
+        sensor: stateOnlyDecorator<{}, number>("sensor"),
+        binary_sensor: stateOnlyDecorator<{}, boolean>("binary_sensor"),
+        text_sensor: stateOnlyDecorator<{}, string>("text_sensor"),
+        weather: stateOnlyDecorator<{}, {}>("weather"),
+        device_tracker: stateOnlyDecorator<{}, string>("device_tracker"),
+        person: stateOnlyDecorator<{}, string>("person"),
+    }
+
+    interface InputOptions extends EntityOptions {
+        /** Whether the state of the property should update immediately, or if it should wait for HA to confirm the updated value */
+        optimistic?: boolean;
+        /**
+         * By default, Typedaemon will look for and link an existing entity, or create one if it doesn't exist.
+         * Setting this to `true` will prevent the creation of an entity, setting it to `false` will assert that the entity doesn't already exist
+         */
+        existing?: boolean;
+    }
+
+    function _inputDecorator<O extends {} = {}>(domain: string, options: InputOptions & O) {
+        return ({ get, set }, context) => {
+            context.addInitializer(() => {
+                // TODO Listen to HA
+            })
+            // TODO @observable()
+            return {
+                set(value) {
+                    if (options.optimistic) {
+                        set.call(this, value);
+                    }
+                    // TODO Write to HA
+                },
+                init(value) {
+                    // TODO Read from HA
+                },
+            } as any
+        }
+    }
+
+    function inputDecorator<V, O extends {} = {}>(domain: string) {
+        return optional_config_decorator([], (options?: InputOptions & O): ClassAutoAccessorDecorator<any, V | FullState<V>> => {
+            return _inputDecorator(domain, options);
+        });
+    }
+
+    type Iso8601String = string;
+
+    // Text Create: {"type":"input_text/create","name":"test3","icon":"mdi:account","min":"5","max":"102","pattern":"\\d+","id":38}
+    // Delete: {"type":"input_text/delete","input_text_id":"test3","id":55}
+    // Update: {"type":"input_text/update","input_text_id":"test2","name":"test2","mode":"text","max":100,"min":0,"id":59}
+    // Set: {"type":"call_service","domain":"input_number","service":"set_value","service_data":{"value":50,"entity_id":"input_number.test"},"id":69}
+    // Show:
+    //  {"type":"config/entity_registry/get","entity_id":"input_text.test2","id":57}
+    //  {"id":57,"type":"result","success":true,"result":{"area_id":null,"config_entry_id":null,"device_id":null,"disabled_by":null,"entity_category":null,"entity_id":"input_text.test2","has_entity_name":false,"hidden_by":null,"icon":null,"id":"8bef30db208442ea9ae0c5c3041a7bd7","name":null,"original_name":"test2","platform":"input_text","translation_key":null,"unique_id":"test2","aliases":[],"capabilities":null,"device_class":null,"options":{},"original_device_class":null,"original_icon":null}}
+    //  {"type":"input_text/list","id":58}
+    //  {"id":58,"type":"result","success":true,"result":[{"name":"test","mode":"text","max":100,"min":0,"id":"test"},{"name":"test2","mode":"text","max":100,"min":0,"id":"test2"}]}
+
+    const input = {
+        number: inputDecorator<number>("input_number"),
+        text: inputDecorator<string>("input_text"),
+        boolean: inputDecorator<boolean>("input_boolean"),
+        bool: inputDecorator<boolean>("input_boolean"),
+        datetime: inputDecorator<Date | number | Iso8601String>("input_datetime"),
+        select: <const T extends string>(options: T[], config?: InputOptions) => {
+            return _inputDecorator("input_select", {
+                options: options.join(','),
+                ...config,
+            })
+        },
+    }
+
+    interface ButtonOptions extends EntityOptions {
+
+    }
+
+    const button = optional_config_decorator([], (options?: ButtonOptions): ClassMethodDecorator => {
+        return (func, context) => {
+            context.addInitializer(() => {
+                // TODO Register HA entity
+            })
+            // TODO @action()
+        }
+    })
+
+    function callService(...params: Parameters<HomeAssistantPlugin['callService']>) {
+        return _plugin().callService(...params);
+    }
+
+    async function toggleSwitch(ent: HassEntity) {
+        let domain = 'homeassistant';
+        const group = ent.entity_id.split('.')[0];
+
+        if (['switch', 'light', 'fan'].indexOf(group) !== -1) {
+            domain = group;
+        }
+
+        let service = 'toggle';
+
+        if (ent.state === 'off') {
+            service = 'turn_on';
+        } else if (ent.state === 'on') {
+            service = 'turn_off';
+        }
+
+        return await callService(`${domain}.${service}`, { entity_id: ent.entity_id })
+    }
+
+    async function findRelatedDevices(entity: HassEntity) {
+
+    }
+
+    async function findRelatedEntities(entity: HassEntity): Promise<string[]> {
+        const pl = _plugin();
+        const response1: any = await pl.request('search/related', { item_type: 'entity', item_id: entity.entity_id });
+        const relatedDeviceIds = response1['device'];
+        if (!relatedDeviceIds) return [];
+        // const response2: any = await pl.request('search/related', { item_type: 'device', item_id: relatedDeviceIds[0] });
+        // return response2['entity'] || [];
+        return response1['entity'] || [];
+    }
+
+    return {
+        _plugin,
+        entity: entities,
+        input,
+        button,
+
+        callService,
+        findRelatedEntities,
+        findRelatedDevices,
+        toggleSwitch,
+    }
+}
+
+export const api = {
+    ...homeAssistantApi({ pluginId: "type:home_assistant" }),
+    createInstance(...params: Parameters<typeof homeAssistantApi>) {
+        return homeAssistantApi(...params);
+    },
+}

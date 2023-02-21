@@ -1,16 +1,134 @@
+
+import { observable } from 'mobx'
+import {
+    createConnection,
+    getStates,
+    StateChangedEvent,
+    Connection,
+    callService,
+    HassServiceTarget,
+    createLongLivedTokenAuth,
+    HassEvent,
+} from 'home-assistant-js-websocket'
+
+import { sync_to_observable } from '@matchlighter/common_library/lib/sync_observable'
+
 import { ResumablePromise, SerializedResumable } from "../../runtime/resumable_promise";
+import { Plugin } from "../plugin";
+import { homeAssistantApi } from './api';
+import { HyperWrapper } from '../../runtime/application';
+import { current } from '../../hypervisor/application';
+import { get_plugin } from '../../runtime/hooks';
 
-export class HomeAssistantIntegration {
+const STATE_SYNC_OPTS: Parameters<typeof sync_to_observable>[2] = {
+    refs: ['$.*.context', '$.*.attributes.*'],
+}
 
+function isStateChangedEvent(event: HassEvent): event is StateChangedEvent {
+    return event.event_type == "state_changed";
+}
+
+export class HomeAssistantPlugin extends Plugin {
+    readonly api = homeAssistantApi({ pluginId: this[HyperWrapper].id });
+
+    async initialize() {
+        await this.connect();
+    }
+
+    async shutdown() {
+        clearInterval(this.pingInterval);
+    }
+
+    async request(type: string, parameters: any) {
+        return await this._ha_api.sendMessagePromise({
+            type,
+            ...parameters,
+        })
+    }
+
+    async sendMessage(type: string, parameters: any) {
+        return this._ha_api.sendMessage({ type, ...parameters });
+    }
+
+    async callService(serviceStr: string, data: any, target?: HassServiceTarget) {
+        const [domain, service] = serviceStr.split('.')
+        return await callService(this._ha_api, domain, service, data, target);
+    }
+
+    private readonly stateStore: any = observable({}, {}, { deep: false }) as any;
+
+    private _ha_api: Connection;
+    private pingInterval;
+
+    awaitForEvent(pattern) {
+        const app = current.application;
+        return new EventAwaiter(this, pattern);
+    }
+
+    trackEventAwaiter(awaiter: EventAwaiter) {
+        // TODO
+    }
+
+    private async connect() {
+        const ha = await createConnection({
+            auth: createLongLivedTokenAuth(this.config.url, this.config.access_token),
+        })
+        this._ha_api = ha;
+        this.pingInterval = setInterval(() => {
+            if (this._ha_api.connected) this._ha_api.ping();
+        }, 30000)
+
+        // Synchronize states
+        await this.resyncStatesNow();
+        this._ha_api.addEventListener("ready", () => this.resyncStatesNow());
+
+        // Listen for events
+        this._ha_api.subscribeEvents((ev: HassEvent) => {
+            if (isStateChangedEvent(ev)) {
+                const { entity_id, new_state } = ev.data;
+                const state = this.stateStore;
+                if (new_state) {
+                    const target = state[entity_id] = state[entity_id] || observable({}, {}, { deep: false }) as any;
+                    sync_to_observable(target, new_state, { ...STATE_SYNC_OPTS, currentPath: ['$', entity_id] });
+                } else {
+                    delete state[entity_id];
+                }
+            }
+
+            // TODO Dispatch event to other listeners
+        })
+    }
+
+    private async resyncStatesNow() {
+        const ha_states = {};
+        for (let ent of await getStates(this._ha_api)) {
+            ha_states[ent.entity_id] = ent;
+        }
+
+        sync_to_observable(this.stateStore, ha_states, STATE_SYNC_OPTS);
+    }
 }
 
 class EventAwaiter extends ResumablePromise<any>{
+    constructor(readonly hap: HomeAssistantPlugin, readonly schema) {
+        super();
+        current.application.resumableStore.track(this);
+        hap.trackEventAwaiter(this);
+    }
+
     serialize(): SerializedResumable {
         return {
             type: 'ha_event_waiter',
             sideeffect_free: true,
+            plugin: this.hap[HyperWrapper].id,
         }
     }
 }
 
-export * as entity from "./entity_decorators";
+ResumablePromise.defineClass({
+    type: 'ha_event_waiter',
+    resumer: (data) => {
+        const ha = get_plugin<HomeAssistantPlugin>(data.plugin);
+        return new EventAwaiter(ha, {})
+    },
+})
