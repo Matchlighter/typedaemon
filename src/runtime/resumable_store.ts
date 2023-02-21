@@ -1,3 +1,4 @@
+import { timeoutPromise } from "../common/util";
 import { ResumableOwnerLookup, resumable } from "./resumable_method";
 import { ResumablePromise, Suspend } from "./resumable_promise";
 
@@ -36,7 +37,7 @@ export class ResumableStore {
                 for (let p of this.running_resumables) {
                     if (!p.can_suspend()) return;
                 }
-        
+
                 // All promises suspendable!
                 this.onNonSuspendableClear();
             }
@@ -50,14 +51,17 @@ export class ResumableStore {
     async suspendAndStore({ timeout }: { timeout: number } = { timeout: 10 }) {
         this.state = 'shutdown_requested';
 
-        // Wait up to 15s for pending non-suspendable HA await conditions to resolve
-        await new Promise((accept) => {
-            const timer = setTimeout(accept, timeout * 1000);
-            this.onNonSuspendableClear = () => {
-                clearTimeout(timer);
-                accept(null);
+        // Wait for pending non-suspendable HA await conditions to resolve
+        const flushPromise = new Promise((accept) => {
+            this.onNonSuspendableClear = accept as any;
+            if (this.running_resumables.size == 0) {
+                this.onNonSuspendableClear();
             }
         });
+
+        await timeoutPromise(timeout * 1000, flushPromise, () => {
+            console.warn("ResumablePromises failed to resolve. Force Suspending.");
+        })
 
         this.state = 'suspending';
 

@@ -3,77 +3,20 @@ import * as fs from "fs";
 import * as md5 from "md5";
 import * as path from "path";
 import * as deep_eql from "deep-eql"
-
-import { DeepReadonly } from "common/util";
-import { Configuration, ConfigMerger, defaultConfig, readConfigFile } from "./config";
+import * as chalk from "chalk";
 
 import { MultiMap } from "@matchlighter/common_library/cjs/data/multimap"
 import { deep_get } from "@matchlighter/common_library/cjs/deep"
 
-import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
-import { ApplicationInstance } from "./application";
+import { DeepReadonly, colorLogLevel, fileExists, timeoutPromise, watchFile } from "../common/util";
+import { debounce, throttle } from "../common/limit";
 import { LifecycleHelper } from "../common/lifecycle_helper";
 
-const async_throttle = <T extends (...params: any[]) => void>(time: number, func: T): T => {
-    let working = false;
-    let lastCallTime: number;
-    let nextCallParams: Parameters<T>;
-
-    let nextCallTimer;
-
-    const workItOff = async () => {
-        working = true;
-        while (nextCallParams) {
-            const p = nextCallParams;
-            nextCallParams = null;
-            try {
-                await func(...p);
-            } catch {
-            }
-        }
-        working = false;
-    }
-
-    return ((...args: Parameters<T>) => {
-        if (working) {
-            nextCallParams = args;
-        } else if (lastCallTime && Date.now() < lastCallTime + time) {
-            const nextCallIn = lastCallTime + time - Date.now();
-            if (!nextCallTimer) {
-                nextCallTimer = setTimeout(() => {
-                    nextCallTimer = null;
-                }, nextCallIn)
-            }
-        } else {
-            lastCallTime = Date.now();
-            nextCallParams = args;
-            workItOff()
-        }
-    }) as any;
-}
-
-const watchFile = (file: string, callback: (file: string) => void, config: { debounce: number } = { debounce: 250 }) => {
-    let md5Previous = null;
-
-    const throttled_callback = async_throttle(config.debounce, async (_file: string) => {
-        const md5Current = md5(await fs.promises.readFile(file));
-        if (md5Current === md5Previous) return;
-        md5Previous = md5Current;
-
-        await callback(file);
-    })
-
-    return fs.watch(file, throttled_callback);
-}
-
-const fileExists = async (file: string) => {
-    try {
-        const stat = await fs.promises.stat(file);
-        return !!stat;
-    } catch {
-        return false;
-    }
-}
+import { Configuration, ConfigMerger, defaultConfig, readConfigFile } from "./config";
+import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
+import { ApplicationInstance } from "./application";
+import { PluginInstance } from "../plugins/plugin";
+import { ConsoleMethod } from "./vm";
 
 type ConfigWatchHandler<T> = (newConfig: T, oldConfig: T) => void;
 
@@ -87,6 +30,10 @@ export class Hypervisor {
     }) {
 
     }
+
+    private state: "running" | "shutting_down" = "running";
+
+    get working_directory() { return this.options.working_directory }
 
     protected cleanupTasks = new LifecycleHelper();
 
@@ -113,9 +60,23 @@ export class Hypervisor {
         return this.watchConfigEntry(entry, handler);
     }
 
+    logMessage(level: ConsoleMethod | 'lifecycle', ...rest) {
+        console.log(chalk`{blueBright [Hypervisor]} - ${colorLogLevel(level)} -`, ...rest);
+    }
+
     async start() {
+        this.logMessage("lifecycle", "Starting");
+
+        this.logMessage("info", "Loading Config");
         await this.findAndLoadConfig();
 
+        process.on('SIGINT', () => {
+            this.logMessage("info", "SIGINT received. Shutting down...")
+            this.state = "shutting_down";
+            this.shutdown();
+        });
+
+        this.logMessage("info", "Starting Apps");
         await this.resyncApps();
         this.watchConfigEntry("apps", () => this.resyncApps());
 
@@ -123,10 +84,29 @@ export class Hypervisor {
     }
 
     async shutdown() {
-        // Release file watchers
-        this.cleanupTasks.cleanup()
-        // TODO Shutdown apps
+        this.logMessage("lifecycle", "Stopping");
+
+        // Shutdown apps
+        this.logMessage("info", "Stopping apps");
+        for (let [id, app] of Object.entries(this.appInstances)) {
+            this._shutdownApp(app);
+        }
+        await timeoutPromise(15000, Promise.all(this.appShutdownPromises), () => {
+            this.logMessage("error", "At least one application has not shutdown after 15 seconds. Taking drastic action.");
+            // TODO Drastic action
+        });
+
+        // Shutdown plugins
+        this.logMessage("info", "Stopping plugins");
         // TODO Shutdown plugins
+        await timeoutPromise(15000, Promise.all(this.appShutdownPromises), () => {
+            this.logMessage("error", "At least one plugin has not shutdown after 15 seconds. Taking drastic action.");
+            // TODO Drastic action
+        });
+
+        // Release file watchers and other cleanup
+        this.logMessage("info", "Cleaning up");
+        this.cleanupTasks.cleanup()
     }
 
     private async findAndLoadConfig() {
@@ -149,65 +129,112 @@ export class Hypervisor {
         return await this.readAndWatchConfig(cfg_file)
     }
 
-    protected appInstances: Record<string, ApplicationInstance> = {};
+    protected pluginInstances: Record<string, PluginInstance> = {};
+    getPlugin(id: string) {
+        return this.pluginInstances[id];
+    }
 
+    protected appInstances: Record<string, ApplicationInstance> = {};
     getApplication(id: string) {
         return this.appInstances[id];
     }
 
-    reinitializeApplication(app: string | ApplicationInstance) {
+    @debounce({ timeToStability: 100, key_on: ([app]) => typeof app == 'string' ? app : app.id })
+    async reinitializeApplication(app: string | ApplicationInstance) {
         if (typeof app == "string") {
             app = this.appInstances[app];
         }
         const id = app.id;
-        this._shutdownApp(app);
+        await this._shutdownApp(app);
         this._startApp(id);
     }
 
     private _startApp(id: string, options?: AppConfiguration) {
         options ||= this.getConfigEntry(`apps.${id}`)
+
+        this.logMessage("info", chalk`Starting App: '${id}' ({green ${options.export}} from {green ${options.source}})...`)
+
         const app = new ApplicationInstance(this, id, options);
-        app._start();
+        app._start().catch((ex) => {
+            this.logMessage("error", `App '${id}' failed while starting up: `, ex)
+            this._shutdownApp(app);
+        });
         this.appInstances[id] = app;
         return app;
     }
 
+    private appShutdownPromises = new Set<Promise<any>>();
     private _shutdownApp(app: string | ApplicationInstance) {
         if (typeof app == "string") {
             app = this.appInstances[app];
         }
+
+        this.logMessage("info", `Stopping App: '${app.id}'...`)
+
         if (app != this.appInstances[app.id]) throw new Error("Attempt to reinitialize an inactive app");
-        app._shutdown();
+
+        delete this.appInstances[app.id];
+
+        const prom = app._shutdown();
+        this.appShutdownPromises.add(prom);
+        prom.then(() => this.appShutdownPromises.delete(prom));
+        // TODO Set a timer to check that it actually stopped?
+        return prom;
     }
 
     private async resyncApps() {
+        if (this.state != "running") return;
+
         const currentInstances = { ...this.appInstances }
         const desiredApps = this.currentConfig.apps;
 
+        // TODO Better support for dependencies.
+        //   Each app to await other_app.state == 'started'.
+        //   Restart apps here when one of it's deps change
+
         // Kill running apps that shouldn't be
         for (let [id, app] of Object.entries(currentInstances)) {
-            if (!desiredApps[id]) this._shutdownApp(app);
+            if (!desiredApps[id]) {
+                this._shutdownApp(app);
+            }
         }
 
-        // TODO Notify apps of config changes. Allow app to decide if it can handle it, or if it needs a reboot. (Do not do if apps utilize their own watchers)
+        // Notify apps of config changes. Allow app to decide if it can handle it, or if it needs a reboot.
+        // (Each application manages this for itself)
 
         // Startup apps that should be running, but aren't
         for (let [id, options] of Object.entries(desiredApps)) {
-            if (!this.appInstances[id]) this._startApp(id, options);
+            if (!this.appInstances[id]) {
+                this._startApp(id, options);
+            }
         }
     }
 
     private async readAndWatchConfig(file: string) {
+        const no_watching = this.options.no_watching;
+
         const _loadConfig = async () => {
             let parsed = await readConfigFile(file);
+
             const cfg = ConfigMerger.mergeConfigs(defaultConfig, parsed);
+
+            if (no_watching) {
+                cfg.daemon.watch = { app_configs: false, app_source: false, config: false }
+            }
+
             for (let [ak, acfg] of Object.entries(cfg.apps)) {
-                cfg.apps[ak] = AppConfigMerger.mergeConfigs(defaultAppConfig, {
+                const appcfg = AppConfigMerger.mergeConfigs(defaultAppConfig, {
                     watch: {
                         config: cfg.daemon.watch?.app_configs,
                         source: cfg.daemon.watch?.app_source,
                     }
                 }, acfg);
+                
+                if (no_watching) {
+                    appcfg.watch = { config: false, source: false }
+                }
+
+                cfg.apps[ak] = appcfg;
             }
 
             // console.debug("Loaded Config", cfg)
@@ -215,7 +242,7 @@ export class Hypervisor {
             const prevConfig = this.currentConfig;
             this._currentConfig = cfg;
 
-            // TODO In the apps case (and if using per-app watchers), current ordering is Shutdown removed, Create added, Update changed.
+            // TODO In the apps case, current ordering is Shutdown removed, Create added, Update changed.
             //    Shutdown, Update, Create may be more semantic, but it probably doesn't really matter.
             //    Possible solution: Allow handlers to yield? - Basically allowing broader watchers to wrap narrower ones
 
@@ -244,9 +271,10 @@ export class Hypervisor {
 
         await _loadConfig();
 
-        if (!this.options.no_watching) {
+        if (this.currentConfig.daemon.watch.config) {
+            this.logMessage("info", `Watching config file ${chalk.green(file)}`)
             const watcher = watchFile(file, () => {
-                console.info("Reloading Typedaemon Config")
+                this.logMessage("info", `Reloading Typedaemon Config`)
                 _loadConfig()
             });
             this.cleanupTasks.mark(() => watcher.close());

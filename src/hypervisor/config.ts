@@ -6,7 +6,7 @@ import { merger } from "@matchlighter/common_library/cjs/data/config"
 
 import { AppConfiguration } from "./config_app";
 import { convertTypescript } from "../common/util";
-import { HA_YAML_SCHEMA } from "../common/ha_yaml";
+import { parseYaml } from "../common/ha_yaml";
 import { requireFromString } from "./vm";
 
 export interface Configuration {
@@ -61,9 +61,7 @@ export const readConfigFile = async (file: string) => {
     }
 
     if (file.match(/\.ya?ml$/)) {
-        return yaml.load(csrc, {
-            schema: HA_YAML_SCHEMA,
-        });
+        return parseYaml(csrc, { filename: file });
     }
 
     throw new Error("Unkown config file type");
