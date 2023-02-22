@@ -3,7 +3,7 @@ import { debounce } from "../common/limit";
 import { colorLogLevel, timeoutPromise } from "../common/util";
 import { Hypervisor } from "./hypervisor";
 import { ListenerSignature, TypedEmitter } from "tiny-typed-emitter";
-import { AppLifecycle } from "./application";
+import { AppLifecycle } from "./application_instance";
 import { upcaseFirstChar } from "@matchlighter/common_library/cjs/strings";
 import { ConsoleMethod } from "./vm";
 import { Merge } from "type-fest";

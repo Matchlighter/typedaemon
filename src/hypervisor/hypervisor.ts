@@ -13,11 +13,11 @@ import { LifecycleHelper } from "../common/lifecycle_helper";
 
 import { Configuration, ConfigMerger, defaultConfig, readConfigFile } from "./config";
 import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
-import { ApplicationInstance } from "./application";
-import { PluginInstance } from "../plugins/plugin";
+import { ApplicationInstance } from "./application_instance";
 import { ConsoleMethod } from "./vm";
 import { AppNamespace } from "./managed_apps";
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
+import { PluginInstance } from "./plugin_instance";
 
 type ConfigWatchHandler<T> = (newConfig: T, oldConfig: T) => void;
 

@@ -1,18 +1,9 @@
 
-import { AppLifecycle, ApplicationInstance, FallbackRequireRestart } from "../hypervisor/application";
+import { AppLifecycle, ApplicationInstance, FallbackRequireRestart } from "../hypervisor/application_instance";
 import { Hypervisor } from "../hypervisor/hypervisor";
-import { HyperWrapper } from "../hypervisor/managed_apps";
+import { BaseInstanceClient, HyperWrapper } from "../hypervisor/managed_apps";
 
-export class Application<C = any> {
-    constructor(hyper_wrapper: ApplicationInstance) {
-        this[HyperWrapper] = hyper_wrapper;
-    }
-
-    initialize() { }
-    shutdown() { }
-
-    [HyperWrapper]: ApplicationInstance;
-
+export class Application<C = any> extends BaseInstanceClient<ApplicationInstance> {
     configuration_updated(new_config: C, old_config: C) {
         throw new FallbackRequireRestart();
     }

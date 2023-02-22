@@ -6,7 +6,7 @@ import * as VM from "vm2";
 import * as babel from "@babel/core"
 
 import { parseYaml } from "../common/ha_yaml";
-import { ApplicationInstance } from "./application";
+import { ApplicationInstance } from "./application_instance";
 import { TupleToUnion } from "../common/util";
 import { APP_BABEL_CONFIG } from "../app_transformer";
 
