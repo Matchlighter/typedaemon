@@ -1,5 +1,6 @@
 
 import { observable } from 'mobx'
+import * as ws from "ws";
 import {
     createConnection,
     getStates,
@@ -9,16 +10,33 @@ import {
     HassServiceTarget,
     createLongLivedTokenAuth,
     HassEvent,
+    ERR_CANNOT_CONNECT,
+    ERR_CONNECTION_LOST,
+    ERR_HASS_HOST_REQUIRED,
+    ERR_INVALID_AUTH,
+    ERR_INVALID_HTTPS_TO_HTTP,
 } from 'home-assistant-js-websocket'
 
-import { sync_to_observable } from '@matchlighter/common_library/lib/sync_observable'
+import { sync_to_observable } from '@matchlighter/common_library/cjs/sync_observable'
 
 import { ResumablePromise, SerializedResumable } from "../../runtime/resumable_promise";
-import { Plugin } from "../plugin";
 import { homeAssistantApi } from './api';
-import { HyperWrapper } from '../../runtime/application';
 import { current } from '../../hypervisor/application';
 import { get_plugin } from '../../runtime/hooks';
+import { PluginType } from '../../hypervisor/config_plugin';
+import { Plugin } from '../base';
+import { HyperWrapper } from '../../hypervisor/managed_apps';
+
+// @ts-ignore
+global.WebSocket ||= ws.WebSocket
+
+const HA_WS_ERRORS = {
+    [ERR_CANNOT_CONNECT]: "ERR_CANNOT_CONNECT",
+    [ERR_CONNECTION_LOST]: "ERR_CONNECTION_LOST",
+    [ERR_HASS_HOST_REQUIRED]: "ERR_HASS_HOST_REQUIRED",
+    [ERR_INVALID_AUTH]: "ERR_INVALID_AUTH",
+    [ERR_INVALID_HTTPS_TO_HTTP]: "ERR_INVALID_HTTPS_TO_HTTP",
+}
 
 const STATE_SYNC_OPTS: Parameters<typeof sync_to_observable>[2] = {
     refs: ['$.*.context', '$.*.attributes.*'],
@@ -28,7 +46,7 @@ function isStateChangedEvent(event: HassEvent): event is StateChangedEvent {
     return event.event_type == "state_changed";
 }
 
-export class HomeAssistantPlugin extends Plugin {
+export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
     readonly api = homeAssistantApi({ pluginId: this[HyperWrapper].id });
 
     async initialize() {
@@ -36,6 +54,7 @@ export class HomeAssistantPlugin extends Plugin {
     }
 
     async shutdown() {
+        this._ha_api?.close();
         clearInterval(this.pingInterval);
     }
 
@@ -70,10 +89,26 @@ export class HomeAssistantPlugin extends Plugin {
     }
 
     private async connect() {
-        const ha = await createConnection({
-            auth: createLongLivedTokenAuth(this.config.url, this.config.access_token),
-        })
-        this._ha_api = ha;
+        let url = this.config.url;
+        let access_token = this.config.access_token;
+
+        if ('SUPERVISOR_TOKEN' in process.env) {
+            url ||= "http://supervisor/core"
+            access_token ||= process.env['SUPERVISOR_TOKEN']
+        }
+
+        try {
+            const ha = await createConnection({
+                auth: createLongLivedTokenAuth(this.config.url, this.config.access_token),
+            })
+            this._ha_api = ha;
+        } catch (ex) {
+            if (HA_WS_ERRORS[ex]) {
+                throw new Error(`HA WebSocket Error: ${HA_WS_ERRORS[ex]}`);
+            } else {
+                throw ex;
+            }
+        }
         this.pingInterval = setInterval(() => {
             if (this._ha_api.connected) this._ha_api.ping();
         }, 30000)

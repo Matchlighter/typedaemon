@@ -61,7 +61,10 @@ export function timeoutPromise<T>(timeout: number, promise: Promise<T>, timeoutA
 
         promise.then((result) => {
             clearTimeout(timer);
-            accept(result)
+            accept(result);
+        }, (err) => {
+            clearTimeout(timer);
+            reject(err);
         })
     })
 }
@@ -69,6 +72,10 @@ export function timeoutPromise<T>(timeout: number, promise: Promise<T>, timeoutA
 export function colorLogLevel(level: ConsoleMethod | string) {
     if (level == "error") return chalk.red(level);
     if (level == "warn") return chalk.yellow(level);
+    if (level == "info") return chalk.blue(level);
+    if (level == "log") return chalk.blue(level);
+    if (level == "debug") return chalk.gray(level);
+    if (level == "lifecycle") return chalk.green(level);
     return level;
 }
 

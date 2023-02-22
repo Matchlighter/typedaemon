@@ -32,8 +32,6 @@ export async function transpileFile(file) {
         ...APP_BABEL_CONFIG,
     })
 
-    console.log(transpiled.code)
-
     return transpiled;
 }
 

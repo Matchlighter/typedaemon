@@ -1,6 +1,6 @@
 
 
-import Module from "module";
+import * as Module from "module";
 import * as fs from "fs";
 import * as VM from "vm2";
 import * as babel from "@babel/core"
@@ -63,12 +63,6 @@ export function createApplicationVM(app: ApplicationInstance) {
         require: {
             builtin: ['*'],
             context: "host",
-            // customRequire: (req) => {
-            //     // TODO If non-system, mark dependency tree and setup watcher
-            //     console.log(req);
-            //     console.log(Object.keys(require.cache))
-            //     return require(req);
-            // },
             external: true,
         },
     })
@@ -76,21 +70,14 @@ export function createApplicationVM(app: ApplicationInstance) {
     const vmResolver: VMInternalResolver = vm['_resolver'];
 
     patch(vmResolver, 'pathContext', original => function (filename, filetype) {
-        if (filename.includes("node_modules")) {
-            return "host"
-        } else {
-            return "sandbox"
-        }
+        return app.includedFileScope(filename);
     });
 
     patch(vmResolver, 'resolve', original => function (...args) {
         const [calling_module, reuested_module, opts, extension_handlers, direct] = args;
-        const resolvedTo = original.call(this, ...args)
-
-        app.markFileDependency(resolvedTo);
-
+        const resolvedTo: string = original.call(this, ...args)
+        app.markFileDependency(resolvedTo, calling_module.filename);
         // console.log("Resolved", reuested_module, "from", calling_module.filename, "to", resolvedTo)
-
         return resolvedTo;
     })
 

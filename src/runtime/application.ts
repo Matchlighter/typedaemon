@@ -1,8 +1,7 @@
 
 import { AppLifecycle, ApplicationInstance, FallbackRequireRestart } from "../hypervisor/application";
 import { Hypervisor } from "../hypervisor/hypervisor";
-
-export const HyperWrapper = Symbol("Hypervisor Application");
+import { HyperWrapper } from "../hypervisor/managed_apps";
 
 export class Application<C = any> {
     constructor(hyper_wrapper: ApplicationInstance) {

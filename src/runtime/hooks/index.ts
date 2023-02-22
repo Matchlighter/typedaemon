@@ -3,8 +3,9 @@ import { optional_config_decorator } from "@matchlighter/common_library/cjs/deco
 
 import { ClassAutoAccessorDecorator } from "../../common/decorator_fills";
 import { current } from "../../hypervisor/application"
-import { Application, HyperWrapper, appProxy } from "../application";
+import { Application, appProxy } from "../application";
 import { PersistentEntryOptions } from "../../hypervisor/persistent_storage";
+import { HyperWrapper } from "../../hypervisor/managed_apps";
 
 export const get_internal_app = () => {
     return current.application;

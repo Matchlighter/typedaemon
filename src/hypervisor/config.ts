@@ -1,6 +1,5 @@
 
 import * as fs from "fs";
-import * as yaml from "js-yaml";
 
 import { merger } from "@matchlighter/common_library/cjs/data/config"
 
@@ -8,6 +7,7 @@ import { AppConfiguration } from "./config_app";
 import { convertTypescript } from "../common/util";
 import { parseYaml } from "../common/ha_yaml";
 import { requireFromString } from "./vm";
+import { PluginConfiguration } from "./config_plugin";
 
 export interface Configuration {
     daemon?: {
@@ -15,9 +15,22 @@ export interface Configuration {
             config?: boolean;
             app_configs?: boolean;
             app_source?: boolean;
-        }
+            // app_debounce?: number;
+        },
     },
-    plugins?: [],
+
+    /** List of modules that will be imported by the Hypervisor and passed to requiring apps (rather than apps importing their own instance of the module) */
+    hosted_modules?: (string | RegExp)[];
+
+    /**
+     * Additional packages that should be installed, specified in `package.json["dependencies"]` format.
+     * 
+     * These packages are automatically added to `hosted_modules`
+     */
+    dependencies?: any;
+
+    plugins?: Record<string, PluginConfiguration>,
+
     apps: Record<string, AppConfiguration>,
 }
 
@@ -27,8 +40,10 @@ export const defaultConfig: Configuration = {
             config: true,
             app_configs: true,
             app_source: true,
+            // app_debounce: 2000,
         }
     },
+    plugins: {},
     apps: {},
 }
 

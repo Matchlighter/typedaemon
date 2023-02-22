@@ -20,9 +20,12 @@
     "isolated-vm": "^4.4.2",
     "js-yaml": "^4.1.0",
     "md5": "^2.3.0",
+    "mobx": "^6.8.0",
     "tiny-typed-emitter": "^2.1.0",
+    "type-fest": "^3.6.0",
     "typescript": "^5.0.0-beta",
     "vm2": "^3.9.14",
+    "ws": "^8.12.1",
     "yargs": "^17.7.0"
   },
   "devDependencies": {
@@ -30,6 +33,7 @@
     "@types/chalk": "^2.2.0",
     "@types/deep-eql": "^4.0.0",
     "@types/md5": "^2.3.2",
+    "@types/ws": "^8.5.4",
     "@types/yargs": "^17.0.22",
     "ts-node": "^10.9.1"
   }

@@ -7,11 +7,12 @@
 
 "use strict";
 
-import assert from "assert";
+import * as assert from "assert";
+
 import { hoist } from "./hoist";
 import { Emitter } from "./emit";
-import replaceShorthandObjectMethod from "./replaceShorthandObjectMethod";
 import * as util from "./util";
+import replaceShorthandObjectMethod from "./replaceShorthandObjectMethod";
 
 export const getVisitor = ({ types: t }: typeof import("@babel/core")) => ({
   Method(path, state) {

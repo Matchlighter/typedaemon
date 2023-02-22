@@ -4,6 +4,7 @@ import { NodeVM, VM } from 'vm2';
 import * as path from 'path';
 import { TypedEmitter } from 'tiny-typed-emitter';
 import * as chalk from 'chalk';
+import deepEqual = require('deep-eql');
 
 import { upcaseFirstChar } from "@matchlighter/common_library/cjs/strings"
 
@@ -16,6 +17,7 @@ import { PersistentStorage } from './persistent_storage';
 import { ConsoleMethod, createApplicationVM } from './vm';
 import { colorLogLevel, watchFile } from '../common/util';
 import { debounce } from '../common/limit';
+import { BaseInstance } from './managed_apps';
 
 const CurrentAppStore = new AsyncLocalStorage<ApplicationInstance>()
 
@@ -27,22 +29,14 @@ export const current = {
     get hypervisor() { return CurrentAppStore.getStore()?.hypervisor },
 }
 
-interface ApplicationInstanceEvents {
-    started: () => void;
-    stopping: () => void;
-    stopped: () => void;
-    lifecycle: (state: AppLifecycle) => void;
+export interface ApplicationMetadata {
+    applicationClass?: typeof Application;
+    dependencies?: any;
 }
 
-export type AppLifecycle = 'initializing' | 'starting' | 'started' | 'stopping' | 'stopped' | 'dead';
+export type AppLifecycle = 'initializing' | 'compiling' | 'starting' | 'started' | 'stopping' | 'stopped' | 'dead';
 
-export class ApplicationInstance extends TypedEmitter<ApplicationInstanceEvents> {
-    constructor(readonly hypervisor: Hypervisor, readonly id: string, options: AppConfiguration) {
-        super()
-        this.options = options;
-    }
-
-    readonly options: AppConfiguration;
+export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
     get app_config() {
         return this.options.config;
     }
@@ -73,11 +67,27 @@ export class ApplicationInstance extends TypedEmitter<ApplicationInstanceEvents>
     }
 
     logMessage(level: ConsoleMethod | 'system' | 'lifecycle', ...rest) {
-        console.log(chalk`{greenBright [Application: ${this.id}]} - ${colorLogLevel(level)} -`, ...rest);
+        console.log(chalk`{blue [Application: ${this.id}]} - ${colorLogLevel(level)} -`, ...rest);
     }
 
-    markFileDependency(file: string, quiet = false) {
-        if (!this.options.watch.source) return;
+    includedFileScope(file: string) {
+        if (!file) return "sandbox";
+        // TODO If hosted_module, "host"
+        // TODO If global dependency, "host"
+        // TODO If app dependency, "sandbox"
+        if (file.match(/node_modules/)) {
+            return "host"
+        };
+        return "sandbox";
+    }
+
+    private watchedDependencies = new Set<string>();
+    markFileDependency(file: string, calling_module?: string) {
+        if (!this.options.watch?.source) return;
+        if (this.includedFileScope(file) != "sandbox") return;
+
+        // Don't watch the new file if it was somehow hopped to
+        // if (calling_module && !this.watchedDependencies.has(calling_module)) return;
 
         if (file == this.entrypoint) {
             this.logMessage("debug", `Watching entrypoint file (${chalk.green(file)}) for changes`);
@@ -88,32 +98,56 @@ export class ApplicationInstance extends TypedEmitter<ApplicationInstanceEvents>
         const watcher = watchFile(file, () => {
             this.restartAfterSourceChange();
         });
-        this.cleanupTasks.mark(() => watcher.close());
+        this.watchedDependencies.add(file);
+
+        this.cleanupTasks.mark(() => {
+            watcher.close()
+            this.watchedDependencies.delete(file);
+        });
     }
 
     @debounce({ timeToStability: 2000 })
     private restartAfterSourceChange() {
         this.logMessage("info", `Source dependency updated. Restarting`)
-        this.hypervisor.reinitializeApplication(this);
+        this.namespace.reinitializeInstance(this);
     }
 
     async _start() {
-        this.transitionState("starting")
+        this.transitionState("compiling");
 
         this.markFileDependency(this.entrypoint)
 
         const module = await this.compileModule();
-        const AppClass = module[this.options.export || 'default'];
+        // TODO Ordering is bad here = module needs deps, but deps are stored on module.
+        //   We're going to need to so some static analysis.
+        //   Or have require return proxies.
+        //   Or compile the module twice - host modules are linked as expected, missing modules are set as undefined.
+        //     We can skip the second iteration if all modules are already installed
+        const mainExport = module[this.options.export || 'default'];
+        const metadata: ApplicationMetadata = (typeof mainExport == 'object' && mainExport) || mainExport.metadata || module.metadata || { applicationClass: mainExport, ...module, ...mainExport };
+
+        const dependencies = {
+            ...metadata.dependencies,
+            ...this.options.dependencies || {},
+        }
+        if (Object.keys(dependencies).length > 0) {
+            this.logMessage("info", `Installing Dependencies`);
+            // TODO
+        }
+
+        this.transitionState("starting")
+
+        const AppClass = metadata.applicationClass;
         this._instance = new AppClass(this);
 
         // Self-watch for config changes
-        if (this.options.watch.config) {
+        if (this.options.watch?.config) {
             const disposer = this.hypervisor.watchConfigEntry<AppConfiguration>(`apps.${this.id}`, async (ncfg, ocfg) => {
                 if (this.state != 'started') return;
 
-                if (ncfg.source != ocfg.source || ncfg.export != ocfg.export) {
+                if (!deepEqual(immutableConfigBits(ocfg), immutableConfigBits(ncfg))) {
                     this.logMessage("debug", `Configuration changed significantly, restarting`);
-                    this.hypervisor.reinitializeApplication(this);
+                    this.namespace.reinitializeInstance(this);
                     return
                 }
 
@@ -125,7 +159,7 @@ export class ApplicationInstance extends TypedEmitter<ApplicationInstanceEvents>
                 } catch (ex) {
                     if (ex instanceof RequireRestart) {
                         this.logMessage("debug", `Determined that changes require an app restart, restarting`);
-                        this.hypervisor.reinitializeApplication(this);
+                        this.namespace.reinitializeInstance(this);
                     } else {
                         this.logMessage("error", `Error occurred while updating configuration:`, ex);
                         throw ex;
@@ -174,13 +208,12 @@ export class ApplicationInstance extends TypedEmitter<ApplicationInstanceEvents>
         const vm = createApplicationVM(this);
         return this._vm = vm;
     }
+}
 
-    private _state: AppLifecycle = "initializing";
-    private transitionState(nstate: AppLifecycle) {
-        this._state = nstate;
-        this.logMessage("lifecycle", upcaseFirstChar(nstate))
-        this.emit("lifecycle", nstate);
-        this.emit(nstate as any);
-    }
-    get state() { return this._state }
+function immutableConfigBits(cfg: AppConfiguration): Partial<AppConfiguration> {
+    const immutable = { ...cfg };
+    delete immutable.config;
+    delete immutable.logs;
+    delete immutable.watch;
+    return immutable
 }
