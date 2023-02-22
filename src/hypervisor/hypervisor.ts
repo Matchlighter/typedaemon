@@ -1,6 +1,5 @@
 
 import * as fs from "fs";
-import * as md5 from "md5";
 import * as path from "path";
 import * as deep_eql from "deep-eql"
 import * as chalk from "chalk";
@@ -9,7 +8,7 @@ import { MultiMap } from "@matchlighter/common_library/cjs/data/multimap"
 import { deep_get } from "@matchlighter/common_library/cjs/deep"
 
 import { DeepReadonly, colorLogLevel, fileExists, timeoutPromise, watchFile } from "../common/util";
-import { debounce, throttle } from "../common/limit";
+import { debounce } from "../common/limit";
 import { LifecycleHelper } from "../common/lifecycle_helper";
 
 import { Configuration, ConfigMerger, defaultConfig, readConfigFile } from "./config";
@@ -17,6 +16,8 @@ import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_ap
 import { ApplicationInstance } from "./application";
 import { PluginInstance } from "../plugins/plugin";
 import { ConsoleMethod } from "./vm";
+import { AppNamespace } from "./managed_apps";
+import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
 
 type ConfigWatchHandler<T> = (newConfig: T, oldConfig: T) => void;
 
@@ -31,7 +32,8 @@ export class Hypervisor {
 
     }
 
-    private state: "running" | "shutting_down" = "running";
+    private _state: "running" | "shutting_down" = "running";
+    get state() { return this._state }
 
     get working_directory() { return this.options.working_directory }
 
@@ -61,7 +63,7 @@ export class Hypervisor {
     }
 
     logMessage(level: ConsoleMethod | 'lifecycle', ...rest) {
-        console.log(chalk`{blueBright [Hypervisor]} - ${colorLogLevel(level)} -`, ...rest);
+        console.log(chalk`{cyan [Hypervisor]} - ${colorLogLevel(level)} -`, ...rest);
     }
 
     async start() {
@@ -70,17 +72,24 @@ export class Hypervisor {
         this.logMessage("info", "Loading Config");
         await this.findAndLoadConfig();
 
-        process.on('SIGINT', () => {
-            this.logMessage("info", "SIGINT received. Shutting down...")
-            this.state = "shutting_down";
-            this.shutdown();
+        process.on('SIGINT', async () => {
+            console.log('');
+            this.logMessage("info", "SIGINT received. Shutting down...");
+            this._state = "shutting_down";
+            await this.shutdown();
+            process.exit(0);
         });
 
-        this.logMessage("info", "Starting Apps");
-        await this.resyncApps();
-        this.watchConfigEntry("apps", () => this.resyncApps());
+        this.logMessage("info", "Starting Plugins");
+        const proms = this.pluginInstances.sync(this.currentConfig.plugins || {});
+        await timeoutPromise(10000, Promise.allSettled(proms), () => {
+            this.logMessage("warn", `Plugins failed to start within 10s`)
+        });
+        this.watchConfigEntry("plugins", () => this.pluginInstances.sync(this.currentConfig.plugins));
 
-        // TODO Start plugins, or make plugins lazy?
+        this.logMessage("info", "Starting Apps");
+        await this.appInstances.sync(this.currentConfig.apps || {});
+        this.watchConfigEntry("apps", () => this.appInstances.sync(this.currentConfig.apps));
     }
 
     async shutdown() {
@@ -88,21 +97,11 @@ export class Hypervisor {
 
         // Shutdown apps
         this.logMessage("info", "Stopping apps");
-        for (let [id, app] of Object.entries(this.appInstances)) {
-            this._shutdownApp(app);
-        }
-        await timeoutPromise(15000, Promise.all(this.appShutdownPromises), () => {
-            this.logMessage("error", "At least one application has not shutdown after 15 seconds. Taking drastic action.");
-            // TODO Drastic action
-        });
+        await this.appInstances.shutdown();
 
         // Shutdown plugins
         this.logMessage("info", "Stopping plugins");
-        // TODO Shutdown plugins
-        await timeoutPromise(15000, Promise.all(this.appShutdownPromises), () => {
-            this.logMessage("error", "At least one plugin has not shutdown after 15 seconds. Taking drastic action.");
-            // TODO Drastic action
-        });
+        await this.pluginInstances.shutdown();
 
         // Release file watchers and other cleanup
         this.logMessage("info", "Cleaning up");
@@ -129,86 +128,29 @@ export class Hypervisor {
         return await this.readAndWatchConfig(cfg_file)
     }
 
-    protected pluginInstances: Record<string, PluginInstance> = {};
-    getPlugin(id: string) {
-        return this.pluginInstances[id];
-    }
+    protected pluginInstances = new AppNamespace<PluginConfiguration, PluginInstance>(this, "Plugin", {
+        Host: PluginInstance,
+        getInstanceConfig: (id) => this.getConfigEntry(`plugins.${id}`),
+        summarizeInstance: (options) => {
+            const bits: string[] = [
+                chalk.green((options.type)),
+            ];
 
-    protected appInstances: Record<string, ApplicationInstance> = {};
-    getApplication(id: string) {
-        return this.appInstances[id];
-    }
-
-    @debounce({ timeToStability: 100, key_on: ([app]) => typeof app == 'string' ? app : app.id })
-    async reinitializeApplication(app: string | ApplicationInstance) {
-        if (typeof app == "string") {
-            app = this.appInstances[app];
-        }
-        const id = app.id;
-        await this._shutdownApp(app);
-        this._startApp(id);
-    }
-
-    private _startApp(id: string, options?: AppConfiguration) {
-        options ||= this.getConfigEntry(`apps.${id}`)
-
-        this.logMessage("info", chalk`Starting App: '${id}' ({green ${options.export}} from {green ${options.source}})...`)
-
-        const app = new ApplicationInstance(this, id, options);
-        app._start().catch((ex) => {
-            this.logMessage("error", `App '${id}' failed while starting up: `, ex)
-            this._shutdownApp(app);
-        });
-        this.appInstances[id] = app;
-        return app;
-    }
-
-    private appShutdownPromises = new Set<Promise<any>>();
-    private _shutdownApp(app: string | ApplicationInstance) {
-        if (typeof app == "string") {
-            app = this.appInstances[app];
-        }
-
-        this.logMessage("info", `Stopping App: '${app.id}'...`)
-
-        if (app != this.appInstances[app.id]) throw new Error("Attempt to reinitialize an inactive app");
-
-        delete this.appInstances[app.id];
-
-        const prom = app._shutdown();
-        this.appShutdownPromises.add(prom);
-        prom.then(() => this.appShutdownPromises.delete(prom));
-        // TODO Set a timer to check that it actually stopped?
-        return prom;
-    }
-
-    private async resyncApps() {
-        if (this.state != "running") return;
-
-        const currentInstances = { ...this.appInstances }
-        const desiredApps = this.currentConfig.apps;
-
-        // TODO Better support for dependencies.
-        //   Each app to await other_app.state == 'started'.
-        //   Restart apps here when one of it's deps change
-
-        // Kill running apps that shouldn't be
-        for (let [id, app] of Object.entries(currentInstances)) {
-            if (!desiredApps[id]) {
-                this._shutdownApp(app);
+            if ('url' in options) {
+                bits.push(chalk`at {green ${options.url}}`)
             }
-        }
 
-        // Notify apps of config changes. Allow app to decide if it can handle it, or if it needs a reboot.
-        // (Each application manages this for itself)
-
-        // Startup apps that should be running, but aren't
-        for (let [id, options] of Object.entries(desiredApps)) {
-            if (!this.appInstances[id]) {
-                this._startApp(id, options);
-            }
+            return bits.join(' ');
         }
-    }
+    });
+    getPlugin(id: string) { return this.pluginInstances.getInstance(id); }
+
+    protected appInstances = new AppNamespace<AppConfiguration, ApplicationInstance>(this, "Application", {
+        Host: ApplicationInstance,
+        getInstanceConfig: (id) => this.getConfigEntry(`apps.${id}`),
+        summarizeInstance: (options) => chalk`{green ${options.export}} from {green ${options.source}}`,
+    });
+    getApplication(id: string) { return this.appInstances.getInstance(id); }
 
     private async readAndWatchConfig(file: string) {
         const no_watching = this.options.no_watching;
@@ -222,6 +164,22 @@ export class Hypervisor {
                 cfg.daemon.watch = { app_configs: false, app_source: false, config: false }
             }
 
+            // Normalize plugin configs
+            for (let [ak, acfg] of Object.entries(cfg.plugins)) {
+                const plcfg = PluginConfigMerger.mergeConfigs(defaultPluginConfig, {
+                    watch: {
+                        config: cfg.daemon.watch?.app_configs,
+                    }
+                }, acfg);
+
+                if (no_watching) {
+                    plcfg.watch = { config: false }
+                }
+
+                cfg.plugins[ak] = plcfg;
+            }
+
+            // Normalize application configs
             for (let [ak, acfg] of Object.entries(cfg.apps)) {
                 const appcfg = AppConfigMerger.mergeConfigs(defaultAppConfig, {
                     watch: {
@@ -229,7 +187,7 @@ export class Hypervisor {
                         source: cfg.daemon.watch?.app_source,
                     }
                 }, acfg);
-                
+
                 if (no_watching) {
                     appcfg.watch = { config: false, source: false }
                 }
