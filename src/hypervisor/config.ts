@@ -1,5 +1,6 @@
 
 import * as fs from "fs";
+import * as json5 from 'json5';
 
 import { merger } from "@matchlighter/common_library/cjs/data/config"
 
@@ -72,7 +73,7 @@ export const readConfigFile = async (file: string) => {
     }
 
     if (file.match(/\.json$/)) {
-        return JSON.parse(csrc);
+        return json5.parse(csrc);
     }
 
     if (file.match(/\.ya?ml$/)) {

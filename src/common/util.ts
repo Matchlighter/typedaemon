@@ -1,8 +1,8 @@
 
-import * as babel from "@babel/core";
-import * as chalk from "chalk";
-import * as fs from "fs";
-import * as md5 from "md5";
+import babel = require("@babel/core");
+import chalk = require("chalk");
+import fs = require("fs");
+import md5 = require("md5");
 
 import { ConsoleMethod } from "../hypervisor/vm";
 import { debounce } from "./limit";
@@ -14,9 +14,9 @@ export type DeepReadonly<T> =
     T extends object ? DeepReadonlyObject<T> :
     T;
 
-interface DeepReadonlyArray<T> extends ReadonlyArray<DeepReadonly<T>> { }
+export interface DeepReadonlyArray<T> extends ReadonlyArray<DeepReadonly<T>> { }
 
-type DeepReadonlyObject<T> = {
+export type DeepReadonlyObject<T> = {
     readonly [P in keyof T]: DeepReadonly<T[P]>;
 };
 
@@ -45,7 +45,7 @@ export function pojso(pbj: any) {
     return true;
 }
 
-export class PromiseTimedout extends Error {}
+export class PromiseTimedout extends Error { }
 
 export function timeoutPromise<T>(timeout: number, promise: Promise<T>, timeoutAction?: () => void): Promise<T> {
     return new Promise((accept, reject) => {
@@ -100,4 +100,17 @@ export const fileExists = async (file: string) => {
     } catch {
         return false;
     }
+}
+
+export function trim(s: string, c: string | RegExp) {
+    if (c instanceof RegExp) {
+        c = c.source;
+    } else {
+        if (c === "]") c = "\\]";
+        if (c === "^") c = "\\^";
+        if (c === "\\") c = "\\\\";
+    }
+    return s.replace(new RegExp(
+        "^(" + c + ")+|(" + c + ")+$", "g"
+    ), "");
 }

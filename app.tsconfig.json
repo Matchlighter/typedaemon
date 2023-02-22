@@ -1,0 +1,12 @@
+{
+    "extends": "./app_base.tsconfig.json",
+
+    "compilerOptions": {
+        "paths": {
+            "@td": ["./dist"],
+            "@td/ha": ["./dist/plugins/home_assistant/api"],
+            "@td/mqtt": ["./dist/plugins/mqtt/api"],
+            "@td/*": ["./dist/*"]
+        }
+    }
+}

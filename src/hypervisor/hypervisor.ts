@@ -1,14 +1,13 @@
 
-import * as fs from "fs";
-import * as path from "path";
-import * as deep_eql from "deep-eql"
-import * as chalk from "chalk";
+import fs = require("fs")
+import path = require("path")
+import deep_eql = require("deep-eql")
+import chalk = require("chalk")
 
 import { MultiMap } from "@matchlighter/common_library/cjs/data/multimap"
 import { deep_get } from "@matchlighter/common_library/cjs/deep"
 
 import { DeepReadonly, colorLogLevel, fileExists, timeoutPromise, watchFile } from "../common/util";
-import { debounce } from "../common/limit";
 import { LifecycleHelper } from "../common/lifecycle_helper";
 
 import { Configuration, ConfigMerger, defaultConfig, readConfigFile } from "./config";
@@ -36,6 +35,7 @@ export class Hypervisor {
     get state() { return this._state }
 
     get working_directory() { return this.options.working_directory }
+    get operations_directory() { return path.resolve(this.working_directory, ".typedaemon") }
 
     protected cleanupTasks = new LifecycleHelper();
 

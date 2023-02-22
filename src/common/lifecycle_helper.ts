@@ -9,7 +9,7 @@ export class LifecycleHelper {
     }
 
     cleanup() {
-        for (let c of this.cleanups) {
+        for (let c of [...this.cleanups].reverse()) {
             c();
         }
     }

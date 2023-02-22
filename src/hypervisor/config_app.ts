@@ -7,6 +7,8 @@ export interface AppConfiguration {
     /** Only needed if using named, non-default export */
     export?: string;
 
+    operating_directory?: string;
+
     watch?: {
         config?: boolean;
         source?: boolean;
