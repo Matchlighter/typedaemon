@@ -1,18 +1,12 @@
 import chalk = require("chalk");
-import { colorLogLevel } from "../common/util";
-import { ApplicationInstance } from "../hypervisor/application";
-import { ConsoleMethod } from "../hypervisor/vm";
-import { Application } from "../runtime/application";
-import { BaseInstance, BaseInstanceClient, HyperWrapper } from "../hypervisor/managed_apps";
-import { PluginConfiguration, PluginType } from "../hypervisor/config_plugin";
-import { HomeAssistantPlugin } from "./home_assistant";
-import { LifecycleHelper } from "../common/lifecycle_helper";
-import { Plugin } from "./base";
 
-const PLUGIN_TYPES = {
-    "home_assistant": HomeAssistantPlugin,
-    // "mqtt"
-}
+import { colorLogLevel } from "../common/util";
+import { ConsoleMethod } from "../hypervisor/vm";
+import { BaseInstance } from "../hypervisor/managed_apps";
+import { PluginConfiguration } from "../hypervisor/config_plugin";
+import { LifecycleHelper } from "../common/lifecycle_helper";
+import { PLUGIN_TYPES } from "../plugins";
+import { Plugin } from "../plugins/base";
 
 export class PluginInstance extends BaseInstance<PluginConfiguration> {
     logMessage(level: ConsoleMethod | 'system' | 'lifecycle', ...rest) {

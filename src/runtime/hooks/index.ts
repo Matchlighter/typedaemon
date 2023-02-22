@@ -2,7 +2,7 @@
 import { optional_config_decorator } from "@matchlighter/common_library/cjs/decorators/utils";
 
 import { ClassAutoAccessorDecorator } from "../../common/decorator_fills";
-import { current } from "../../hypervisor/application"
+import { current } from "../../hypervisor/application_instance"
 import { Application, appProxy } from "../application";
 import { PersistentEntryOptions } from "../../hypervisor/persistent_storage";
 import { HyperWrapper } from "../../hypervisor/managed_apps";

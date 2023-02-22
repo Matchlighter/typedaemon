@@ -21,7 +21,7 @@ import { sync_to_observable } from '@matchlighter/common_library/cjs/sync_observ
 
 import { ResumablePromise, SerializedResumable } from "../../runtime/resumable_promise";
 import { homeAssistantApi } from './api';
-import { current } from '../../hypervisor/application';
+import { current } from '../../hypervisor/application_instance';
 import { get_plugin } from '../../runtime/hooks';
 import { PluginType } from '../../hypervisor/config_plugin';
 import { Plugin } from '../base';

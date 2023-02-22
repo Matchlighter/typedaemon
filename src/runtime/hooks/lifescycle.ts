@@ -1,5 +1,5 @@
 
-import { current } from "../../hypervisor/application"
+import { current } from "../../hypervisor/application_instance"
 import { Application } from "../application"
 
 interface CODReturnSignature<P extends any[], F extends (...params: any[]) => any> {
