@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "declaration": true,
     "allowSyntheticDefaultImports": false,
     // "isolatedModules": true,
     "lib": ["es6", "dom", "es2017", "ES2020", "ESNext"],
@@ -7,11 +8,12 @@
     "moduleResolution": "node",
     "sourceMap": true,
     "target": "ES2018",
+    "esModuleInterop": true,
 
     "resolveJsonModule": true,
 
     "baseUrl": "src",
-    "outDir": "build",
+    "outDir": "dist",
   },
   "include": [
     "src"

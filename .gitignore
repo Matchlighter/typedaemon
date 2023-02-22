@@ -34,3 +34,7 @@ yarn-error.log*
 .idea
 .ruby-gemset
 TAGS
+
+dist
+test_setup
+experiments

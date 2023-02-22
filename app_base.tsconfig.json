@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "allowSyntheticDefaultImports": false,
+        "lib": [
+            "es6",
+            "dom",
+            "es2017",
+            "ES2020",
+            "ESNext"
+        ],
+        "module": "CommonJS",
+        "moduleResolution": "node",
+        "sourceMap": true,
+        "target": "ES2018",
+        "esModuleInterop": true,
+        "resolveJsonModule": true
+    },
+    "compileOnSave": false
+}
