@@ -1,22 +1,23 @@
+import path = require("path");
 import chalk = require("chalk");
+import deepEqual = require("deep-eql");
 
-import { colorLogLevel } from "../common/util";
-import { ConsoleMethod } from "../hypervisor/vm";
-import { BaseInstance } from "../hypervisor/managed_apps";
+import { BaseInstance, InstanceLogConfig } from "../hypervisor/managed_apps";
 import { PluginConfiguration } from "../hypervisor/config_plugin";
-import { LifecycleHelper } from "../common/lifecycle_helper";
 import { PLUGIN_TYPES } from "../plugins";
 import { Plugin } from "../plugins/base";
+import { configChangeHandler } from "./managed_config_events";
 
-export class PluginInstance extends BaseInstance<PluginConfiguration> {
-    logMessage(level: ConsoleMethod | 'system' | 'lifecycle', ...rest) {
-        console.log(chalk`{blueBright [Plugin: ${this.id}]} - ${colorLogLevel(level)} -`, ...rest);
+export class PluginInstance extends BaseInstance<PluginConfiguration, Plugin> {
+    protected loggerOptions(): InstanceLogConfig {
+        const lopts = this.options.logging;
+        const file = lopts.file && path.resolve(this.hypervisor.working_directory, lopts.file);
+        return {
+            tag: chalk.blueBright`Plugin: ${this.id}`,
+            manager: { file, level: lopts?.level },
+            user: { file, level: lopts?.level },
+        }
     }
-
-    private _instance: Plugin;
-    get instance() { return this._instance }
-
-    readonly cleanupTasks = new LifecycleHelper();
 
     async _start() {
         this.transitionState("starting");
@@ -26,22 +27,16 @@ export class PluginInstance extends BaseInstance<PluginConfiguration> {
 
         // Self-watch for config changes
         if (this.options.watch?.config) {
-            const disposer = this.hypervisor.watchConfigEntry<Plugin>(`plugins.${this.id}`, async (ncfg, ocfg) => {
-                if (this.state != 'started') return;
-                this.namespace.reinitializeInstance(this);
+            const handler = configChangeHandler(this, async ({ handle }) => {
+                handle("logging", () => this._updateLogConfig())
             });
-            this.cleanupTasks.mark(disposer);
+            const disposer = this.hypervisor.watchConfigEntry<PluginConfiguration>(`plugins.${this.id}`, handler);
+            this.cleanups.append(disposer);
         }
 
         await this.instance?.initialize();
+        this.cleanups.append(() => this.instance.shutdown?.());
 
         this.transitionState('started');
-    }
-
-    async _shutdown() {
-        this.transitionState('stopping')
-        await this.instance?.shutdown();
-        this.cleanupTasks.cleanup();
-        this.transitionState('stopped')
     }
 }

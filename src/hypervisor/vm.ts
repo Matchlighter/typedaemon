@@ -14,6 +14,7 @@ import { parseYaml } from "../common/ha_yaml";
 import { ApplicationInstance } from "./application_instance";
 import { TupleToUnion } from "../common/util";
 import { APP_BABEL_CONFIG } from "../app_transformer";
+import { CONSOLE_METHODS, logMessage } from "./logging";
 
 type VMExtensions = Record<`.${string}`, (mod: Module, filename: string) => void>;
 
@@ -35,13 +36,13 @@ interface VMModule {
     globalPaths: string[];
 }
 
-const CONSOLE_METHODS = ['debug', 'log', 'info', 'warn', 'error', 'dir'] as const;
-export type ConsoleMethod = TupleToUnion<typeof CONSOLE_METHODS>
-
 export async function createApplicationVM(app: ApplicationInstance) {
-    const consoleMethods = {};
+    const consoleMethods: Console = {} as any;
     for (let m of CONSOLE_METHODS) {
-        consoleMethods[m] = (...args) => app.logMessage(m, ...args)
+        consoleMethods[m] = (...args) => app.logClientMessage(m, ...args)
+    }
+    consoleMethods["log"] = (...args) => {
+        consoleMethods.info(...args)
     }
 
     const loadedConfig = loadTsConfig(path.dirname(app.entrypoint));
@@ -52,7 +53,7 @@ export async function createApplicationVM(app: ApplicationInstance) {
         const paths: Record<string, string[]> = fl.compilerOptions?.paths || {};
         for (let [p, r] of Object.entries(paths)) {
             loadedPathMaps[p] = r.map(m => {
-                if (m.startsWith('./')) {
+                if (m.match(/^\.\.?\//)) {
                     m = path.join(path.dirname(cfg), m)
                 }
                 return m;
@@ -123,8 +124,11 @@ export async function createApplicationVM(app: ApplicationInstance) {
         if (tsMappedPath) requested_module = tsMappedPath;
 
         const resolvedTo: string = original.call(this, calling_module, requested_module, opts, extension_handlers, direct)
-        app.markFileDependency(resolvedTo, calling_module.filename);
-        // console.log("Resolved", reuested_module, "from", calling_module.filename, "to", resolvedTo)
+        // resolvedTo should be either an absolute path or an internal module. Don't try to watch an internal
+        if (resolvedTo.startsWith('/')) {
+            app.markFileDependency(resolvedTo, calling_module.filename);
+        }
+        logMessage("debug", `Resolved module '${requested_module.toString()}' from ${calling_module.filename} to ${resolvedTo}`);
         return resolvedTo;
     })
 
@@ -138,6 +142,7 @@ export async function createApplicationVM(app: ApplicationInstance) {
         return paths;
     });
 
+    
     const vmModule: VMModule = vm['_Module'];
     vmModule._extensions[".yml"] = vmModule._extensions[".yaml"] = (mod, filename) => {
         const yaml = fs.readFileSync(filename).toString();
