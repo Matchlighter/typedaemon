@@ -1,10 +1,12 @@
 
-import { AppLifecycle, ApplicationInstance, FallbackRequireRestart } from "../hypervisor/application_instance";
+import { AppLifecycle, ApplicationInstance } from "../hypervisor/application_instance";
 import { Hypervisor } from "../hypervisor/hypervisor";
 import { BaseInstanceClient, HyperWrapper } from "../hypervisor/managed_apps";
+import { FallbackRequireRestart } from "../hypervisor/managed_config_events";
 
 export class Application<C = any> extends BaseInstanceClient<ApplicationInstance> {
     configuration_updated(new_config: C, old_config: C) {
+        // TODO I don't really like this
         throw new FallbackRequireRestart();
     }
 

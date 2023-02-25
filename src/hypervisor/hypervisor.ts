@@ -7,16 +7,19 @@ import chalk = require("chalk")
 import { MultiMap } from "@matchlighter/common_library/cjs/data/multimap"
 import { deep_get } from "@matchlighter/common_library/cjs/deep"
 
-import { DeepReadonly, colorLogLevel, fileExists, timeoutPromise, watchFile } from "../common/util";
+import { DeepReadonly, fileExists, timeoutPromise, watchFile } from "../common/util";
 import { LifecycleHelper } from "../common/lifecycle_helper";
 
 import { Configuration, ConfigMerger, defaultConfig, readConfigFile } from "./config";
 import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
 import { ApplicationInstance } from "./application_instance";
-import { ConsoleMethod } from "./vm";
 import { AppNamespace } from "./managed_apps";
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
 import { PluginInstance } from "./plugin_instance";
+import { saveGeneratedTsconfig } from "../common/generate_tsconfig"
+import { ConsoleMethod, ExtendedLoger, LogLevel, ORIGINAL_CONSOLE, createDomainLogger } from "./logging"
+import { Plugin } from "../plugins/base"
+import { Application } from "../runtime/application"
 
 type ConfigWatchHandler<T> = (newConfig: T, oldConfig: T) => void;
 
@@ -62,8 +65,22 @@ export class Hypervisor {
         return this.watchConfigEntry(entry, handler);
     }
 
-    logMessage(level: ConsoleMethod | 'lifecycle', ...rest) {
-        console.log(chalk`{cyan [Hypervisor]} - ${colorLogLevel(level)} -`, ...rest);
+    private _logger: ExtendedLoger = createDomainLogger({
+        level: "info",
+        domain: chalk.cyan`Hypervisor`,
+    });
+    get logger() { return this._logger }
+
+    logMessage(level: LogLevel, ...rest) {
+        this.logger.logMessage(level, rest);
+    }
+
+    private updateLogConfiguration(cfg: Configuration['logging']) {
+        this._logger = createDomainLogger({
+            level: cfg.system,
+            domain: chalk.cyan`Hypervisor`,
+            file: path.resolve(this.working_directory, cfg.system_file),
+        })
     }
 
     async start() {
@@ -71,6 +88,13 @@ export class Hypervisor {
 
         this.logMessage("info", "Loading Config");
         await this.findAndLoadConfig();
+
+        this.getAndWatchConfigEntry("tsconfig", async (v) => {
+            this.logMessage("debug", "Writing generated tsconfig.json");
+            await saveGeneratedTsconfig(this)
+        })
+
+        this.getAndWatchConfigEntry("logging", (v) => this.updateLogConfiguration(v));
 
         process.on('SIGINT', async () => {
             console.log('');
@@ -128,7 +152,7 @@ export class Hypervisor {
         return await this.readAndWatchConfig(cfg_file)
     }
 
-    protected pluginInstances = new AppNamespace<PluginConfiguration, PluginInstance>(this, "Plugin", {
+    protected pluginInstances = new AppNamespace<PluginConfiguration, Plugin, PluginInstance>(this, "Plugin", {
         Host: PluginInstance,
         getInstanceConfig: (id) => this.getConfigEntry(`plugins.${id}`),
         summarizeInstance: (options) => {
@@ -145,7 +169,7 @@ export class Hypervisor {
     });
     getPlugin(id: string) { return this.pluginInstances.getInstance(id); }
 
-    protected appInstances = new AppNamespace<AppConfiguration, ApplicationInstance>(this, "Application", {
+    protected appInstances = new AppNamespace<AppConfiguration, Application, ApplicationInstance>(this, "Application", {
         Host: ApplicationInstance,
         getInstanceConfig: (id) => this.getConfigEntry(`apps.${id}`),
         summarizeInstance: (options) => chalk`{green ${options.export}} from {green ${options.source}}`,
@@ -160,6 +184,11 @@ export class Hypervisor {
 
             const cfg = ConfigMerger.mergeConfigs(defaultConfig, parsed);
 
+            cfg.logging.plugins_file ||= cfg.logging.system_file;
+
+            // cfg.logging.system_file = path.resolve(this.working_directory, cfg.logging.system_file);
+            // cfg.logging.plugins_file = path.resolve(this.working_directory, cfg.logging.plugins_file);
+
             if (no_watching) {
                 cfg.daemon.watch = { app_configs: false, app_source: false, config: false }
             }
@@ -169,6 +198,10 @@ export class Hypervisor {
                 const plcfg = PluginConfigMerger.mergeConfigs(defaultPluginConfig, {
                     watch: {
                         config: cfg.daemon.watch?.app_configs,
+                    },
+                    logging: {
+                        level: cfg.logging.system,
+                        file: cfg.logging.plugins_file?.replaceAll("{plugin}", ak),
                     }
                 }, acfg);
 
@@ -185,6 +218,12 @@ export class Hypervisor {
                     watch: {
                         config: cfg.daemon.watch?.app_configs,
                         source: cfg.daemon.watch?.app_source,
+                    },
+                    logging: {
+                        file: cfg.logging.applications_file?.replaceAll("{app}", ak),
+                        _thin_app_file: cfg.logging.system_file,
+                        level: cfg.logging.application,
+                        system_level: cfg.logging.system,
                     }
                 }, acfg);
 
@@ -230,12 +269,12 @@ export class Hypervisor {
         await _loadConfig();
 
         if (this.currentConfig.daemon.watch.config) {
-            this.logMessage("info", `Watching config file ${chalk.green(file)}`)
+            this.logMessage("debug", `Watching config file ${chalk.green(file)}`)
             const watcher = watchFile(file, () => {
                 this.logMessage("info", `Reloading Typedaemon Config`)
                 _loadConfig()
             });
-            this.cleanupTasks.mark(() => watcher.close());
+            this.cleanupTasks.append(() => watcher.close());
         }
     }
 }

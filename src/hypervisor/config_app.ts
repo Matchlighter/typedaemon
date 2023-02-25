@@ -1,5 +1,6 @@
 
 import { merger } from "@matchlighter/common_library/cjs/data/config"
+import { LogLevel } from "./logging";
 
 export interface AppConfiguration {
     source: string;
@@ -15,9 +16,11 @@ export interface AppConfiguration {
         // debounce?: number;
     }
 
-    logs?: string | {
+    logging?: {
         file?: string;
-        level?: "error" | "warn" | "info" | "debug";
+        _thin_app_file?: string;
+        level?: LogLevel;
+        system_level?: LogLevel;
     }
 
     dependencies?: any;
@@ -28,13 +31,13 @@ export interface AppConfiguration {
 export const defaultAppConfig: AppConfiguration = {
     source: null,
     export: "default",
-    logs: {},
+    logging: {},
     config: {},
 }
 
 export const AppConfigMerger = merger<AppConfiguration>({
     watch: merger(),
-    logs: merger({
+    logging: merger({
         
     }, (v) => (typeof v == 'string' ? { file: v } : v)),
 })

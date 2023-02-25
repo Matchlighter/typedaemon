@@ -1,40 +1,44 @@
 
 import { merger } from "@matchlighter/common_library/cjs/data/config"
+import { LogLevel } from "./logging";
 
-interface Base {
+export interface BasePluginConfig {
     watch?: {
         config?: boolean;
     }
 
-    logs?: string | {
+    logging?: {
         file?: string;
-        level?: "error" | "warn" | "info" | "debug";
+        level?: LogLevel;
     }
 }
 
-interface HomeAssistant {
+export interface HomeAssistantPluginConfig {
     type: "home_assistant";
     url: string;
     access_token: string;
 }
 
-interface MQTT {
+export interface MQTTPluginConfig {
     type: "mqtt";
-    url: string;
+    url?: string;
+    host?: string;
+    username?: string;
+    password?: string;
 }
 
-interface Other {
+export interface OtherPluginConfig {
     type: string;
     [key: string]: any;
 }
 
 export interface PluginType {
-    base: Base;
-    home_assistant: HomeAssistant;
-    mqtt: MQTT;
+    base: BasePluginConfig;
+    home_assistant: HomeAssistantPluginConfig;
+    mqtt: MQTTPluginConfig;
 }
 
-export type PluginConfiguration = Base & (HomeAssistant | MQTT | Other);
+export type PluginConfiguration = BasePluginConfig & (HomeAssistantPluginConfig | MQTTPluginConfig | OtherPluginConfig);
 
 export const defaultPluginConfig: PluginConfiguration = {
     type: null,

@@ -1,6 +1,7 @@
 
 import * as fs from "fs";
 import * as json5 from 'json5';
+import { TsConfigJson } from "type-fest";
 
 import { merger } from "@matchlighter/common_library/cjs/data/config"
 
@@ -9,6 +10,7 @@ import { convertTypescript } from "../common/util";
 import { parseYaml } from "../common/ha_yaml";
 import { requireFromString } from "./vm";
 import { PluginConfiguration } from "./config_plugin";
+import { LogLevel } from "./logging";
 
 export interface Configuration {
     daemon?: {
@@ -19,6 +21,23 @@ export interface Configuration {
             // app_debounce?: number;
         },
     },
+
+    logging?: {
+        application?: LogLevel;
+        applications_file?: string;
+
+        plugins_file?: string;
+
+        system?: LogLevel;
+        system_file?: string;
+    };
+
+    /**
+     * Override parts of the TypeDaemon-default `tsconfig.json` file
+     */
+    tsconfig?: TsConfigJson;
+
+    path_maps?: Record<string, string[]>;
 
     /** List of modules that will be imported by the Hypervisor and passed to requiring apps (rather than apps importing their own instance of the module) */
     hosted_modules?: (string | RegExp)[];
@@ -44,6 +63,12 @@ export const defaultConfig: Configuration = {
             // app_debounce: 2000,
         }
     },
+    logging: {
+        application: "info",
+        // applications_file: "{app}.log",
+        system: "warn",
+        system_file: "./logs/typedaemon.log",
+    },
     plugins: {},
     apps: {},
 }
@@ -52,6 +77,7 @@ export const ConfigMerger = merger<Configuration>({
     daemon: merger({
         watch: merger(),
     }),
+    logging: merger(),
 })
 
 export const readConfigFile = async (file: string) => {

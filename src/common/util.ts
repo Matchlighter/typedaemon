@@ -1,11 +1,12 @@
 
 import babel = require("@babel/core");
-import chalk = require("chalk");
 import fs = require("fs");
 import md5 = require("md5");
+import path = require("path");
 
-import { ConsoleMethod } from "../hypervisor/vm";
 import { debounce } from "./limit";
+
+export const TYPEDAEMON_PATH = path.join(__dirname, '..');
 
 // Deep ReadOnly
 export type DeepReadonly<T> =
@@ -67,16 +68,6 @@ export function timeoutPromise<T>(timeout: number, promise: Promise<T>, timeoutA
             reject(err);
         })
     })
-}
-
-export function colorLogLevel(level: ConsoleMethod | string) {
-    if (level == "error") return chalk.red(level);
-    if (level == "warn") return chalk.yellow(level);
-    if (level == "info") return chalk.blue(level);
-    if (level == "log") return chalk.blue(level);
-    if (level == "debug") return chalk.gray(level);
-    if (level == "lifecycle") return chalk.green(level);
-    return level;
 }
 
 export const watchFile = (file: string, callback: (file: string) => void, config: { throttle: number } = { throttle: 3000 }) => {

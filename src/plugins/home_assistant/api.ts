@@ -7,17 +7,33 @@ import { optional_config_decorator } from "@matchlighter/common_library/cjs/deco
 import { get_plugin } from "../../runtime/hooks";
 import { ClassAutoAccessorDecorator, ClassGetterDecorator, ClassMethodDecorator } from "../../common/decorator_fills";
 import { HomeAssistantPlugin } from ".";
+import { current } from "../../hypervisor/current";
 
-interface EntityOptions {
+export interface EntityOptions {
+    id?: string;
     uuid?: string;
     friendly_name?: string;
 
     [key: string]: any;
 }
 
-interface FullState<V> {
+export interface FullState<V> {
     state: V;
     [key: string]: any;
+}
+
+export interface InputOptions extends EntityOptions {
+    /** Whether the state of the property should update immediately, or if it should wait for HA to confirm the updated value */
+    optimistic?: boolean;
+    /**
+     * By default, Typedaemon will look for and link an existing entity, or create one if it doesn't exist.
+     * Setting this to `true` will prevent the creation of an entity, setting it to `false` will assert that the entity doesn't already exist
+     */
+    existing?: boolean;
+}
+
+export interface ButtonOptions extends EntityOptions {
+
 }
 
 export function homeAssistantApi(options: { pluginId: string }) {
@@ -52,16 +68,6 @@ export function homeAssistantApi(options: { pluginId: string }) {
         weather: stateOnlyDecorator<{}, {}>("weather"),
         device_tracker: stateOnlyDecorator<{}, string>("device_tracker"),
         person: stateOnlyDecorator<{}, string>("person"),
-    }
-
-    interface InputOptions extends EntityOptions {
-        /** Whether the state of the property should update immediately, or if it should wait for HA to confirm the updated value */
-        optimistic?: boolean;
-        /**
-         * By default, Typedaemon will look for and link an existing entity, or create one if it doesn't exist.
-         * Setting this to `true` will prevent the creation of an entity, setting it to `false` will assert that the entity doesn't already exist
-         */
-        existing?: boolean;
     }
 
     function _inputDecorator<O extends {} = {}>(domain: string, options: InputOptions & O) {
@@ -116,11 +122,7 @@ export function homeAssistantApi(options: { pluginId: string }) {
         },
     }
 
-    interface ButtonOptions extends EntityOptions {
-
-    }
-
-    const button = optional_config_decorator([], (options?: ButtonOptions): ClassMethodDecorator => {
+    const button = optional_config_decorator([null], (options?: ButtonOptions): ClassMethodDecorator => {
         return (func, context) => {
             context.addInitializer(() => {
                 // TODO Register HA entity
@@ -153,7 +155,7 @@ export function homeAssistantApi(options: { pluginId: string }) {
     }
 
     async function findRelatedDevices(entity: HassEntity) {
-
+        // TODO
     }
 
     async function findRelatedEntities(entity: HassEntity): Promise<string[]> {
@@ -165,6 +167,14 @@ export function homeAssistantApi(options: { pluginId: string }) {
         // return response2['entity'] || [];
         return response1['entity'] || [];
     }
+
+    function subscribe() {
+        // TODO
+        // TODO Add the subscription to a cleanup registry!
+    }
+
+    // TODO Unlink any events that we setup on HA when the app shuts down
+    //   current.application.cleanups.append()
 
     return {
         _plugin,
@@ -178,6 +188,8 @@ export function homeAssistantApi(options: { pluginId: string }) {
         toggleSwitch,
     }
 }
+
+export type HomeAssistantApi = ReturnType<typeof homeAssistantApi>;
 
 export const api = {
     ...homeAssistantApi({ pluginId: "type:home_assistant" }),

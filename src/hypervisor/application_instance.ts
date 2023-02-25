@@ -1,5 +1,4 @@
 
-import { AsyncLocalStorage } from 'async_hooks'
 import { NodeVM } from 'vm2';
 import path = require('path');
 import chalk = require('chalk');
@@ -9,35 +8,27 @@ import execa = require('execa');
 import extract_comments = require('extract-comments');
 
 import { AppConfiguration } from "./config_app";
-import { LifecycleHelper } from '../common/lifecycle_helper';
 import { ResumableStore } from '../runtime/resumable_store';
 import { Application } from '../runtime/application';
 import { PersistentStorage } from './persistent_storage';
-import { ConsoleMethod, createApplicationVM } from './vm';
-import { colorLogLevel, fileExists, trim, watchFile } from '../common/util';
+import { createApplicationVM } from './vm';
+import { TYPEDAEMON_PATH, fileExists, trim, watchFile } from '../common/util';
 import { debounce } from '../common/limit';
-import { BaseInstance } from './managed_apps';
-
-const CurrentAppStore = new AsyncLocalStorage<ApplicationInstance>()
-
-export class RequireRestart extends Error { }
-export class FallbackRequireRestart extends RequireRestart { }
-
-export const current = {
-    get application() { return CurrentAppStore.getStore() },
-    get hypervisor() { return CurrentAppStore.getStore()?.hypervisor },
-}
+import { BaseInstance, InstanceLogConfig } from './managed_apps';
+import { RequireRestart, configChangeHandler } from './managed_config_events';
 
 export interface ApplicationMetadata {
     applicationClass?: typeof Application;
     dependencies?: any;
 }
 
-const TYPEDAEMON_PATH = path.join(__dirname, '..')
-
 export type AppLifecycle = 'initializing' | 'compiling' | 'starting' | 'started' | 'stopping' | 'stopped' | 'dead';
 
-export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
+export type MyConditionalKeys<Base, Condition> = {
+    [Key in keyof Base]: Base[Key] extends Condition ? Base[Key] : never;
+};
+
+export class ApplicationInstance extends BaseInstance<AppConfiguration, Application, {}> {
     get app_config() {
         return this.options.config;
     }
@@ -46,45 +37,46 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
         return path.resolve(this.hypervisor.working_directory, this.options.source)
     }
 
-    readonly cleanupTasks = new LifecycleHelper();
     readonly resumableStore = new ResumableStore();
     readonly persistedStorage: PersistentStorage = new PersistentStorage();
 
-    private _instance: Application;
-    get instance() { return this._instance }
+    protected loggerOptions(): InstanceLogConfig {
+        const lopts = this.options.logging;
+        let file = lopts?.file;
 
-    invoke<F extends (...params: any[]) => any>(func: F, ...params: Parameters<F>): ReturnType<F>
-    invoke(what: string | symbol, parameters?: any[])
-    invoke(what, ...params) {
-        if (!what) throw new Error("Must pass a method to invoke");
-
-        if (typeof what == 'function') {
-            return CurrentAppStore.run(this, () => {
-                return what.call(this.instance, ...params);
-            })
-        } else {
-            return this.invoke(this.instance[what], ...params);
+        if (!file) {
+            file = this.isThickApp ? path.join(this.operating_directory, "application.log") : lopts._thin_app_file;
         }
-    }
 
-    logMessage(level: ConsoleMethod | 'system' | 'lifecycle', ...rest) {
-        console.log(chalk`{blue [Application: ${this.id}]} - ${colorLogLevel(level)} -`, ...rest);
+        file = path.resolve(this.hypervisor.working_directory, file);
+
+        return {
+            tag: chalk.blue`Application: ${this.id}`,
+            manager: { file: file, level: lopts?.system_level },
+            user: { file: file, level: lopts?.level },
+        }
     }
 
     includedFileScope(file: string) {
         if (!file) return "sandbox";
 
+        // Make sure TypeDaemon stuff always runs on the Host
         if (file.includes(TYPEDAEMON_PATH)) {
             return "host";
         }
 
-        // Relative import or Full-Application node_modules dependency
-        if (file.includes("/applications/")) {
+        // _Any_ files in the app directory should run in the Sandbox
+        if (file.includes(this.source_directory)) {
             return "sandbox";
         }
 
-        // Lite-Application node_modules dependency
-        if (file.includes(this.hypervisor.operations_directory)) {
+        // In fact, any files in the appications directory should run in the Sandbox
+        if (file.includes(path.resolve(this.hypervisor.working_directory, 'applications'))) {
+            return "sandbox";
+        }
+
+        // Any Lite-App Environments should run in the Sandbox
+        if (file.includes(path.resolve(this.hypervisor.operations_directory, "app_environments"))) {
             return "sandbox";
         }
 
@@ -118,7 +110,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
         });
         this.watchedDependencies.add(file);
 
-        this.cleanupTasks.mark(() => {
+        this.cleanups.append(() => {
             watcher.close()
             this.watchedDependencies.delete(file);
         });
@@ -142,8 +134,8 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
         const moduleSource = (await fs.promises.readFile(this.entrypoint)).toString();
 
         this.logMessage("debug", `Parsing package dependencies`);
-        // TODO: It would be nice to figure out some static analysis or something to be able to just export the required packages from the module
         const { dependencies } = parseAnnotations(moduleSource);
+
         // Items in the config override any that are in the source
         Object.assign(dependencies, this.options.dependencies || {});
 
@@ -158,23 +150,22 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
                 this.logMessage("warn", `Source file includes dependency annotations, but a non-managed package.json file was found. In-file dependency annoations will be ignored.`)
             }
         }
+
         if (shouldManagePackage) {
             this.logMessage("debug", `Generating managed package.json`);
+            // TODO Do not install items that are available in the Host
             packageJson = this.generateOpPackageJson({ dependencies });
             await fs.promises.writeFile(packageFilePath, JSON.stringify(packageJson));
         }
-        if (Object.keys(packageJson?.dependencies || {}).length > 0) {
-            this.logMessage("info", `Installing packages`);
-            await this.installDependencies();
-        }
-        // if (shouldManagePackage) {
-        //     this.logMessage("debug", `Removing generated package.json`);
-        //     await fs.promises.unlink(packageFilePath);
-        // }
+
+        // if (Object.keys(packageJson?.dependencies || {}).length > 0) {
+        this.logMessage("info", `Installing packages`);
+        await this.installDependencies();
 
         this.transitionState("compiling");
 
         const module = await this.compileModule();
+        this.cleanups.append(() => this._vm.removeAllListeners?.());
         const mainExport = module[this.options.export || 'default'];
         const metadata: ApplicationMetadata = (typeof mainExport == 'object' && mainExport) || mainExport.metadata || module.metadata || { applicationClass: mainExport, ...module, ...mainExport };
 
@@ -185,59 +176,33 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
 
         // Self-watch for config changes
         if (this.options.watch?.config) {
-            const disposer = this.hypervisor.watchConfigEntry<AppConfiguration>(`apps.${this.id}`, async (ncfg, ocfg) => {
-                if (this.state != 'started') return;
+            const handler = configChangeHandler(this, async ({ handle, ncfg, ocfg }) => {
 
                 if (!deepEqual(immutableConfigBits(ocfg), immutableConfigBits(ncfg))) {
                     this.logMessage("debug", `Configuration changed significantly, restarting`);
-                    this.namespace.reinitializeInstance(this);
-                    return
+                    throw new RequireRestart()
                 }
 
-                this.logMessage("debug", `Configuration updated, processing changes`);
-
-                try {
-                    this.options.config = ncfg;
-                    await this.invoke(() => this.instance.configuration_updated(ncfg, ocfg));
-                } catch (ex) {
-                    if (ex instanceof RequireRestart) {
-                        this.logMessage("debug", `Determined that changes require an app restart, restarting`);
-                        this.namespace.reinitializeInstance(this);
-                    } else {
-                        this.logMessage("error", `Error occurred while updating configuration:`, ex);
-                        throw ex;
-                    }
-                }
+                handle("logging", () => this._updateLogConfig())
             });
-            this.cleanupTasks.mark(disposer);
+            const disposer = this.hypervisor.watchConfigEntry<AppConfiguration>(`apps.${this.id}`, handler);
+            this.cleanups.append(disposer);
         }
 
-        // TODO Load and await required plugins (determine by whether the app `require("ha")`?)
-        //    Or are plugins just assumed to be loaded?
+        // We want this to run _after_ the app userspace app has completely shutdown
+        this.cleanups.append(() => this.resumableStore.suspendAndStore());
 
+        // TODO Process API hooks either here...
         await this.invoke(() => this.instance.initialize?.());
+        this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
+
+        // ... here ...
         await this.resumableStore.resume([], {
             app: this._instance,
         })
+        // ... or here
 
         this.transitionState('started');
-    }
-
-    async _shutdown() {
-        this.transitionState('stopping')
-
-        if (this.instance) {
-            await this.invoke(() => this.instance.shutdown?.());
-        }
-
-        this.cleanupTasks.cleanup();
-
-        const resumables = await this.resumableStore.suspendAndStore();
-        // TODO Write to file
-
-        if (this._vm) this._vm.removeAllListeners();
-
-        this.transitionState('stopped')
     }
 
     private async installDependencies() {
@@ -273,7 +238,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
     private _isThickApp;
     get isThickApp() {
         if (this._isThickApp == null) {
-            this._isThickApp = fs.existsSync(path.join(path.dirname(this.entrypoint), 'package.json'));
+            this._isThickApp = fs.existsSync(path.join(this.source_directory, 'package.json'));
         }
         return this._isThickApp;
     }
@@ -282,7 +247,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
         const wd = this.hypervisor.working_directory;
 
         if (this.options.operating_directory) {
-            return path.resolve(path.dirname(wd), this.options.operating_directory);
+            return path.resolve(wd, this.options.operating_directory);
         }
 
         if (this.isThickApp) {
@@ -290,6 +255,10 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
         }
 
         return path.resolve(this.hypervisor.operations_directory, "app_environments", this.id);
+    }
+
+    get source_directory() {
+        return path.dirname(this.entrypoint);
     }
 
     private async compileModule() {
@@ -308,7 +277,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, {}> {
 function immutableConfigBits(cfg: AppConfiguration): Partial<AppConfiguration> {
     const immutable = { ...cfg };
     delete immutable.config;
-    delete immutable.logs;
+    delete immutable.logging;
     delete immutable.watch;
     return immutable
 }

@@ -1,13 +1,15 @@
 import chalk = require("chalk");
-import { Merge } from "type-fest";
+import { ConditionalKeys, Merge } from "type-fest";
+import { AsyncLocalStorage } from "async_hooks";
 
 import { debounce } from "../common/limit";
-import { colorLogLevel, timeoutPromise } from "../common/util";
+import { timeoutPromise } from "../common/util";
 import { Hypervisor } from "./hypervisor";
 import { ListenerSignature, TypedEmitter } from "tiny-typed-emitter";
 import { AppLifecycle } from "./application_instance";
 import { upcaseFirstChar } from "@matchlighter/common_library/cjs/strings";
-import { ConsoleMethod } from "./vm";
+import { ConsoleMethod, ExtendedLoger, LogLevel, LoggerOptions, createDomainLogger } from "./logging";
+import { LifecycleHelper } from "../common/lifecycle_helper";
 
 interface LifecycleEvents {
     // started: () => void;
@@ -17,6 +19,7 @@ interface LifecycleEvents {
 }
 
 export const HyperWrapper = Symbol("Hypervisor Application");
+export const CurrentInstanceStack = new AsyncLocalStorage<BaseInstance<any, any, any>[]>()
 
 export class BaseInstanceClient<I extends BaseInstance<C>, C = any> {
     constructor(hyper_wrapper: I) {
@@ -35,10 +38,23 @@ interface InstanceContext {
     namespace: AppNamespace;
 }
 
-export abstract class BaseInstance<C, const L extends ListenerSignature<L> = {}> extends TypedEmitter<Merge<L, LifecycleEvents>> {
+export interface InstanceLogConfig {
+    tag: string;
+    user?: { level: LogLevel, file: string };
+    manager?: { level: LogLevel, file: string };
+}
+
+export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseInstanceClient<any>, const L extends ListenerSignature<L> = any> extends TypedEmitter<Merge<L, LifecycleEvents>> {
     constructor(readonly context: InstanceContext, readonly options: C) {
         super()
+
+        this._updateLogConfig();
     }
+
+    protected _instance: A;
+    get instance() { return this._instance }
+
+    readonly cleanups = new LifecycleHelper();
 
     get id() { return this.context.id }
     get hypervisor() { return this.context.hypervisor }
@@ -46,11 +62,60 @@ export abstract class BaseInstance<C, const L extends ListenerSignature<L> = {}>
 
     protected logPrefix: string;
 
-    abstract _start(): Promise<any>
-    abstract _shutdown(): Promise<any>
+    private _logger: ExtendedLoger;
+    get logger() { return this._logger }
 
-    logMessage(level: ConsoleMethod | 'system' | 'lifecycle', ...rest) {
-        console.log(chalk`{blue [Task: ${this.id}]} - ${colorLogLevel(level)} -`, ...rest);
+    private _userSpaceLogger: ExtendedLoger;
+    get userSpaceLogger() { return this._userSpaceLogger }
+
+    abstract _start(): Promise<any>
+
+    async _shutdown() {
+        this.transitionState('stopping')
+        await this.cleanups.cleanup();
+        this.transitionState('stopped')
+    }
+
+    logMessage(level: LogLevel, ...rest) {
+        this.logger.logMessage(level, rest);
+    }
+
+    logClientMessage(level: LogLevel, ...rest) {
+        this.userSpaceLogger.logMessage(level, rest);
+    }
+
+    protected _updateLogConfig() {
+        const { tag: domain, manager, user, ...rest } = this.loggerOptions();
+
+        this._logger = createDomainLogger({
+            level: "warn",
+            domain,
+            ...manager,
+            ...rest,
+        })
+
+        this._userSpaceLogger = createDomainLogger({
+            level: "debug",
+            domain,
+            ...user,
+            ...rest,
+        })
+    }
+
+    // @ts-ignore
+    invoke<K extends ConditionalKeys<this, ((...params: any[]) => any)>>(what: K, ...parameters: Parameters<this[K]>): ReturnType<this[K]>
+    invoke<F extends (...params: any[]) => any>(func: F, ...params: Parameters<F>): ReturnType<F>
+    invoke(what, ...params) {
+        if (!what) throw new Error("Must pass a method to invoke");
+
+        if (typeof what == 'function') {
+            const curStack = CurrentInstanceStack.getStore() || [];
+            return CurrentInstanceStack.run([...curStack, this], () => {
+                return what.call(this.instance, ...params);
+            })
+        } else {
+            return this.invoke(this.instance[what], ...params);
+        }
     }
 
     private _state: AppLifecycle = "initializing";
@@ -63,6 +128,10 @@ export abstract class BaseInstance<C, const L extends ListenerSignature<L> = {}>
         // this.emit(nstate as any);
     }
     get state() { return this._state }
+
+    protected loggerOptions(): InstanceLogConfig {
+        return { tag: '???' }
+    }
 }
 
 export interface BaseInstanceConfig {
@@ -73,7 +142,7 @@ export interface InstanceConstructor<T extends BaseInstance<C, any>, C extends B
     new(context: InstanceContext, options: C): T;
 }
 
-export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, T extends BaseInstance<C> = BaseInstance<C>> {
+export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A extends BaseInstanceClient<any> = BaseInstanceClient<any>, T extends BaseInstance<C> = BaseInstance<C>> {
     constructor(
         readonly hypervisor: Hypervisor,
         readonly name: string,
@@ -83,10 +152,10 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, T e
             summarizeInstance?: (config: C) => string,
         },
     ) {
-
+        this.logMessage = this.hypervisor.logMessage.bind(this.hypervisor);
     }
 
-    protected logMessage = this.hypervisor.logMessage.bind(this.hypervisor);
+    protected logMessage;
     protected instances: Record<string, T> = {};
 
     getInstance(id: string): T {
@@ -143,6 +212,8 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, T e
         this.logMessage("info", `Stopping ${this.name}: '${id}'...`)
 
         if (instance != this.instances[id]) throw new Error(`Attempt to reinitialize an inactive ${this.name}`);
+
+        // TODO Kill dependent instances?
 
         delete this.instances[id];
 
