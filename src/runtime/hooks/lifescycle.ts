@@ -1,5 +1,5 @@
 
-import { current } from "../../hypervisor/application_instance"
+import { current } from "../../hypervisor/current";
 import { Application } from "../application"
 
 interface CODReturnSignature<P extends any[], F extends (...params: any[]) => any> {
@@ -30,5 +30,5 @@ function callback_or_decorator<const P extends any[], F extends (...params: any[
 }
 
 export const on_shutdown = callback_or_decorator((func) => {
-    current.application.cleanupTasks.mark(func);
+    current.application.cleanups.append(func);
 })

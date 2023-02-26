@@ -41,9 +41,18 @@ export const convertTypescript = async (source: string, filename: string) => {
     return result.code
 }
 
-export function pojso(pbj: any) {
-    // TODO
-    return true;
+const plainObjectString = Object.toString()
+
+export function pojso(value: any) {
+    // TODO Deep
+    const proto = Object.getPrototypeOf(value)
+    if (proto == null) {
+        return true
+    }
+    const protoConstructor = Object.hasOwnProperty.call(proto, "constructor") && proto.constructor
+    return (
+        typeof protoConstructor === "function" && protoConstructor.toString() === plainObjectString
+    )
 }
 
 export class PromiseTimedout extends Error { }

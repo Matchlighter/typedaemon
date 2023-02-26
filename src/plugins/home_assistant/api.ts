@@ -192,7 +192,7 @@ export function homeAssistantApi(options: { pluginId: string }) {
 export type HomeAssistantApi = ReturnType<typeof homeAssistantApi>;
 
 export const api = {
-    ...homeAssistantApi({ pluginId: "type:home_assistant" }),
+    ...homeAssistantApi({ pluginId: "home_assistant" }),
     createInstance(...params: Parameters<typeof homeAssistantApi>) {
         return homeAssistantApi(...params);
     },

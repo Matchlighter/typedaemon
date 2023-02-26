@@ -19,7 +19,7 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
             if (this.applicationConnections.has(instance)) {
                 return this.applicationConnections.get(instance);
             } else {
-                const conn = this.createConnection();
+                const conn = this.createConnection("App:" + instance.id);
                 this.applicationConnections.set(instance, conn);
                 instance.on("lifecycle", (state) => {
                     if (state == 'stopped' || state == 'dead') {
@@ -27,6 +27,11 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
                         this.applicationConnections.delete(instance);
                     }
                 })
+                // TODO Use cleanups instead?
+                // instance.cleanups.append(() => {
+                //     conn.end();
+                //     this.applicationConnections.delete(instance);
+                // })
                 return conn;
             }
         }
@@ -35,7 +40,7 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
     protected createConnection(name?: string) {
         const inst = this[HyperWrapper];
         const uid = Math.random().toString(16).substr(2, 8);
-        return mqtt.connect(this.config.url, {
+        const client = mqtt.connect(this.config.url, {
             clientId: `typedaemon|${uid}|${inst.id}|${name}`,
             host: this.config.host,
             username: this.config.username,
@@ -47,10 +52,32 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
             //     retain: false,
             // },
         });
+
+        client.on("connect", () => {
+            this[HyperWrapper].logMessage("debug", `MQTT (${name}) Connected!`)
+        })
+
+        client.on("disconnect", () => {
+            this[HyperWrapper].logMessage("debug", `MQTT (${name}) Disconnected!`)
+        })
+
+        client.on("reconnect", () => {
+            this[HyperWrapper].logMessage("debug", `MQTT (${name}) Reconnected!`)
+        })
+
+        client.on("end", () => {
+            this[HyperWrapper].logMessage("debug", `MQTT (${name}) Destroyed!`)
+        })
+
+        client.on("error", (err) => {
+            this[HyperWrapper].logMessage("error", `MQTT (${name}) Error:`, err);
+        })
+
+        return client;
     }
 
     async initialize() {
-        this.ownConnection = this.createConnection();
+        this.ownConnection = this.createConnection("PLUGIN");
     }
 
     async shutdown() {
