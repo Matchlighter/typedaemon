@@ -80,6 +80,8 @@ export function createDomainLogger(opts: LoggerOptions) {
         }),
     ]
 
+    // TODO Ignore duplicate messages
+
     if (opts.file) {
         transports.push(...[
             // new winston.transports.File({
@@ -115,6 +117,7 @@ export function createDomainLogger(opts: LoggerOptions) {
 
     logger.logMessage = (level, message, meta?: any) => {
         message = message.map(b => {
+            if (b instanceof Error) return b.message + b.stack;
             if (typeof b == 'object' && pojso(b)) return JSON.stringify(b);
             return String(b);
         })

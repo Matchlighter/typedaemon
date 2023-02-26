@@ -16,6 +16,7 @@ export function mqttApi(options: { pluginId: string }) {
     // Otherwise we'd either need to NEVER usubscribe anything, OR we'd need to implement subscription counting logic... that takes wildcards into account.
     // Since there's no shared state between apps, we can just discard the connection and not have to worry about creating individual cleanups
 
+    // TODO If id==default && plugin is null, warn
     const _plugin = () => get_plugin<MqttPlugin>(id);
     const _connection = () => _plugin().instanceConnection(current.instance);
 
@@ -58,6 +59,9 @@ export function mqttApi(options: { pluginId: string }) {
         _connection().publish(topic, message, options);
     }
 
+    // TODO function published_observable() {} :raised-eyebrow: ?
+    //   Automatically apply @observable or @computed as needed
+
     return {
         _plugin,
         _connection,
@@ -69,7 +73,7 @@ export function mqttApi(options: { pluginId: string }) {
 export type MqttApi = ReturnType<typeof mqttApi>;
 
 export const api = {
-    ...mqttApi({ pluginId: "type:mqtt" }),
+    ...mqttApi({ pluginId: "mqtt" }),
     createInstance(...params: Parameters<typeof mqttApi>) {
         return mqttApi(...params);
     },
