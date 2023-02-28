@@ -1,7 +1,7 @@
 
 import { optional_config_decorator } from "@matchlighter/common_library/cjs/decorators/utils";
 
-import { ClassAutoAccessorDecorator } from "../../common/decorator_fills";
+import { ClassAccessorDecorator } from "../../common/decorator_fills";
 import { Application, appProxy } from "../application";
 import { PersistentEntryOptions } from "../../hypervisor/persistent_storage";
 import { HyperWrapper } from "../../hypervisor/managed_apps";
@@ -19,7 +19,7 @@ export const get_plugin = <T>(identifier: string): T => {
     return current.hypervisor.getPlugin(identifier).instance as any;
 }
 
-export const persistent = optional_config_decorator([], (options?: PersistentEntryOptions): ClassAutoAccessorDecorator<Application, any> => {
+export const persistent = optional_config_decorator([], (options?: PersistentEntryOptions): ClassAccessorDecorator<Application, any> => {
     return ({ get, set }, context) => {
         // Imp 1 - Only stores the value in one place
         // TODO Apply @observable to persistedStorage
