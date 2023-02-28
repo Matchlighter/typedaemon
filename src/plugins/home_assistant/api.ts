@@ -1,13 +1,12 @@
 
-import { reaction } from "mobx";
+import { action, computed, observable, reaction } from "mobx";
 import { HassEntity } from "home-assistant-js-websocket";
 
 import { optional_config_decorator } from "@matchlighter/common_library/cjs/decorators/utils";
 
-import { get_plugin } from "../../runtime/hooks";
-import { ClassAutoAccessorDecorator, ClassGetterDecorator, ClassMethodDecorator } from "../../common/decorator_fills";
+import { ClassAccessorDecorator, ClassGetterDecorator, ClassMethodDecorator } from "../../common/decorator_fills";
 import { HomeAssistantPlugin } from ".";
-import { current } from "../../hypervisor/current";
+import { Annotable, notePluginAnnotation, pluginGetterFactory } from "../base";
 
 export interface EntityOptions {
     id?: string;
@@ -23,6 +22,8 @@ export interface FullState<V> {
 }
 
 export interface InputOptions extends EntityOptions {
+    id?: string;
+
     /** Whether the state of the property should update immediately, or if it should wait for HA to confirm the updated value */
     optimistic?: boolean;
     /**
@@ -36,27 +37,42 @@ export interface ButtonOptions extends EntityOptions {
 
 }
 
-export function homeAssistantApi(options: { pluginId: string }) {
-    const id = options.pluginId;
+function resolveEntityId(domain: string, options: { id?: string }, decContext?: DecoratorContext) {
+    let entity_id: string = options.id || decContext?.name as string;
+    if (!entity_id.includes('.')) entity_id = domain + '.' + entity_id;
+    return entity_id;
+}
 
-    const _plugin = () => get_plugin<HomeAssistantPlugin>(id);
+const DEFAULT_ID = "home_assistant";
+
+export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlugin }) {
+    const _plugin = pluginGetterFactory<HomeAssistantPlugin>(options.pluginId, DEFAULT_ID);
 
     function stateOnlyDecorator<O extends {}, V>(domain: string) {
         return optional_config_decorator([], (options?: EntityOptions & O): ClassGetterDecorator<any, V | FullState<V>> => {
             return (get, context) => {
-                context.addInitializer(() => {
-                    reaction(() => get.call(this), v => {
+                const entity_id = resolveEntityId(domain, options, context);
+                const { uuid, ...entOpts } = options;
+
+                const comptd = (computed as any)(get, context);
+
+                notePluginAnnotation(context, (self) => {
+                    reaction(() => comptd.call(self), v => {
                         let state: V = v;
                         let rest: any;
-                        if ('state' in v) {
+                        if (typeof v == 'object' && 'state' in v) {
                             const { state: nstate, ...therest } = v;
-                            state = nstate,
-                                rest = therest;
+                            state = nstate;
+                            rest = therest;
                         }
-                        // TODO Push to HA
+                        _plugin().writeSOState(entity_id, state, {
+                            ...entOpts,
+                            ...rest,
+                        });
                     })
                 })
-                // TODO @computed
+
+                return comptd;
             }
         });
     }
@@ -71,37 +87,57 @@ export function homeAssistantApi(options: { pluginId: string }) {
     }
 
     function _inputDecorator<O extends {} = {}>(domain: string, options: InputOptions & O) {
-        return ({ get, set }, context) => {
-            context.addInitializer(() => {
+        return ((access, context) => {
+            const entity_id = resolveEntityId(domain, options, context);
+
+            const obsvd = observable(access, context);
+
+            notePluginAnnotation(context, async (self) => {
+                // {"id":57,"type":"result","success":true,"result":{"area_id":null,"config_entry_id":null,"device_id":null,"disabled_by":null,"entity_category":null,"entity_id":"input_text.test2","has_entity_name":false,"hidden_by":null,"icon":null,"id":"8bef30db208442ea9ae0c5c3041a7bd7","name":null,"original_name":"test2","platform":"input_text","translation_key":null,"unique_id":"test2","aliases":[],"capabilities":null,"device_class":null,"options":{},"original_device_class":null,"original_icon":null}}
+                const existing = await _plugin().request("config/entity_registry/get", { entity_id });
+
+                if (existing /* TODO */) {
+                    // TODO Update
+                    // Update: {"type":"input_text/update","input_text_id":"test2","name":"test2","mode":"text","max":100,"min":0,"id":59}
+                } else {
+                    // TODO Create
+                    // Create: {"type":"input_text/create","name":"test3","icon":"mdi:account","min":"5","max":"102","pattern":"\\d+","id":38}
+                }
+
+                // Read from HA
+                obsvd.set.call(self, _plugin().state[entity_id])
+
                 // TODO Listen to HA
             })
-            // TODO @observable()
+
             return {
                 set(value) {
                     if (options.optimistic) {
-                        set.call(this, value);
+                        obsvd.set.call(this, value);
                     }
-                    // TODO Write to HA
-                },
-                init(value) {
-                    // TODO Read from HA
+                    // Set: {"type":"call_service","domain":"input_number","service":"set_value","service_data":{"value":50,"entity_id":"input_number.test"},"id":69}
+                    _plugin().sendMessage("call_service", {
+                        domain,
+                        service: "set_value",
+                        service_data: {
+                            entity_id,
+                            value,
+                        }
+                    })
                 },
             } as any
-        }
+        }) as ClassAccessorDecorator<Annotable, any>
     }
 
     function inputDecorator<V, O extends {} = {}>(domain: string) {
-        return optional_config_decorator([], (options?: InputOptions & O): ClassAutoAccessorDecorator<any, V | FullState<V>> => {
+        return optional_config_decorator([], (options?: InputOptions & O): ClassAccessorDecorator<Annotable, V | FullState<V>> => {
             return _inputDecorator(domain, options);
         });
     }
 
     type Iso8601String = string;
 
-    // Text Create: {"type":"input_text/create","name":"test3","icon":"mdi:account","min":"5","max":"102","pattern":"\\d+","id":38}
     // Delete: {"type":"input_text/delete","input_text_id":"test3","id":55}
-    // Update: {"type":"input_text/update","input_text_id":"test2","name":"test2","mode":"text","max":100,"min":0,"id":59}
-    // Set: {"type":"call_service","domain":"input_number","service":"set_value","service_data":{"value":50,"entity_id":"input_number.test"},"id":69}
     // Show:
     //  {"type":"config/entity_registry/get","entity_id":"input_text.test2","id":57}
     //  {"id":57,"type":"result","success":true,"result":{"area_id":null,"config_entry_id":null,"device_id":null,"disabled_by":null,"entity_category":null,"entity_id":"input_text.test2","has_entity_name":false,"hidden_by":null,"icon":null,"id":"8bef30db208442ea9ae0c5c3041a7bd7","name":null,"original_name":"test2","platform":"input_text","translation_key":null,"unique_id":"test2","aliases":[],"capabilities":null,"device_class":null,"options":{},"original_device_class":null,"original_icon":null}}
@@ -124,10 +160,11 @@ export function homeAssistantApi(options: { pluginId: string }) {
 
     const button = optional_config_decorator([null], (options?: ButtonOptions): ClassMethodDecorator => {
         return (func, context) => {
-            context.addInitializer(() => {
+            notePluginAnnotation(context, async (self) => {
                 // TODO Register HA entity
             })
-            // TODO @action()
+            // @action()
+            return (action as any)(func, context);
         }
     })
 
@@ -154,9 +191,9 @@ export function homeAssistantApi(options: { pluginId: string }) {
         return await callService(`${domain}.${service}`, { entity_id: ent.entity_id })
     }
 
-    async function findRelatedDevices(entity: HassEntity) {
-        // TODO
-    }
+    // async function findRelatedDevices(entity: HassEntity) {
+    //     // TODO
+    // }
 
     async function findRelatedEntities(entity: HassEntity): Promise<string[]> {
         const pl = _plugin();
@@ -184,7 +221,7 @@ export function homeAssistantApi(options: { pluginId: string }) {
 
         callService,
         findRelatedEntities,
-        findRelatedDevices,
+        // findRelatedDevices,
         toggleSwitch,
     }
 }
@@ -192,7 +229,7 @@ export function homeAssistantApi(options: { pluginId: string }) {
 export type HomeAssistantApi = ReturnType<typeof homeAssistantApi>;
 
 export const api = {
-    ...homeAssistantApi({ pluginId: "home_assistant" }),
+    ...homeAssistantApi({ pluginId: DEFAULT_ID }),
     createInstance(...params: Parameters<typeof homeAssistantApi>) {
         return homeAssistantApi(...params);
     },

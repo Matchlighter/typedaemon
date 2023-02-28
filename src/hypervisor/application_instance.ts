@@ -16,6 +16,7 @@ import { TYPEDAEMON_PATH, fileExists, trim, watchFile } from '../common/util';
 import { debounce } from '../common/limit';
 import { BaseInstance, InstanceLogConfig } from './managed_apps';
 import { RequireRestart, configChangeHandler } from './managed_config_events';
+import { flushPluginAnnotations } from '../plugins/base';
 
 export interface ApplicationMetadata {
     applicationClass?: typeof Application;
@@ -189,18 +190,20 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             this.cleanups.append(disposer);
         }
 
-        // We want this to run _after_ the app userspace app has completely shutdown
+        // We want this to run _after_ the userspace app has completely shutdown
         this.cleanups.append(() => this.resumableStore.suspendAndStore());
 
-        // TODO Process API hooks either here...
         await this.invoke(() => this.instance.initialize?.());
         this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
 
-        // ... here ...
+        await this.invoke(async () => {
+            // TODO Skip if initialize already did this
+            await flushPluginAnnotations(this.instance);
+        })
+
         await this.resumableStore.resume([], {
             app: this._instance,
         })
-        // ... or here
 
         this.transitionState('started');
     }

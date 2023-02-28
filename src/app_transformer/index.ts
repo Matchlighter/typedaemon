@@ -5,7 +5,7 @@ import { MacroAttachment, attachableMacrosPlugin } from "./attachable_macros";
 import { default as resumableMacro } from "./resumable_transformer"
 
 // TODO Set correctly
-const TDPACKAGE = ['@typedaemon/core', "./src"]
+const TDPACKAGE = ['@typedaemon/core', 'typedaemon', "./src",]
 
 export const APP_BABEL_CONFIG: babel.TransformOptions = {
     targets: {

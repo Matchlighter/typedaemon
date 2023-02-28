@@ -197,7 +197,8 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
         this.instances[id] = instance;
         return instance._start().catch((ex) => {
             this.logMessage("error", `${this.name} '${id}' failed while starting up: `, ex)
-            return this._shutdownInstance(instance).catch(() => { });
+            // TODO Consider this. Not having it allows watchers to watch and reload
+            // return this._shutdownInstance(instance).catch(() => { });
         });
     }
 

@@ -1,5 +1,5 @@
 
-export type ClassAutoAccessorDecorator<This = any, Value = any> = (
+export type ClassAccessorDecorator<This = any, Value = any> = (
     value: ClassAccessorDecoratorTarget<This, Value>,
     context: ClassAccessorDecoratorContext
 ) => ClassAccessorDecoratorResult<This, Value> | void;

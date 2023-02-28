@@ -26,6 +26,7 @@ import { HomeAssistantPluginConfig, PluginType } from '../../hypervisor/config_p
 import { Plugin } from '../base';
 import { HyperWrapper } from '../../hypervisor/managed_apps';
 import { current } from '../../hypervisor/current';
+import { DeepReadonly } from '../../common/util';
 
 // @ts-ignore
 global.WebSocket ||= ws.WebSocket
@@ -45,6 +46,8 @@ const STATE_SYNC_OPTS: Parameters<typeof sync_to_observable>[2] = {
 function isStateChangedEvent(event: HassEvent): event is StateChangedEvent {
     return event.event_type == "state_changed";
 }
+
+type OnConnectedWhen = 'always' | 'once' | 'once_per_host';
 
 export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
     readonly api = homeAssistantApi({ pluginId: this[HyperWrapper].id });
@@ -74,7 +77,22 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
         return await callService(this._ha_api, domain, service, data, target);
     }
 
+    async writeSOState(entity: string, state: any, attrs?: any) {
+
+    }
+
+    onConnected(callback: () => void)
+    onConnected(when: OnConnectedWhen, callback: () => void)
+    onConnected(arg1, arg2?) {
+
+    }
+
+    subscribe(callback: (event: HassEvent) => void) {
+
+    }
+
     private readonly stateStore: any = observable({}, {}, { deep: false }) as any;
+    get state(): DeepReadonly<any> { return this.stateStore }
 
     private _ha_api: Connection;
     private pingInterval;
