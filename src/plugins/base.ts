@@ -20,7 +20,7 @@ export function pluginGetterFactory<T extends Plugin>(pid: string | T, default_i
     if (pid == default_id) {
         return () => {
             const pl = get_plugin<T>(pid);
-            if (!pl) current.application.logMessage("warn", `Attempted to use default MQTT plugin, but it is not configured!`)
+            if (!pl) current.application.logMessage("warn", `Attempted to use default ${default_id} plugin, but it is not configured!`)
             return pl;
         }
     }
@@ -59,4 +59,28 @@ export abstract class Plugin<C = any> extends BaseInstanceClient<PluginInstance>
     get config() {
         return this[HyperWrapper].options as any as PluginType['base'] & C;
     }
+}
+
+export interface ApiFactory<API extends {}> {
+    (options: { pluginId: string, [k: string]: any }): API;
+    defaultPluginId: string;
+}
+
+export function client_call_safe<P extends any[]>(mthd: (...params: P) => any, ...params: P) {
+    try {
+        return mthd(...params);
+    } catch (ex) {
+        current.application?.logClientMessage("error", ex);
+    }
+}
+
+export function makeApiExport<API extends {}>(factory: ApiFactory<API>) {
+    const extended = {
+        /** Create an instance of the API if you're using multiple plugin instances or non-default plugin names */
+        withOptions: factory,
+        _apiFactory: factory,
+    }
+    const defaultApi = factory({ pluginId: factory.defaultPluginId });
+    Object.setPrototypeOf(extended, defaultApi);
+    return extended as typeof extended & typeof defaultApi;
 }

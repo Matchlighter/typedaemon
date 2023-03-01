@@ -2,9 +2,11 @@
 import { TupleToUnion } from "type-fest";
 import chalk = require("chalk");
 import winston = require("winston");
+import moment = require("moment-timezone");
 
 import { current } from "./current";
 import { pojso } from "../common/util";
+import { mapStackTrace } from "../app_transformer/source_maps";
 
 export const CONSOLE_METHODS = ['debug', 'info', 'warn', 'error', 'dir'] as const;
 export type ConsoleMethod = TupleToUnion<typeof CONSOLE_METHODS>
@@ -35,6 +37,26 @@ export function colorLogLevel(level: ConsoleMethod | string) {
     return level;
 }
 
+export function cleanAndMapStacktrace(err: Error) {
+    const trace = err.stack || '';
+    const stack = trace.split("\n");
+
+    const working_directory = current.hypervisor?.working_directory || '';
+    const clean_stack = [];
+
+    let found = false;
+    for (let line of [...stack].reverse()) {
+        found ||= line.includes(working_directory);
+        if (!found) continue;
+        clean_stack.unshift(line);
+    }
+
+    const mapped = mapStackTrace(clean_stack);
+    if (mapped) return mapped;
+
+    return clean_stack;
+}
+
 const fmt = winston.format;
 
 function formatMessage(m: winston.Logform.TransformableInfo) {
@@ -47,12 +69,16 @@ const formatter = fmt.printf(formatMessage)
 
 const timed_formatter = fmt.printf((m) => {
     const { message, level, label, timestamp, ...rest } = m;
-    // ORIGINAL_CONSOLE.log(m);
     return chalk`[${timestamp}]` + formatMessage(m);
 })
 
 const scope_fmt = fmt((info) => {
     info['scope'] ||= "typedaemon";
+    return info;
+})
+
+const timestamp = fmt((info) => {
+    info['timestamp'] ||= moment().toISOString(true);
     return info;
 })
 
@@ -80,8 +106,6 @@ export function createDomainLogger(opts: LoggerOptions) {
         }),
     ]
 
-    // TODO Ignore duplicate messages
-
     if (opts.file) {
         transports.push(...[
             // new winston.transports.File({
@@ -106,7 +130,7 @@ export function createDomainLogger(opts: LoggerOptions) {
         level: opts.level,
         levels: NUMERIC_LOG_LEVELS,
         format: fmt.combine(
-            fmt.timestamp(),
+            timestamp(),
             scope_fmt(),
             fmt.label({ label: opts.domain || 'System' }),
             filter(),
@@ -115,12 +139,41 @@ export function createDomainLogger(opts: LoggerOptions) {
         transports,
     }) as any as ExtendedLoger;
 
+    let lastMessageTimeout;
+    let lastMessage: { level: LogLevel, meta: any, message: string, count: number };
+
+    const commitLastMessageCounter = () => {
+        const lm = lastMessage;
+        if (lm?.count > 0) {
+            logger.log(lm.level, `Same message logged ${lm.count} more times`, lm.meta);
+        }
+        if (lastMessageTimeout) clearTimeout(lastMessageTimeout);
+        lastMessage = null;
+        lastMessageTimeout = null;
+    }
+
     logger.logMessage = (level, message, meta?: any) => {
         message = message.map(b => {
-            if (b instanceof Error) return b.message + b.stack;
+            if (b instanceof Error) {
+                const cleanTrace = cleanAndMapStacktrace(b);
+                return cleanTrace?.join('\n') || b.message;
+            };
             if (typeof b == 'object' && pojso(b)) return JSON.stringify(b);
             return String(b);
         })
+
+        const lmessage = message.join(' ');
+        if (lastMessage?.message == lmessage) {
+            lastMessage.count++;
+            if (!lastMessageTimeout) {
+                lastMessageTimeout = setTimeout(commitLastMessageCounter, 750);
+            }
+            return;
+        } else {
+            commitLastMessageCounter();
+            lastMessage = { level, message: lmessage, meta, count: 0 }
+        }
+
         return logger.log(level, message.join(' '), meta);
     }
 

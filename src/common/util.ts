@@ -102,15 +102,81 @@ export const fileExists = async (file: string) => {
     }
 }
 
+export function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
+}
+
 export function trim(s: string, c: string | RegExp) {
     if (c instanceof RegExp) {
         c = c.source;
     } else {
-        if (c === "]") c = "\\]";
-        if (c === "^") c = "\\^";
-        if (c === "\\") c = "\\\\";
+        c = escapeRegExp(c);
     }
     return s.replace(new RegExp(
         "^(" + c + ")+|(" + c + ")+$", "g"
     ), "");
+}
+
+class Resolver {
+    async loadAsFileOrDirectory(x, extList) {
+        const f = await this.loadAsFile(x, extList);
+        if (f) return f;
+        return await this.loadIndex(x, extList);
+    }
+
+    async tryFile(x) {
+        x = path.resolve(x);
+        return await this.pathTestIsFile(x) && x;
+    }
+
+    async tryWithExtension(x, extList) {
+        for (let i = 0; i < extList.length; i++) {
+            const ext = extList[i];
+            if (ext !== path.basename(ext)) continue;
+            const f = await this.tryFile(x + ext);
+            if (f) return f;
+        }
+        return undefined;
+    }
+
+    // LOAD_AS_FILE(X)
+    async loadAsFile(x, extList) {
+        // 1. If X is a file, load X as its file extension format. STOP
+        const f = await this.tryFile(x);
+        if (f) return f;
+        // 2. If X.js is a file, load X.js as JavaScript text. STOP
+        // 3. If X.json is a file, parse X.json to a JavaScript Object. STOP
+        // 4. If X.node is a file, load X.node as binary addon. STOP
+        return await this.tryWithExtension(x, extList);
+    }
+
+    // LOAD_INDEX(X)
+    async loadIndex(x, extList) {
+        // 1. If X/index.js is a file, load X/index.js as JavaScript text. STOP
+        // 2. If X/index.json is a file, parse X/index.json to a JavaScript object. STOP
+        // 3. If X/index.node is a file, load X/index.node as binary addon. STOP
+        return await this.tryWithExtension(path.join(x, 'index'), extList);
+    }
+
+    async pathTestIsDirectory(path) {
+        try {
+            const stat = await fs.promises.stat(path);
+            return stat && stat.isDirectory();
+        } catch (e) {
+            return false;
+        }
+    }
+    
+    async pathTestIsFile(path) {
+        try {
+            const stat = await fs.promises.stat(path);
+            return stat && stat.isFile();
+        } catch (e) {
+            return false;
+        }
+    }
+}
+
+export async function resolveSourceFile(fpath: string) {
+    return await (new Resolver).loadAsFileOrDirectory(fpath, [".ts", ".js"])
 }

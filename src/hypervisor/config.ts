@@ -22,6 +22,10 @@ export interface Configuration {
         },
     },
 
+    location?: {
+        timezone?: string;
+    },
+
     logging?: {
         application?: LogLevel;
         applications_file?: string;
