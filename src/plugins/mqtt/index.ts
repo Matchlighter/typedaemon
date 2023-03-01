@@ -62,7 +62,7 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
         })
 
         client.on("reconnect", () => {
-            this[HyperWrapper].logMessage("debug", `MQTT (${name}) Reconnected!`)
+            this[HyperWrapper].logMessage("debug", `MQTT (${name}) Reconnecting`)
         })
 
         client.on("end", () => {

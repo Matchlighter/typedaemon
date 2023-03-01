@@ -37,7 +37,7 @@ export function mapStackTrace(err: Error | string[]) {
     }
 
     const errors = stack.map((line) => {
-        const [left, _trace, right] = line.split(/[()]/g);
+        const [left, _trace, right] = line.split(/[ ()]/g);
         // let _trace = line.split('(').pop();
         // _trace = trim(_trace, ')');
 

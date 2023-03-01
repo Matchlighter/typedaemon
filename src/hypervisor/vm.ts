@@ -15,6 +15,7 @@ import { ApplicationInstance } from "./application_instance";
 import { APP_BABEL_CONFIG } from "../app_transformer";
 import { CONSOLE_METHODS, logMessage } from "./logging";
 import { registerSourceMap } from "../app_transformer/source_maps";
+import { appmobx } from "../plugins/mobx";
 
 type VMExtensions = Record<`.${string}`, (mod: Module, filename: string) => void>;
 
@@ -101,6 +102,13 @@ export async function createApplicationVM(app: ApplicationInstance) {
             builtin: ['*'],
             context: "host",
             external: true,
+            customRequire(id) {
+                // Supply a patched MobX that will automatically add Reaction disposers to the cleanups
+                if (id?.endsWith('node_modules/mobx/dist/index.js')) {
+                    return appmobx;
+                }
+                return require(id)
+            },
             // Fallback Resolver if nothing else works
             resolve(moduleName, parentDirname) {
                 return null;
