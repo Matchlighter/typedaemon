@@ -9,7 +9,7 @@ import { HomeAssistantPlugin } from ".";
 import { Annotable, client_call_safe, makeApiExport, notePluginAnnotation, pluginGetterFactory } from "../base";
 import { current } from "../../hypervisor/current";
 import { HyperWrapper } from "../../hypervisor/managed_apps";
-import { smobx } from "../mobx";
+import { plgmobx } from "../mobx";
 
 export interface EntityOptions {
     id?: string;
@@ -81,7 +81,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                     const comptd = (computed as any)(target, context);
 
                     notePluginAnnotation(context, (self) => {
-                        smobx.autorun(self[HyperWrapper], () => {
+                        plgmobx.autorun(self[HyperWrapper], () => {
                             client_call_safe(() => {
                                 writeState(comptd.call(self));
                             })
@@ -169,7 +169,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                 await _ensureInput(entity_id, options);
 
                 // Read and Listen from HA
-                smobx.autorun(self[HyperWrapper], () => {
+                plgmobx.autorun(self[HyperWrapper], () => {
                     client_call_safe(() => {
                         obsvd.set.call(self, _plugin().state[entity_id]);
                     })
@@ -239,7 +239,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                 await _ensureInput(entity_id, options);
 
                 // Listen to HA entity
-                smobx.reaction(self[HyperWrapper], () => _plugin().state[entity_id], (state) => {
+                plgmobx.reaction(self[HyperWrapper], () => _plugin().state[entity_id], (state) => {
                     client_call_safe(() => self[context.name]());
                 }, { fireImmediately: false })
             })

@@ -6,7 +6,7 @@ import { MqttPlugin } from ".";
 import { current } from "../../hypervisor/current";
 import { client_call_safe, makeApiExport, notePluginAnnotation, pluginAnnotationDecorator, pluginGetterFactory } from "../base";
 import { computed, observable } from "mobx";
-import { smobx } from "../mobx";
+import { plgmobx } from "../mobx";
 import { HyperWrapper } from "../../hypervisor/managed_apps";
 
 type Unsubscriber = () => void;
@@ -82,7 +82,7 @@ export function mqttApi(options: { pluginId: string }) {
                 const comptd = (computed as any)(target, context);
 
                 notePluginAnnotation(context, (self) => {
-                    smobx.autorun(self[HyperWrapper], () => {
+                    plgmobx.autorun(self[HyperWrapper], () => {
                         const msg = client_call_safe(() => comptd.call(self));
                         publish(topic, msg, options);
                     })

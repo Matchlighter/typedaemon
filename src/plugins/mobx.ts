@@ -13,9 +13,13 @@ function wrapAndTrack<F extends (...args: any[]) => any>(f: F): F {
     }) as any;
 }
 
-export const autorun = wrapAndTrack(mobx.autorun);
-export const reaction = wrapAndTrack(mobx.reaction);
-export const when = wrapAndTrack(mobx.when);
+/** MobX wrappers that automatically add disposers to the current Applications's cleanups */
+export const appmobx: typeof mobx = {
+    ...mobx,
+    autorun: wrapAndTrack(mobx.autorun),
+    reaction: wrapAndTrack(mobx.reaction),
+    when: wrapAndTrack(mobx.when),
+}
 
 function swrapAndTrack<F extends (...args: any[]) => any>(f: F): (scope: { cleanups: LifecycleHelper }, ...rest: Parameters<F>) => ReturnType<F> {
     return ((scope, ...args: Parameters<F>): ReturnType<F> => {
@@ -27,7 +31,8 @@ function swrapAndTrack<F extends (...args: any[]) => any>(f: F): (scope: { clean
     });
 }
 
-export const smobx = {
+/** MobX wrappers that automatically add disposers to the given Applications's cleanups */
+export const plgmobx = {
     autorun: swrapAndTrack(mobx.autorun),
     reaction: swrapAndTrack(mobx.reaction),
     when: swrapAndTrack(mobx.when),
