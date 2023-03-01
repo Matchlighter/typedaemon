@@ -189,7 +189,7 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
         if (summary) summary = ` (${summary})`;
         this.logMessage("info", chalk`Starting ${this.name}: '${id}'${summary}...`)
 
-        const instance = new this.options.Host({
+        const instance: T = new this.options.Host({
             id,
             hypervisor: this.hypervisor,
             namespace: this,

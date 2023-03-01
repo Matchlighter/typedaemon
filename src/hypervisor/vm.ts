@@ -12,9 +12,9 @@ import { loadTsConfig } from "load-tsconfig"
 
 import { parseYaml } from "../common/ha_yaml";
 import { ApplicationInstance } from "./application_instance";
-import { TupleToUnion } from "../common/util";
 import { APP_BABEL_CONFIG } from "../app_transformer";
 import { CONSOLE_METHODS, logMessage } from "./logging";
+import { registerSourceMap } from "../app_transformer/source_maps";
 
 type VMExtensions = Record<`.${string}`, (mod: Module, filename: string) => void>;
 
@@ -92,6 +92,8 @@ export async function createApplicationVM(app: ApplicationInstance) {
                 filename,
             })
 
+            registerSourceMap(filename, result.map);
+
             return result.code;
         },
 
@@ -142,7 +144,6 @@ export async function createApplicationVM(app: ApplicationInstance) {
         return paths;
     });
 
-    
     const vmModule: VMModule = vm['_Module'];
     vmModule._extensions[".yml"] = vmModule._extensions[".yaml"] = (mod, filename) => {
         const yaml = fs.readFileSync(filename).toString();

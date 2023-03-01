@@ -15,6 +15,8 @@ import {
     ERR_HASS_HOST_REQUIRED,
     ERR_INVALID_AUTH,
     ERR_INVALID_HTTPS_TO_HTTP,
+    HassEntity,
+    HassEntities,
 } from 'home-assistant-js-websocket'
 
 import { sync_to_observable } from '@matchlighter/common_library/cjs/sync_observable'
@@ -92,9 +94,9 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
     }
 
     private readonly stateStore: any = observable({}, {}, { deep: false }) as any;
-    get state(): DeepReadonly<any> { return this.stateStore }
+    get state(): DeepReadonly<HassEntities> { return this.stateStore }
 
-    private _ha_api: Connection;
+    _ha_api: Connection;
     private pingInterval;
 
     awaitForEvent(pattern) {

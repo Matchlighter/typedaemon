@@ -4,26 +4,24 @@ import mqtt_match = require('mqtt-match')
 
 import { MqttPlugin } from ".";
 import { current } from "../../hypervisor/current";
-import { get_plugin } from "../../runtime/hooks";
-import { pluginAnnotationDecorator, pluginGetterFactory } from "../base";
+import { client_call_safe, makeApiExport, notePluginAnnotation, pluginAnnotationDecorator, pluginGetterFactory } from "../base";
+import { computed, observable } from "mobx";
+import { smobx } from "../mobx";
+import { HyperWrapper } from "../../hypervisor/managed_apps";
 
 type Unsubscriber = () => void;
 type MqttMessageHandler<T = any> = (topic: string, payload: string) => any;
-
-const DEFAULT_ID = "mqtt";
 
 export interface SubscribeOptions extends mqtt.IClientSubscribeOptions {
     format?: 'json' | boolean;
 }
 
 export function mqttApi(options: { pluginId: string }) {
-    const id = options.pluginId;
-
     // NB Each application has it's own connection to the broker.
     // Otherwise we'd either need to NEVER usubscribe anything, OR we'd need to implement subscription counting logic... that takes wildcards into account.
     // Since there's no shared state between apps, we can just discard the connection and not have to worry about creating individual cleanups
 
-    const _plugin = pluginGetterFactory<MqttPlugin>(options.pluginId, DEFAULT_ID);
+    const _plugin = pluginGetterFactory<MqttPlugin>(options.pluginId, mqttApi.defaultPluginId);
     const _connection = () => _plugin().instanceConnection(current.instance);
 
     function listen(topic: string, options: SubscribeOptions, handler: MqttMessageHandler) {
@@ -38,10 +36,10 @@ export function mqttApi(options: { pluginId: string }) {
                 } else if (options?.format !== false) {
                     try {
                         spayload = JSON.parse(spayload)
-                    } catch (ex) {}
+                    } catch (ex) { }
                 }
 
-                handler(rtopic, spayload);
+                client_call_safe(handler, rtopic, spayload);
             }
         }
         conn.on("message", wrappedHandler);
@@ -75,22 +73,53 @@ export function mqttApi(options: { pluginId: string }) {
         _connection().publish(topic, message, options);
     }
 
-    // TODO function published_observable() {} :raised-eyebrow: ?
-    //   Automatically apply @observable or @computed as needed
+    /**
+     * Automatically publish the decorated getter/accessor to the given topic
+     */
+    function published(topic: string, options?: { qos?: mqtt.QoS, retain?: boolean, dup?: boolean }) {
+        return <V>(target, context: ClassAccessorDecoratorContext<any, V> | ClassGetterDecoratorContext<any, V>) => {
+            if (context.kind == 'getter') {
+                const comptd = (computed as any)(target, context);
+
+                notePluginAnnotation(context, (self) => {
+                    smobx.autorun(self[HyperWrapper], () => {
+                        const msg = client_call_safe(() => comptd.call(self));
+                        publish(topic, msg, options);
+                    })
+                })
+
+                return comptd;
+            }
+
+            if (context.kind == 'accessor') {
+                const obsvd = (observable as any)(target, context);
+                return {
+                    ...obsvd,
+                    set(value) {
+                        publish(topic, value, options);
+                        obsvd.set.call(this, value);
+                    },
+                }
+            }
+        }
+    }
 
     return {
-        _plugin,
-        _connection,
+        _getPlugin: _plugin,
+        get _plugin() { return _plugin() },
+
+        /** Returns the underlying MqttClient instance from the MQTT library. This is advanced usage and should only be used if you know what you're doing */
+        _getConnection: _connection,
+        /** Returns the underlying MqttClient instance from the MQTT library. This is advanced usage and should only be used if you know what you're doing */
+        get _connection() { return _connection() },
+
         subscribe,
         publish,
+        published,
     }
 }
+mqttApi.defaultPluginId = "mqtt"
 
 export type MqttApi = ReturnType<typeof mqttApi>;
 
-export const api = {
-    ...mqttApi({ pluginId: DEFAULT_ID }),
-    createInstance(...params: Parameters<typeof mqttApi>) {
-        return mqttApi(...params);
-    },
-}
+export const api = makeApiExport(mqttApi)

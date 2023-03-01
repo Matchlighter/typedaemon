@@ -16,7 +16,7 @@ export const get_app = (identifier: string) => {
 }
 
 export const get_plugin = <T>(identifier: string): T => {
-    return current.hypervisor.getPlugin(identifier).instance as any;
+    return current.hypervisor.getPlugin(identifier)?.instance as any;
 }
 
 export const persistent = optional_config_decorator([], (options?: PersistentEntryOptions): ClassAccessorDecorator<Application, any> => {

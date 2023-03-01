@@ -3,11 +3,12 @@ import fs = require("fs")
 import path = require("path")
 import deep_eql = require("deep-eql")
 import chalk = require("chalk")
+import moment = require("moment-timezone")
 
 import { MultiMap } from "@matchlighter/common_library/cjs/data/multimap"
 import { deep_get } from "@matchlighter/common_library/cjs/deep"
 
-import { DeepReadonly, fileExists, timeoutPromise, watchFile } from "../common/util";
+import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile } from "../common/util";
 import { LifecycleHelper } from "../common/lifecycle_helper";
 
 import { Configuration, ConfigMerger, defaultConfig, readConfigFile } from "./config";
@@ -95,6 +96,7 @@ export class Hypervisor {
         })
 
         this.getAndWatchConfigEntry("logging", (v) => this.updateLogConfiguration(v));
+        this.getAndWatchConfigEntry("location.timezone", (tz: string) => moment.tz.setDefault(tz || undefined));
 
         process.on('SIGINT', async () => {
             console.log('');
@@ -194,7 +196,7 @@ export class Hypervisor {
             }
 
             // Normalize plugin configs
-            for (let [ak, acfg] of Object.entries(cfg.plugins)) {
+            for (let [ak, raw_cfg] of Object.entries(cfg.plugins)) {
                 const plcfg = PluginConfigMerger.mergeConfigs(defaultPluginConfig, {
                     watch: {
                         config: cfg.daemon.watch?.app_configs,
@@ -203,7 +205,7 @@ export class Hypervisor {
                         level: cfg.logging.system,
                         file: cfg.logging.plugins_file?.replaceAll("{plugin}", ak),
                     }
-                }, acfg);
+                }, raw_cfg);
 
                 if (no_watching) {
                     plcfg.watch = { config: false }
@@ -213,7 +215,7 @@ export class Hypervisor {
             }
 
             // Normalize application configs
-            for (let [ak, acfg] of Object.entries(cfg.apps)) {
+            for (let [ak, raw_cfg] of Object.entries(cfg.apps)) {
                 const appcfg = AppConfigMerger.mergeConfigs(defaultAppConfig, {
                     watch: {
                         config: cfg.daemon.watch?.app_configs,
@@ -225,7 +227,11 @@ export class Hypervisor {
                         level: cfg.logging.application,
                         system_level: cfg.logging.system,
                     }
-                }, acfg);
+                }, raw_cfg);
+
+                const sourcePath = path.resolve(this.working_directory, raw_cfg.source);
+                const resolved = await resolveSourceFile(sourcePath);
+                if (resolved) appcfg.source = resolved;
 
                 if (no_watching) {
                     appcfg.watch = { config: false, source: false }

@@ -12,6 +12,7 @@ export const APP_BABEL_CONFIG: babel.TransformOptions = {
         esmodules: true,
         node: "current",
     },
+    sourceMaps: true,
     presets: [
         ['@babel/preset-env', { targets: { node: 'current' }, modules: 'auto' }],
         ['@babel/preset-typescript'],

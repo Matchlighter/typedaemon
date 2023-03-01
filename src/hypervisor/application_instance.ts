@@ -6,6 +6,7 @@ import deepEqual = require('deep-eql');
 import fs = require('fs');
 import execa = require('execa');
 import extract_comments = require('extract-comments');
+import { AsyncReturnType } from 'type-fest';
 
 import { AppConfiguration } from "./config_app";
 import { ResumableStore } from '../runtime/resumable_store';
@@ -193,8 +194,16 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         // We want this to run _after_ the userspace app has completely shutdown
         this.cleanups.append(() => this.resumableStore.suspendAndStore());
 
-        await this.invoke(() => this.instance.initialize?.());
-        this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
+        try {
+            await this.invoke(() => this.instance.initialize?.());
+        } catch (ex) {
+            this.invoke(() => {
+                this.logClientMessage("error", `Failed while starting up: `, ex)
+            })
+            return
+        } finally {
+            this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
+        }
 
         await this.invoke(async () => {
             // TODO Skip if initialize already did this
@@ -269,7 +278,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         return vm.runFile(this.entrypoint);
     }
 
-    private _vm: NodeVM;
+    private _vm: AsyncReturnType<typeof createApplicationVM>;
     private async vm() {
         if (this._vm) return this._vm;
         const vm = await createApplicationVM(this);
