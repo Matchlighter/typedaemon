@@ -1,0 +1,5 @@
+// It is not recommended to modify this file.
+// Instead, make the changes that you need in the `tsconfig` entry of your TypeDaemon config
+{
+    "extends": "./.typedaemon/gen.tsconfig.json",
+}

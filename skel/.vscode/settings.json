@@ -1,0 +1,3 @@
+{
+    "typescript.tsdk": ".typedaemon/node_modules/typescript/lib"
+}

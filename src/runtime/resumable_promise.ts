@@ -13,7 +13,7 @@ export interface SerializedResumable {
     [key: string]: any;
 }
 
-interface FullySerializedResumable {
+export interface FullySerializedResumable {
     id: string;
     type: 'all' | string;
     depends_on?: string[];
