@@ -16,6 +16,7 @@ import { APP_BABEL_CONFIG } from "../app_transformer";
 import { CONSOLE_METHODS, logMessage } from "./logging";
 import { registerSourceMap } from "../app_transformer/source_maps";
 import { appmobx } from "../plugins/mobx";
+import { TYPEDAEMON_PATH } from "../common/util";
 
 type VMExtensions = Record<`.${string}`, (mod: Module, filename: string) => void>;
 
@@ -37,6 +38,43 @@ interface VMModule {
     globalPaths: string[];
 }
 
+export const PATH_MAPS = {
+    "@td": "@TYPEDAEMON",
+    "@td/ha": "@TYPEDAEMON/plugins/home_assistant/api",
+    "@td/mqtt": "@TYPEDAEMON/plugins/mqtt/api",
+    "@td/*": "@TYPEDAEMON/*",
+}
+
+async function loadPathMaps(entrypoint: string) {
+    const path_maps = {};
+
+    const LOAD_TS_MAPS = false;
+    if (LOAD_TS_MAPS) {
+        const loadedConfig = loadTsConfig(path.dirname(entrypoint));
+        for (let cfg of loadedConfig.files) {
+            const data = await fs.promises.readFile(cfg);
+            const fl = json5.parse(data.toString());
+            const paths: Record<string, string[]> = fl.compilerOptions?.paths || {};
+            for (let [p, r] of Object.entries(paths)) {
+                if (p == '*') continue;
+
+                path_maps[p] = r.map(m => {
+                    if (m.match(/^\.\.?\//)) {
+                        m = path.join(path.dirname(cfg), m)
+                    }
+                    return m;
+                })
+            }
+        }
+    }
+
+    for (let [k, v] of Object.entries(PATH_MAPS)) {
+        path_maps[k] = [v.replace("@TYPEDAEMON", TYPEDAEMON_PATH)]
+    }
+
+    return path_maps;
+}
+
 export async function createApplicationVM(app: ApplicationInstance) {
     const consoleMethods: Console = {} as any;
     for (let m of CONSOLE_METHODS) {
@@ -46,25 +84,9 @@ export async function createApplicationVM(app: ApplicationInstance) {
         consoleMethods.info(...args)
     }
 
-    const loadedConfig = loadTsConfig(path.dirname(app.entrypoint));
-    const loadedPathMaps = {};
-    for (let cfg of loadedConfig.files) {
-        const data = await fs.promises.readFile(cfg);
-        const fl = json5.parse(data.toString());
-        const paths: Record<string, string[]> = fl.compilerOptions?.paths || {};
-        for (let [p, r] of Object.entries(paths)) {
-            loadedPathMaps[p] = r.map(m => {
-                if (m.match(/^\.\.?\//)) {
-                    m = path.join(path.dirname(cfg), m)
-                }
-                return m;
-            })
-        }
-    }
-
     const matchPath = createMatchPath(
         path.dirname(app.entrypoint),
-        loadedPathMaps,
+        await loadPathMaps(app.entrypoint),
     );
 
     const EXTENSIONS = ["js", "ts", "jsx", "tsx"]
@@ -169,10 +191,6 @@ export async function createApplicationVM(app: ApplicationInstance) {
 
 function patch<T, K extends keyof T>(target: T, key: K, patcher: (original: T[K]) => T[K]) {
     const original: any = target[key];
-    // V1 Simpler, but requires patched func to use `original.call(this, ...)`
-    // target[key] = patcher(original);
-
-    // V2 Handles passing `this`
     target[key] = function (...args) {
         const caller = ((...args) => original.call(this, ...args)) as T[K];
         return (patcher(caller) as any).call(this, ...args);

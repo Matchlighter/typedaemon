@@ -18,7 +18,7 @@ import { AppNamespace } from "./managed_apps";
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
 import { PluginInstance } from "./plugin_instance";
 import { saveGeneratedTsconfig } from "../common/generate_tsconfig"
-import { ConsoleMethod, ExtendedLoger, LogLevel, ORIGINAL_CONSOLE, createDomainLogger } from "./logging"
+import { ExtendedLoger, LogLevel, createDomainLogger } from "./logging"
 import { Plugin } from "../plugins/base"
 import { Application } from "../runtime/application"
 
@@ -134,7 +134,7 @@ export class Hypervisor {
         this.cleanupTasks.cleanup()
     }
 
-    private async findAndLoadConfig() {
+    protected async findAndLoadConfig() {
         let cfg_file = this.options.configFile;
         if (!cfg_file) {
             const files = await fs.promises.readdir(this.options.working_directory);
@@ -282,5 +282,14 @@ export class Hypervisor {
             });
             this.cleanupTasks.append(() => watcher.close());
         }
+    }
+}
+
+export class UtilityHypervisor extends Hypervisor {
+    async start() {
+        await this.findAndLoadConfig()
+    }
+    async shutdown() {
+        await this.cleanupTasks.cleanup();
     }
 }

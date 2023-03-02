@@ -6,6 +6,7 @@ import path = require("path");
 
 import { debounce } from "./limit";
 
+export const __package_dir = path.join(__dirname, '../../');
 export const TYPEDAEMON_PATH = path.join(__dirname, '..');
 
 // Deep ReadOnly
@@ -179,4 +180,20 @@ class Resolver {
 
 export async function resolveSourceFile(fpath: string) {
     return await (new Resolver).loadAsFileOrDirectory(fpath, [".ts", ".js"])
+}
+
+export async function* walk(dir, should_recurse: (path: string) => boolean = () => true): AsyncGenerator<string> {
+    for await (const dname of await fs.promises.readdir(dir)) {
+        const entry = path.join(dir, dname);
+        const stat = await fs.promises.stat(entry)
+        if (stat.isDirectory() && should_recurse(entry)) yield* walk(entry, should_recurse);
+        else if (stat.isFile()) yield entry;
+    }
+}
+
+export async function* walk_files(dir, types: string[]) {
+    const filter = (dirname: string) => !dirname.match(/(node_modules)\/?$/)
+    for await (const file of walk(dir, filter)) {
+        if (types.includes(path.extname(file).slice(1))) yield file;
+    }
 }
