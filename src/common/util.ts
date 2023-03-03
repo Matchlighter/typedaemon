@@ -4,7 +4,7 @@ import fs = require("fs");
 import md5 = require("md5");
 import path = require("path");
 
-import { debounce } from "./limit";
+import { debounce } from "@matchlighter/common_library/limit";
 
 export const __package_dir = path.join(__dirname, '../../');
 export const TYPEDAEMON_PATH = path.join(__dirname, '..');

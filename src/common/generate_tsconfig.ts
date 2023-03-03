@@ -4,7 +4,7 @@ import path = require("path");
 import { TsConfigJson } from "type-fest";
 import fse from 'fs-extra';
 
-import { merger } from "@matchlighter/common_library/cjs/data/config";
+import { merger } from "@matchlighter/common_library/data/config";
 import { Hypervisor } from "../hypervisor/hypervisor";
 import { TYPEDAEMON_PATH } from "./util";
 import { Configuration } from "../hypervisor/config";

@@ -5,8 +5,8 @@ import deep_eql = require("deep-eql")
 import chalk = require("chalk")
 import moment = require("moment-timezone")
 
-import { MultiMap } from "@matchlighter/common_library/cjs/data/multimap"
-import { deep_get } from "@matchlighter/common_library/cjs/deep"
+import { MultiMap } from "@matchlighter/common_library/data/multimap"
+import { deep_get } from "@matchlighter/common_library/deep/index"
 
 import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile } from "../common/util";
 import { LifecycleHelper } from "../common/lifecycle_helper";

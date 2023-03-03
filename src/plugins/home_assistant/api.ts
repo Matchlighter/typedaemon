@@ -2,9 +2,9 @@
 import { action, computed, observable } from "mobx";
 import { HassEntity } from "home-assistant-js-websocket";
 
-import { optional_config_decorator } from "@matchlighter/common_library/cjs/decorators/utils";
+import { optional_config_decorator } from "@matchlighter/common_library/decorators/utils";
+import { ClassAccessorDecorator, ClassGetterDecorator, ClassMethodDecorator } from "@matchlighter/common_library/decorator_fills";
 
-import { ClassAccessorDecorator, ClassGetterDecorator, ClassMethodDecorator } from "../../common/decorator_fills";
 import { HomeAssistantPlugin } from ".";
 import { Annotable, client_call_safe, makeApiExport, notePluginAnnotation, pluginGetterFactory } from "../base";
 import { current } from "../../hypervisor/current";

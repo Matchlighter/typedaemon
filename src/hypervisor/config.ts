@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as json5 from 'json5';
 import { TsConfigJson } from "type-fest";
 
-import { merger } from "@matchlighter/common_library/cjs/data/config"
+import { merger } from "@matchlighter/common_library/data/config"
 
 import { AppConfiguration } from "./config_app";
 import { convertTypescript } from "../common/util";
