@@ -16,7 +16,7 @@ export async function syncDevEnv(wdir: string) {
     console.log("Generating tsconfig.json")
     await saveGeneratedTsconfig(hv);
     console.log("Installing Type Definitions")
-    await installDependencies(console.log, hv.operations_directory, path.resolve(__package_dir, "package.json"))
+    await installDependencies((msg) => console.log('  ' + msg), hv.operations_directory, path.resolve(__package_dir, "package.json"))
     await hv.shutdown();
 }
 

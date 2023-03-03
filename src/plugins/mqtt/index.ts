@@ -1,5 +1,5 @@
 
-import * as mqtt from "mqtt"
+import * as mqtt from "mqtt";
 
 import { MQTTPluginConfig, PluginType } from "../../hypervisor/config_plugin";
 import { BaseInstance, HyperWrapper } from "../../hypervisor/managed_apps";
@@ -21,17 +21,22 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
             } else {
                 const conn = this.createConnection("App:" + instance.id);
                 this.applicationConnections.set(instance, conn);
+
+                let cleanedup = false;
+                const cleanup = () => {
+                    if (cleanedup) return;
+                    conn.end();
+                    this.applicationConnections.delete(instance);
+                    cleanedup = true;
+                }
+
+                instance.cleanups.append(cleanup)
                 instance.on("lifecycle", (state) => {
                     if (state == 'stopped' || state == 'dead') {
-                        conn.end();
-                        this.applicationConnections.delete(instance);
+                        cleanup();
                     }
                 })
-                // TODO Use cleanups instead?
-                // instance.cleanups.append(() => {
-                //     conn.end();
-                //     this.applicationConnections.delete(instance);
-                // })
+
                 return conn;
             }
         }
@@ -85,7 +90,13 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
     }
 
     configuration_updated(new_config: MQTTPluginConfig, old_config: MQTTPluginConfig) {
-        // TODO This plugin can implement a config reloader by just tweaking the username/password/url/host (conn.options) and `reconnect()`ing on all connections
-        throw new Error("Method not implemented.");
+        for (let conn of [this.ownConnection, ...this.applicationConnections.values()]) {
+            Object.assign(conn.options, {
+                host: new_config.host,
+                username: new_config.username,
+                password: new_config.password,
+            });
+            conn.reconnect();
+        }
     }
 }

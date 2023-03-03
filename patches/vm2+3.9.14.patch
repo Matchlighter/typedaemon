@@ -1,0 +1,12 @@
+diff --git a/node_modules/vm2/lib/bridge.js b/node_modules/vm2/lib/bridge.js
+index 8690b51..e8236e7 100644
+--- a/node_modules/vm2/lib/bridge.js
++++ b/node_modules/vm2/lib/bridge.js
+@@ -909,6 +909,7 @@ function createBridge(otherInit, registerProxy) {
+ 	}
+ 
+ 	function thisFromOtherWithFactory(factory, other, proto) {
++		if (factory == defaultFactory) return other;
+ 		const type = typeof other;
+ 		switch (type) {
+ 			case 'object':

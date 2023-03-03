@@ -1,14 +1,15 @@
 
 import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weakmap"
 
-import { ResumablePromise, SerializedResumable, Suspend } from "./resumable_promise";
-import { pojso } from "../common/util";
+import { CanSuspendContext, ResumablePromise, SerializedResumable, Suspend } from "./resumable_promise";
+import { deep_pojso } from "../../common/util";
 import { AsyncLocalStorage } from "async_hooks";
+import { current } from "../../hypervisor/current";
 
 const Op = Object.prototype;
 const hasOwn = Op.hasOwnProperty;
 
-const RESUMABLE_CONTEXT_ID = Symbol("serialized_id");
+const RESUMABLE_CONTEXT_ID = Symbol("resumable_serialized_id");
 const ContinueSentinel = Symbol("continue");
 const UNSTARTED_EXEC = Symbol("builder");
 
@@ -67,6 +68,11 @@ ResumablePromise.defineClass({
             rval: data.rval,
         });
 
+        executor['scope'] = {
+            ...scope,
+            owner,
+        }
+
         executor.resume(dep);
 
         return executor;
@@ -89,7 +95,7 @@ class Executor<T> extends ResumablePromise<T> {
         // The root entry object (effectively a try statement without a catch
         // or a finally block) gives us a place to store values thrown from
         // locations where there is no enclosing try statement.
-        const tryLocsList = options.try_locs;
+        const tryLocsList = options.try_locs || [];
         this.tryEntries = [{ tryLoc: "root" }, ...tryLocsList.map(locs => {
             const entry: any = { tryLoc: locs[0] };
 
@@ -150,9 +156,10 @@ class Executor<T> extends ResumablePromise<T> {
         }
     }
 
-    can_suspend() {
-        if (!super.can_suspend()) return false;
-        if (!pojso(this.state)) return false;
+    protected can_suspend(ctx: CanSuspendContext ) {
+        if (!super.can_suspend(ctx)) return false;
+        if (deep_pojso(this.state)) return false;
+        ctx.link(this.pending_promise);
         return true;
     }
 
@@ -187,6 +194,7 @@ class Executor<T> extends ResumablePromise<T> {
             if (value && typeof value === "object" && hasOwn.call(value, "__await")) {
                 const awaitable = value.__await;
                 this.invoke_promise(awaitable);
+                return;
             }
 
             return Promise.resolve(value).then(unwrapped => {
@@ -217,10 +225,10 @@ class Executor<T> extends ResumablePromise<T> {
                     this.invoke("next", value)
                 },
                 (err) => {
-                    this.pending_promise = null;
-                    if (err instanceof Suspend && this.can_suspend()) {
+                    if (err instanceof Suspend && this.treeCanSuspend()) {
                         this.suspend();
                     } else {
+                        this.pending_promise = null;
                         this.invoke("throw", err);
                     }
                 },
@@ -387,7 +395,7 @@ class Executor<T> extends ResumablePromise<T> {
         return ContinueSentinel;
     }
 
-    catch(tryLoc) {
+    _catch(tryLoc) {
         for (let i = this.tryEntries.length - 1; i >= 0; --i) {
             const entry = this.tryEntries[i];
             if (entry.tryLoc === tryLoc) {
@@ -454,16 +462,12 @@ class Executor<T> extends ResumablePromise<T> {
 export const resumable = (f, context: ClassMethodDecoratorContext) => {
     function scope_wrapped(...args) {
         const executor: Executor<any> = f.call(this, ...args);
-
-        if (!(executor instanceof Executor)) {
-            throw new Error(`@resumable method didn't return as expected! Ensure that you're importing it from @typedaemon/macros and not from @typedaemon/core!`)
-        }
-
         executor['scope'] = {
             owner: this,
             method: context.name as string,
             parameters: args,
         }
+
         return executor;
     }
 

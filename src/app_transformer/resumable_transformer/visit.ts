@@ -4,8 +4,10 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @ts-nocheck
 
 "use strict";
+
 
 import * as assert from "assert";
 
@@ -13,8 +15,9 @@ import { hoist } from "./hoist";
 import { Emitter } from "./emit";
 import * as util from "./util";
 import replaceShorthandObjectMethod from "./replaceShorthandObjectMethod";
+import { Visitor } from "@babel/core";
 
-export const getVisitor = ({ types: t }: typeof import("@babel/core")) => ({
+export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<any> => ({
   Method(path, state) {
     let node = path.node;
 

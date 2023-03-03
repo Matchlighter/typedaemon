@@ -37,20 +37,24 @@ export function mapStackTrace(err: Error | string[]) {
     }
 
     const errors = stack.map((line) => {
-        const [left, _trace, right] = line.split(/[ ()]/g);
-        // let _trace = line.split('(').pop();
-        // _trace = trim(_trace, ')');
+        try {
+            const [left, _trace, right] = line.split(/[ ()]/g);
+            // let _trace = line.split('(').pop();
+            // _trace = trim(_trace, ')');
 
-        const bits = _trace.split(':');
-        const trace = {
-            filename: bits[0].split("?")[0],
-            line: parseInt(bits[1], 10),
-            column: parseInt(bits[2], 10),
-            original_line: line,
-            left, right,
-        };
+            const bits = _trace.split(':');
+            const trace = {
+                filename: bits[0].split("?")[0],
+                line: parseInt(bits[1], 10),
+                column: parseInt(bits[2], 10),
+                original_line: line,
+                left, right,
+            };
 
-        return trace;
+            return trace;
+        } catch (ex) {
+            return line;
+        }
     });
 
     const consumers: Record<string, smc.SourceMapConsumer> = {};
@@ -63,13 +67,17 @@ export function mapStackTrace(err: Error | string[]) {
 
     const mapped_lines = []
     for (let err of errors) {
-        const file = err.filename;
-        const cons = getConsumer(file);
-        if (cons) {
-            const m = cons.originalPositionFor(err);
-            mapped_lines.push(`${err.left}(${err.filename}:${m.line}:${m.column})${err.right}`)
+        if (typeof err == 'string') {
+            mapped_lines.push(err);
         } else {
-            mapped_lines.push(err.original_line);
+            const file = err.filename;
+            const cons = getConsumer(file);
+            if (cons) {
+                const m = cons.originalPositionFor(err);
+                mapped_lines.push(`${err.left}(${err.filename}:${m.line}:${m.column})${err.right}`)
+            } else {
+                mapped_lines.push(err.original_line);
+            }
         }
     }
     return mapped_lines;

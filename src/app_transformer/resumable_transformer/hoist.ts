@@ -4,15 +4,18 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @ts-nocheck
 
+import { NodePath } from "@babel/core";
 import * as util from "./util";
+import { Function } from "@babel/types";
 let hasOwn = Object.prototype.hasOwnProperty;
 
 // The hoist function takes a FunctionExpression or FunctionDeclaration
 // and replaces any Declaration nodes in its body with assignments, then
 // returns a VariableDeclaration containing just the names of the removed
 // declarations.
-export function hoist(funPath, contextId) {
+export function hoist(funPath: NodePath<Function>, contextId) {
   const t = util.getTypes();
   t.assertFunction(funPath.node);
 
@@ -135,6 +138,14 @@ export function hoist(funPath, contextId) {
       path.skip();
     }
   });
+
+  // const methodPath = funPath.findParent(path => path.isMethod());
+  // for (let paramPath of methodPath.get("params")) {
+  //   let param = paramPath.node;
+  //   if (t.isIdentifier(param)) {
+  //     vars[param.name] = t.identifier(param.name);
+  //   }
+  // }
 
   funPath.get("body").traverse({
     Identifier: {

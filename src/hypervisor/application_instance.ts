@@ -11,7 +11,7 @@ import { AsyncReturnType } from 'type-fest';
 import { debounce } from "@matchlighter/common_library/limit"
 
 import { AppConfiguration } from "./config_app";
-import { ResumableStore } from '../runtime/resumable_store';
+import { ResumableStore } from '../runtime/resumable';
 import { Application } from '../runtime/application';
 import { PersistentStorage } from './persistent_storage';
 import { createApplicationVM } from './vm';
@@ -19,6 +19,8 @@ import { TYPEDAEMON_PATH, fileExists, trim, watchFile } from '../common/util';
 import { BaseInstance, InstanceLogConfig } from './managed_apps';
 import { RequireRestart, configChangeHandler } from './managed_config_events';
 import { flushPluginAnnotations } from '../plugins/base';
+import { resumable } from '../runtime/resumable';
+import { installDependencies } from './packages';
 
 export interface ApplicationMetadata {
     applicationClass?: typeof Application;
@@ -163,7 +165,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
         // if (Object.keys(packageJson?.dependencies || {}).length > 0) {
         this.logMessage("info", `Installing packages`);
-        await this.installDependencies();
+        await installDependencies((...args) => this.logMessage("debug", ...args), this.operating_directory);
 
         this.transitionState("compiling");
 
@@ -176,6 +178,8 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
         const AppClass = metadata.applicationClass;
         this._instance = new AppClass(this);
+
+        resumable.register_context("APPLICATION", this._instance, true);
 
         // Self-watch for config changes
         if (this.options.watch?.config) {
@@ -193,7 +197,10 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         }
 
         // We want this to run _after_ the userspace app has completely shutdown
-        this.cleanups.append(() => this.resumableStore.suspendAndStore());
+        this.cleanups.append(async () => {
+            const suspendeds = await this.resumableStore.suspendAndStore();
+            console.log("SUSPENDEDS", JSON.stringify(suspendeds))
+        });
 
         try {
             await this.invoke(() => this.instance.initialize?.());
@@ -209,29 +216,17 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         await this.invoke(async () => {
             // TODO Skip if initialize already did this
             await flushPluginAnnotations(this.instance);
-        })
 
-        await this.resumableStore.resume([], {
-            app: this._instance,
+            const restore_list = [
+                // {"type":"@resumable","depends_on":[1],"scope":{"owner":"APPLICATION","method":"some_resumable","parameters":[5]},"state":{"y":5},"actionType":"next","marked_locations":[0,4],"prev":0,"prevIndex":0,"next":4,"nextIndex":1,"done":false,"id":0},
+                // {"type":"sleep","sideeffect_free":true,"sleep_until":1677_935_539_384,"id":1}
+            ]
+            await this.resumableStore.resume(restore_list, {
+                "APPLICATION": this._instance,
+            })
         })
 
         this.transitionState('started');
-    }
-
-    private async installDependencies() {
-        const subprocess = execa('yarn', ['install'], {
-            cwd: this.operating_directory,
-        })
-        subprocess.stdout.on('data', (data) => {
-            this.logMessage("debug", `yarn - ${data.toString().trim()}`)
-        });
-        // subprocess.stderr.on('data', (data) => {
-        //     this.logMessage("error", `yarn - ${data.toString().trim()}`)
-        // });
-        const { stdout, stderr, exitCode, failed } = await subprocess;
-        if (failed || exitCode > 0) {
-            throw new Error(`Failed to install dependencies with yarn`);
-        }
     }
 
     private generateOpPackageJson({ dependencies }) {
