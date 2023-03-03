@@ -1021,10 +1021,10 @@
     "@jridgewell/resolve-uri" "3.1.0"
     "@jridgewell/sourcemap-codec" "1.4.14"
 
-"@matchlighter/common_library@^1.4.6":
-  version "1.4.6"
-  resolved "https://registry.yarnpkg.com/@matchlighter/common_library/-/common_library-1.4.6.tgz#c8ed50ab4cabc7ac303f099a5022cec88c161e1e"
-  integrity sha512-afILYTa53ynFD3PummtBLP0rIU3dOLs1FjsJhAF8NkqXjakpFOjTHVlbr6dvc5HzvfMRhRhTHafKS8R2WThDTA==
+"@matchlighter/common_library@^1.5.9":
+  version "1.5.9"
+  resolved "https://registry.yarnpkg.com/@matchlighter/common_library/-/common_library-1.5.9.tgz#5b43726230bbc65baeb16db5f01546e9551198b1"
+  integrity sha512-aN/T1jtun8la2EmJntx0xtyUjvzZ/EEI8ALdAZlNZ6swrlmCIpCUsU/xJyt6/I4urrd6gTgGjTfQ+1gf8k8yeQ==
   dependencies:
     classnames "^2.2.6"
     jsonpath "^1.0.2"

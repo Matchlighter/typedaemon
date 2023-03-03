@@ -1,5 +1,5 @@
 
-import { merger } from "@matchlighter/common_library/cjs/data/config"
+import { merger } from "@matchlighter/common_library/data/config"
 import { LogLevel } from "./logging";
 
 export interface BasePluginConfig {

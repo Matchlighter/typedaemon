@@ -19,10 +19,10 @@ import {
     HassEntities,
 } from 'home-assistant-js-websocket'
 
-import { sync_to_observable } from '@matchlighter/common_library/cjs/sync_observable'
+import { sync_to_observable } from '@matchlighter/common_library/sync_observable'
 
 import { ResumablePromise, SerializedResumable } from "../../runtime/resumable_promise";
-import { homeAssistantApi } from './api';
+import { HomeAssistantApi, homeAssistantApi } from './api';
 import { get_plugin } from '../../runtime/hooks';
 import { HomeAssistantPluginConfig, PluginType } from '../../hypervisor/config_plugin';
 import { Plugin } from '../base';
@@ -52,7 +52,7 @@ function isStateChangedEvent(event: HassEvent): event is StateChangedEvent {
 type OnConnectedWhen = 'always' | 'once' | 'once_per_host';
 
 export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
-    readonly api = homeAssistantApi({ pluginId: this[HyperWrapper].id });
+    readonly api: HomeAssistantApi = homeAssistantApi({ pluginId: this[HyperWrapper].id });
 
     async initialize() {
         await this.connect();

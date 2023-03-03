@@ -8,13 +8,14 @@ import execa = require('execa');
 import extract_comments = require('extract-comments');
 import { AsyncReturnType } from 'type-fest';
 
+import { debounce } from "@matchlighter/common_library/limit"
+
 import { AppConfiguration } from "./config_app";
 import { ResumableStore } from '../runtime/resumable_store';
 import { Application } from '../runtime/application';
 import { PersistentStorage } from './persistent_storage';
 import { createApplicationVM } from './vm';
 import { TYPEDAEMON_PATH, fileExists, trim, watchFile } from '../common/util';
-import { debounce } from '../common/limit';
 import { BaseInstance, InstanceLogConfig } from './managed_apps';
 import { RequireRestart, configChangeHandler } from './managed_config_events';
 import { flushPluginAnnotations } from '../plugins/base';

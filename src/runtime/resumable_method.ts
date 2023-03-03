@@ -1,5 +1,5 @@
 
-import { InvertedWeakMap } from "@matchlighter/common_library/cjs/data/inverted_weakmap"
+import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weakmap"
 
 import { ResumablePromise, SerializedResumable, Suspend } from "./resumable_promise";
 import { pojso } from "../common/util";
