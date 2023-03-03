@@ -21,7 +21,7 @@ import {
 
 import { sync_to_observable } from '@matchlighter/common_library/sync_observable'
 
-import { ResumablePromise, SerializedResumable } from "../../runtime/resumable_promise";
+import { ResumablePromise, SerializedResumable } from "../../runtime/resumable";
 import { HomeAssistantApi, homeAssistantApi } from './api';
 import { get_plugin } from '../../runtime/hooks';
 import { HomeAssistantPluginConfig, PluginType } from '../../hypervisor/config_plugin';
@@ -106,6 +106,9 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
 
     trackEventAwaiter(awaiter: EventAwaiter) {
         // TODO
+        return () => {
+
+        }
     }
 
     private async connect() {
@@ -173,7 +176,25 @@ class EventAwaiter extends ResumablePromise<any>{
     constructor(readonly hap: HomeAssistantPlugin, readonly schema) {
         super();
         current.application.resumableStore.track(this);
-        hap.trackEventAwaiter(this);
+        this.ha_untrack = hap.trackEventAwaiter(this);
+    }
+
+    static {
+        ResumablePromise.defineClass({
+            type: 'ha_event_waiter',
+            resumer: (data) => {
+                const { plugin, schema } = data;
+                const ha = get_plugin<HomeAssistantPlugin>(plugin);
+                return new this(ha, schema);
+            },
+        })
+    }
+
+    private readonly ha_untrack: () => void;
+
+    suspend() {
+        this.ha_untrack?.();
+        return super.suspend();
     }
 
     serialize(): SerializedResumable {
@@ -181,14 +202,7 @@ class EventAwaiter extends ResumablePromise<any>{
             type: 'ha_event_waiter',
             sideeffect_free: true,
             plugin: this.hap[HyperWrapper].id,
+            schema: this.schema,
         }
     }
 }
-
-ResumablePromise.defineClass({
-    type: 'ha_event_waiter',
-    resumer: (data) => {
-        const ha = get_plugin<HomeAssistantPlugin>(data.plugin);
-        return new EventAwaiter(ha, {})
-    },
-})

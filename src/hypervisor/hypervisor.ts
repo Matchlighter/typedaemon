@@ -8,19 +8,19 @@ import moment = require("moment-timezone")
 import { MultiMap } from "@matchlighter/common_library/data/multimap"
 import { deep_get } from "@matchlighter/common_library/deep/index"
 
-import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile } from "../common/util";
-import { LifecycleHelper } from "../common/lifecycle_helper";
+import { LifecycleHelper } from "../common/lifecycle_helper"
+import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile } from "../common/util"
 
-import { Configuration, ConfigMerger, defaultConfig, readConfigFile } from "./config";
-import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
-import { ApplicationInstance } from "./application_instance";
-import { AppNamespace } from "./managed_apps";
-import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
-import { PluginInstance } from "./plugin_instance";
 import { saveGeneratedTsconfig } from "../common/generate_tsconfig"
-import { ExtendedLoger, LogLevel, createDomainLogger } from "./logging"
 import { Plugin } from "../plugins/base"
 import { Application } from "../runtime/application"
+import { ApplicationInstance } from "./application_instance"
+import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config"
+import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app"
+import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin"
+import { ExtendedLoger, LogLevel, createDomainLogger } from "./logging"
+import { AppNamespace } from "./managed_apps"
+import { PluginInstance } from "./plugin_instance"
 
 type ConfigWatchHandler<T> = (newConfig: T, oldConfig: T) => void;
 
@@ -101,7 +101,6 @@ export class Hypervisor {
         process.on('SIGINT', async () => {
             console.log('');
             this.logMessage("info", "SIGINT received. Shutting down...");
-            this._state = "shutting_down";
             await this.shutdown();
             process.exit(0);
         });
@@ -131,7 +130,7 @@ export class Hypervisor {
 
         // Release file watchers and other cleanup
         this.logMessage("info", "Cleaning up");
-        this.cleanupTasks.cleanup()
+        await this.cleanupTasks.cleanup()
     }
 
     protected async findAndLoadConfig() {

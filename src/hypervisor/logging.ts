@@ -41,6 +41,12 @@ export function cleanAndMapStacktrace(err: Error) {
     const trace = err.stack || '';
     const stack = trace.split("\n");
 
+    if (trace.startsWith('SyntaxError:')) {
+        return stack.filter(line => {
+            return !/^\s+at/.test(line);
+        })
+    }
+
     const working_directory = current.hypervisor?.working_directory || '';
     const clean_stack = [];
 

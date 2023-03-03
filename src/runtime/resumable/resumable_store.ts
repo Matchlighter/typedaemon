@@ -1,4 +1,4 @@
-import { timeoutPromise } from "../common/util";
+import { timeoutPromise } from "../../common/util";
 import { ResumableOwnerLookup, resumable } from "./resumable_method";
 import { ResumablePromise, Suspend } from "./resumable_promise";
 
@@ -21,12 +21,18 @@ export class ResumableStore {
     track(promise: ResumablePromise<any>) {
         if (this.state == "suspended") throw new Error("ResumableStore is suspended and not accepting new promises");
 
+        if (this.state == 'suspending' && promise.treeCanSuspend()) {
+            this.suspendedResumables.push(promise);
+            return;
+        }
+
         this.running_resumables.add(promise);
 
         promise.catch(
             (err) => {
                 if (err instanceof Suspend) {
                     this.suspendedResumables.push(promise);
+                    err.ack();
                 }
                 throw err;
             },
@@ -35,7 +41,7 @@ export class ResumableStore {
             this.running_resumables.delete(promise);
             if (this.state == 'shutdown_requested') {
                 for (let p of this.running_resumables) {
-                    if (!p.can_suspend()) return;
+                    if (!p.treeCanSuspend()) return;
                 }
 
                 // All promises suspendable!
@@ -54,7 +60,8 @@ export class ResumableStore {
         // Wait for pending non-suspendable HA await conditions to resolve
         const flushPromise = new Promise((accept) => {
             this.onNonSuspendableClear = accept as any;
-            if (this.running_resumables.size == 0) {
+            const hasNonSuspendable = [...this.running_resumables].some(o => !o.treeCanSuspend());
+            if (!hasNonSuspendable) {
                 this.onNonSuspendableClear();
             }
         });
@@ -66,15 +73,13 @@ export class ResumableStore {
         this.state = 'suspending';
 
         // Throw Suspend to all pending suspendable HA await conditions
-        for (let task of this.running_resumables) {
-            task.suspend();
-        }
+        await Promise.all([...this.running_resumables].map(rr => rr.suspend()))
 
         /* Edge Case: Deferred awaiting
         {
             const x = some_promise();
             await some_resumable_promise();
-            await SomePromise;
+            await x;
         }
 
         Line 2 should be recognized as not Suspendable.

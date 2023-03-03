@@ -20,11 +20,8 @@ cli.option('config', {
     string: true,
     default: () => process.cwd(),
     coerce: (v: string) => {
+        v = path.resolve(process.cwd(), v);
         // TODO Traverse and locate?
-        if (v.indexOf("/") !== 0) {
-            // If this isn't an absolute path, make it relative to the working directory.
-            v = path.join(process.cwd(), v);
-        }
         return v;
     }
 })

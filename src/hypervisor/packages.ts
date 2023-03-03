@@ -23,8 +23,7 @@ export async function installDependencies(logger: (...args: any[]) => void, dir:
         cwd: dir,
     })
     subprocess.stdout.on('data', (data) => {
-        console.log('  ' + data.toString().trim())
-        // logger("debug", `yarn - ${data.toString().trim()}`)
+        logger(data.toString().trim())
     });
     // subprocess.stderr.on('data', (data) => {
     //     host.logMessage("error", `yarn - ${data.toString().trim()}`)

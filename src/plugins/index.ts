@@ -1,3 +1,4 @@
+
 import { HomeAssistantPlugin } from "./home_assistant";
 import { MqttPlugin } from "./mqtt";
 
@@ -8,3 +9,5 @@ export const PLUGIN_TYPES = {
 
 export { api as ha } from "./home_assistant/api"
 export { api as mqtt } from "./mqtt/api"
+
+export { sleep } from "./builtin/sleep"

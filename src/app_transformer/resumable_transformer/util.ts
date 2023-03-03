@@ -11,7 +11,7 @@ export type BabelTypes = typeof types;
 
 let currentTypes = null;
 
-export function wrapWithTypes(types, fn) {
+export function wrapWithTypes<T extends (...args: any[]) => any>(types: any, fn: T): T {
   return function (...args) {
     const oldTypes = currentTypes;
     currentTypes = types;
@@ -20,7 +20,7 @@ export function wrapWithTypes(types, fn) {
     } finally {
       currentTypes = oldTypes;
     }
-  };
+  } as any;
 }
 
 export function getTypes() {

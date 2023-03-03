@@ -45,7 +45,6 @@ export const convertTypescript = async (source: string, filename: string) => {
 const plainObjectString = Object.toString()
 
 export function pojso(value: any) {
-    // TODO Deep
     const proto = Object.getPrototypeOf(value)
     if (proto == null) {
         return true
@@ -54,6 +53,17 @@ export function pojso(value: any) {
     return (
         typeof protoConstructor === "function" && protoConstructor.toString() === plainObjectString
     )
+}
+
+export function deep_pojso(value: any) {
+    const proto = Object.getPrototypeOf(value)
+    if (proto != null) return false;
+
+    for (let [k, v] of Object.entries(value)) {
+        if (typeof v == 'object' && !deep_pojso(v)) return false;
+    }
+
+    return true;
 }
 
 export class PromiseTimedout extends Error { }

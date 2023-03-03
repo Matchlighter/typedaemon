@@ -147,7 +147,7 @@ export class Emitter {
     t.assertLiteral(tryLoc);
 
     let catchCall = t.callExpression(
-      this.contextProperty("catch", true),
+      this.contextProperty("_catch", true),
       [t.clone(tryLoc)]
     );
 
