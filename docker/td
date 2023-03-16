@@ -1,0 +1,2 @@
+
+node /opt/typedaemon/node_modules/.bin/typedaemon "$@"

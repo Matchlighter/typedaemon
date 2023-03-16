@@ -8,7 +8,7 @@ import { debounce } from "@matchlighter/common_library/limit";
 
 export const __package_dir = path.join(__dirname, '../../');
 export const TYPEDAEMON_PATH = path.join(__dirname, '..');
-export const TD_DEVELOPER_MODE = !TYPEDAEMON_PATH.includes("node_modules");
+export const TD_DEVELOPER_MODE = process.env['TYPEDAEMON_ENV'] != 'production' && !TYPEDAEMON_PATH.includes("node_modules");
 
 export const TD_MODULES_PATH = TD_DEVELOPER_MODE ? path.join(__package_dir, 'node_modules') : path.join(__package_dir, '..');
 

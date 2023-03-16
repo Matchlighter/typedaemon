@@ -1,0 +1,4 @@
+node_modules/
+test_setup/
+experiments/
+Dockerfile

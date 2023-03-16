@@ -2,7 +2,7 @@
 import fs = require("fs")
 import path = require("path");
 import { TsConfigJson } from "type-fest";
-import fse from 'fs-extra';
+import fse = require('fs-extra');
 
 import { merger } from "@matchlighter/common_library/data/config";
 import { Hypervisor } from "../hypervisor/hypervisor";

@@ -8,6 +8,7 @@ export default createMacro(({ references, babel, state, config }) => {
             if (ref.parentPath.type == "Decorator") {
                 const methodPath = ref.parentPath.parentPath;
                 const visitor = getVisitor(babel);
+                // @ts-ignore
                 visitor["Method"](methodPath, state);
                 methodPath.traverse(visitor, state);
             }
