@@ -2,7 +2,24 @@ import fs = require("fs");
 import execa = require("execa");
 import path = require("path");
 
-export async function installDependencies(logger: (...args: any[]) => void, dir: string, dependencies?) {
+export interface InstallOpts {
+    dir: string;
+    lockfile?: boolean;
+    devPackages?: boolean;
+    logger: (...args: any[]) => void;
+}
+
+export async function installDependencies({ dir, logger, ...opts }: InstallOpts, dependencies?) {
+    const flags: string[] = ["--non-interactive"];
+
+    if (opts.lockfile === false) {
+        flags.push("--no-lockfile");
+    }
+
+    if (!opts.devPackages) {
+        flags.push("--production");
+    }
+
     const pkgjsonFile = path.join(dir, "package.json");
     if (dependencies) {
         if (typeof dependencies == "string") {
@@ -19,7 +36,7 @@ export async function installDependencies(logger: (...args: any[]) => void, dir:
         }
     }
 
-    const subprocess = execa('yarn', ['install'], {
+    const subprocess = execa('yarn', ['install', ...flags], {
         cwd: dir,
     })
     subprocess.stdout.on('data', (data) => {
