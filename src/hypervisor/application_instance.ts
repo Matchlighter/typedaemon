@@ -42,7 +42,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         return path.resolve(this.hypervisor.working_directory, this.options.source)
     }
 
-    readonly resumableStore = new ResumableStore();
+    resumableStore: ResumableStore;
     readonly persistedStorage: PersistentStorage = new PersistentStorage();
 
     protected loggerOptions(): InstanceLogConfig {
@@ -200,17 +200,17 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             this.cleanups.append(disposer);
         }
 
-        const state_file = path.join(this.operating_directory, ".resumable_state.json");
+        this.resumableStore = new ResumableStore({
+            file: path.join(this.operating_directory, ".resumable_state.json"),
+            logger: this.logger,
+        }, {
+            "APPLICATION": this._instance,
+        })
 
         // We want this to run _after_ the userspace app has completely shutdown
         this.cleanups.append(async () => {
             this.logMessage("info", "Suspending Resumables")
-            const suspendeds = await this.resumableStore.suspendAndStore({
-                log: (...args) => this.logMessage(...args),
-            });
-            if (suspendeds.length > 0) {
-                await fs.promises.writeFile(state_file, JSON.stringify(suspendeds));
-            }
+            await this.resumableStore.save();
         });
 
         try {
@@ -227,16 +227,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         await this.invoke(async () => {
             // TODO Skip if initialize already did this
             await flushPluginAnnotations(this.instance);
-
-            if (await fileExists(state_file)) {
-                this.logMessage("info", "Found stored Resumables, resuming them")
-                const restore_json = await fs.promises.readFile(state_file);
-                const restore_list = JSON.parse(restore_json.toString());
-                await this.resumableStore.resume(restore_list, {
-                    "APPLICATION": this._instance,
-                });
-                await fs.promises.unlink(state_file)
-            }
+            await this.resumableStore.load();
         })
 
         this.transitionState('started');

@@ -32,6 +32,8 @@ const ContextResumableOwnerLookup = new AsyncLocalStorage<ResumableOwnerLookup>(
 const RESUMABLE_OWNERS = new InvertedWeakMap<string, any>()
 const defaultResumableOwnerLookup: ResumableOwnerLookup = (key) => RESUMABLE_OWNERS.get(key);
 
+export class MethodResumeError extends Error {}
+
 ResumablePromise.defineClass({
     type: "@resumable",
     resumer: (data, { require }) => {
@@ -52,8 +54,7 @@ ResumablePromise.defineClass({
         // Validate that at least counts are the same. We won't be able to perfectly guarantee that there weren't major control/flow changes,
         //   but checking count should be able to catch most issues and issue a warning
         if (oldIndexedMarks && oldIndexedMarks.length != newIndexedMarks.length) {
-            console.warn(`Reloading @resumable "${scope.owner}:${scope.method}"; Control flow was obviously changed! You should version your @resumables when making such changes.`);
-            // TODO Prompt, exit, what?
+            throw new MethodResumeError(`Reloading @resumable "${scope.owner}:${scope.method}"; Control flow was obviously changed! You should version your @resumables when making such changes.`)
         }
 
         Object.assign(executor, {
@@ -482,7 +483,7 @@ export const resumable = (f, context: ClassMethodDecoratorContext) => {
     return start_wrapped;
 }
 
-resumable.with_lookup_context = (lookup: ResumableOwnerLookup, f: () => void) => {
+resumable.with_lookup_context = <F extends () => any>(lookup: ResumableOwnerLookup, f: F): ReturnType<F> => {
     return ContextResumableOwnerLookup.run(lookup, f);
 }
 
