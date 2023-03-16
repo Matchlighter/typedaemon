@@ -30,10 +30,10 @@ export interface Configuration {
         application?: LogLevel;
         applications_file?: string;
 
-        plugins_file?: string;
-
         system?: LogLevel;
         system_file?: string;
+
+        plugins_file?: string;
     };
 
     /**

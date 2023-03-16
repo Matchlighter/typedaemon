@@ -90,18 +90,19 @@ export class Hypervisor {
         this.logMessage("info", "Loading Config");
         await this.findAndLoadConfig();
 
+        this.getAndWatchConfigEntry("logging", (v) => this.updateLogConfiguration(v));
+        this.getAndWatchConfigEntry("location.timezone", (tz: string) => moment.tz.setDefault(tz || undefined));
+
         this.getAndWatchConfigEntry("tsconfig", async (v) => {
             this.logMessage("debug", "Writing generated tsconfig.json");
             await saveGeneratedTsconfig(this)
         })
 
-        this.getAndWatchConfigEntry("logging", (v) => this.updateLogConfiguration(v));
-        this.getAndWatchConfigEntry("location.timezone", (tz: string) => moment.tz.setDefault(tz || undefined));
-
         process.on('SIGINT', async () => {
             console.log('');
             this.logMessage("info", "SIGINT received. Shutting down...");
             await this.shutdown();
+            await new Promise(accept => this._logger.info('Done', accept))
             process.exit(0);
         });
 

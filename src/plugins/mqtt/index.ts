@@ -23,9 +23,11 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
                 this.applicationConnections.set(instance, conn);
 
                 let cleanedup = false;
-                const cleanup = () => {
+                const cleanup = async () => {
                     if (cleanedup) return;
-                    conn.end();
+                    await new Promise((resolve, reject) => {
+                        conn.end(false, {}, resolve);
+                    })
                     this.applicationConnections.delete(instance);
                     cleanedup = true;
                 }
@@ -86,7 +88,11 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
     }
 
     async shutdown() {
-        this.ownConnection?.end();
+        if (this.ownConnection) {
+            await new Promise((resolve, reject) => {
+                this.ownConnection.end(false, {}, resolve);
+            })
+        }
     }
 
     configuration_updated(new_config: MQTTPluginConfig, old_config: MQTTPluginConfig) {
