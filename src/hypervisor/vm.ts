@@ -16,7 +16,7 @@ import { APP_BABEL_CONFIG } from "../app_transformer";
 import { CONSOLE_METHODS, logMessage } from "./logging";
 import { registerSourceMap } from "../app_transformer/source_maps";
 import { appmobx } from "../plugins/mobx";
-import { TYPEDAEMON_PATH, patch } from "../common/util";
+import { TD_MODULES_PATH, TYPEDAEMON_PATH, patch } from "../common/util";
 
 type VMExtensions = Record<`.${string}`, (mod: Module, filename: string) => void>;
 
@@ -25,6 +25,8 @@ interface VMInternalResolver {
     pathContext(filename: string, filetype: string): 'host' | 'sandbox'
     resolve(mod: Module, x: string | symbol, options, ext: Record<string, VMExtensions>, direct: boolean): string;
     genLookupPaths(curPath: string): string[];
+
+    loadNodeModules(x: string, dirs: string[], extList: string[]): string;
 
     customResolver
     compiler
@@ -38,15 +40,17 @@ interface VMModule {
     globalPaths: string[];
 }
 
-export const PATH_MAPS = {
+export const PATH_ALIASES = {
     "@td": "@TYPEDAEMON",
     "@td/ha": "@TYPEDAEMON/plugins/home_assistant/api",
     "@td/mqtt": "@TYPEDAEMON/plugins/mqtt/api",
     "@td/*": "@TYPEDAEMON/*",
 }
 
-async function loadPathMaps(entrypoint: string) {
+export async function loadPathMaps(entrypoint: string) {
     const path_maps = {};
+
+    // TODO Allow user to specify additional aliases
 
     const LOAD_TS_MAPS = false;
     if (LOAD_TS_MAPS) {
@@ -68,7 +72,7 @@ async function loadPathMaps(entrypoint: string) {
         }
     }
 
-    for (let [k, v] of Object.entries(PATH_MAPS)) {
+    for (let [k, v] of Object.entries(PATH_ALIASES)) {
         path_maps[k] = [v.replace("@TYPEDAEMON", TYPEDAEMON_PATH)]
     }
 
@@ -89,7 +93,13 @@ export async function createApplicationVM(app: ApplicationInstance) {
         await loadPathMaps(app.entrypoint),
     );
 
+    const SYSTEM_MODULES: (string | RegExp)[] = [
+        'mobx',
+        'typedaemon',
+    ]
     const EXTENSIONS = ["js", "ts", "jsx", "tsx"]
+
+    const opModulesPath = path.join(app.operating_directory, "node_modules");
 
     const vm = new VM.NodeVM({
         sourceExtensions: EXTENSIONS,
@@ -129,6 +139,7 @@ export async function createApplicationVM(app: ApplicationInstance) {
                 if (id?.endsWith('node_modules/mobx/dist/index.js')) {
                     return appmobx;
                 }
+
                 return require(id)
             },
             // Fallback Resolver if nothing else works
@@ -152,8 +163,8 @@ export async function createApplicationVM(app: ApplicationInstance) {
     patch(vmResolver, 'resolve', original => function (...args) {
         let [calling_module, requested_module, opts, extension_handlers, direct] = args;
 
-        const tsMappedPath = matchPath(requested_module as string);
-        if (tsMappedPath) requested_module = tsMappedPath;
+        const mappedPath = matchPath(requested_module as string);
+        if (mappedPath) requested_module = mappedPath;
 
         const resolvedTo: string = original.call(this, calling_module, requested_module, opts, extension_handlers, direct)
         // resolvedTo should be either an absolute path or an internal module. Don't try to watch an internal
@@ -164,14 +175,41 @@ export async function createApplicationVM(app: ApplicationInstance) {
         return resolvedTo;
     })
 
+    const system_modules_folders = vmResolver.genLookupPaths(TD_MODULES_PATH)
+
     patch(vmResolver, 'genLookupPaths', original => function (curPath) {
         const paths = original(curPath);
-        const opModulesPath = path.join(app.operating_directory, "node_modules");
 
         // Inject the install location of the app's dependencies
         if (!paths.includes(opModulesPath)) paths.unshift(opModulesPath)
 
         return paths;
+    });
+
+    patch(vmResolver, 'loadNodeModules', original => function (x, dirs, extList) {
+        // Ensure typedaemon, MobX, etc. will _never_ load from an application's node_modules.
+        let matched = false;
+        for (let sm of SYSTEM_MODULES) {
+            if (sm instanceof RegExp) {
+                if (x.match(sm)) {
+                    matched = true;
+                    break;
+                };
+            } else {
+                if (x == sm || x.startsWith(sm + '/')) {
+                    matched = true;
+                    break;
+                }
+            }
+        }
+
+        if (matched) {
+            const resolv = original(x, system_modules_folders, extList);
+            if (resolv) return resolv;
+            logMessage("warn", `${x} was determined to be a system module, but it could not be found in the system. Falling back to app resolution.`)
+        }
+
+        return original(x, dirs, extList);
     });
 
     const vmModule: VMModule = vm['_Module'];
