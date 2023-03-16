@@ -3,8 +3,8 @@ import path = require("path");
 import { CommandModule } from "yargs";
 
 import { UtilityHypervisor } from "../hypervisor/hypervisor";
-import { installDependencies } from "../hypervisor/packages";
-import { __package_dir } from "../common/util";
+import { InstallOpts, installDependencies } from "../hypervisor/packages";
+import { TD_DEVELOPER_MODE, TD_VERSION, __package_dir } from "../common/util";
 import { saveGeneratedTsconfig } from "../common/generate_tsconfig";
 
 export async function syncDevEnv(wdir: string) {
@@ -15,8 +15,18 @@ export async function syncDevEnv(wdir: string) {
     await hv.start()
     console.log("Generating tsconfig.json")
     await saveGeneratedTsconfig(hv);
+
     console.log("Installing Type Definitions")
-    await installDependencies((msg) => console.log('  ' + msg), hv.operations_directory, path.resolve(__package_dir, "package.json"))
+    // Link TD Directly if it's not installed as a module
+    const deps = TD_DEVELOPER_MODE ? path.resolve(__package_dir, "package.json") : {
+        "typedaemon": TD_VERSION,
+    };
+    const depOpts: InstallOpts = {
+        dir: hv.operations_directory,
+        logger: (msg) => console.log('  ' + msg),
+        lockfile: false,
+    }
+    await installDependencies(depOpts, deps);
     await hv.shutdown();
 }
 

@@ -165,7 +165,12 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
         // if (Object.keys(packageJson?.dependencies || {}).length > 0) {
         this.logMessage("info", `Installing packages`);
-        await installDependencies((...args) => this.logMessage("debug", ...args), this.operating_directory);
+        await installDependencies({
+            dir: this.operating_directory,
+            logger: (...args) => this.logMessage("debug", ...args),
+            lockfile: this.isThickApp,
+            devPackages: true,
+        });
 
         this.transitionState("compiling");
 

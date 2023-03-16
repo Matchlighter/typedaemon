@@ -6,7 +6,7 @@ import fse from 'fs-extra';
 
 import { merger } from "@matchlighter/common_library/data/config";
 import { Hypervisor } from "../hypervisor/hypervisor";
-import { TYPEDAEMON_PATH } from "./util";
+import { TD_DEVELOPER_MODE, TYPEDAEMON_PATH } from "./util";
 import { Configuration } from "../hypervisor/config";
 import { PATH_MAPS } from "../hypervisor/vm";
 
@@ -27,7 +27,7 @@ const tsconfigMerger = merger<TsConfigJson>({
 })
 
 export async function saveGeneratedTsconfig(hv: Hypervisor) {
-    const typedaemon_dir = TYPEDAEMON_PATH.includes("node_modules") ? "./node_modules/typedaemon" : path.relative(hv.operations_directory, TYPEDAEMON_PATH);
+    const typedaemon_dir = TD_DEVELOPER_MODE ? path.relative(hv.operations_directory, TYPEDAEMON_PATH) : "./node_modules/typedaemon";
     const cfg = hv.currentConfig as Configuration;
 
     const paths = {}
