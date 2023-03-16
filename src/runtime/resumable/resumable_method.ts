@@ -156,7 +156,7 @@ class Executor<T> extends ResumablePromise<T> {
         }
     }
 
-    protected can_suspend(ctx: CanSuspendContext ) {
+    protected can_suspend(ctx: CanSuspendContext) {
         if (!super.can_suspend(ctx)) return false;
         if (deep_pojso(this.state)) return false;
         ctx.link(this.pending_promise);

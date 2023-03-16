@@ -189,7 +189,6 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         // Self-watch for config changes
         if (this.options.watch?.config) {
             const handler = configChangeHandler(this, async ({ handle, ncfg, ocfg }) => {
-
                 if (!deepEqual(immutableConfigBits(ocfg), immutableConfigBits(ncfg))) {
                     this.logMessage("debug", `Configuration changed significantly, restarting`);
                     throw new RequireRestart()
@@ -201,10 +200,17 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             this.cleanups.append(disposer);
         }
 
+        const state_file = path.join(this.operating_directory, ".resumable_state.json");
+
         // We want this to run _after_ the userspace app has completely shutdown
         this.cleanups.append(async () => {
-            const suspendeds = await this.resumableStore.suspendAndStore();
-            console.log("SUSPENDEDS", JSON.stringify(suspendeds))
+            this.logMessage("info", "Suspending Resumables")
+            const suspendeds = await this.resumableStore.suspendAndStore({
+                log: (...args) => this.logMessage(...args),
+            });
+            if (suspendeds.length > 0) {
+                await fs.promises.writeFile(state_file, JSON.stringify(suspendeds));
+            }
         });
 
         try {
@@ -222,13 +228,15 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             // TODO Skip if initialize already did this
             await flushPluginAnnotations(this.instance);
 
-            const restore_list = [
-                // {"type":"@resumable","depends_on":[1],"scope":{"owner":"APPLICATION","method":"some_resumable","parameters":[5]},"state":{"y":5},"actionType":"next","marked_locations":[0,4],"prev":0,"prevIndex":0,"next":4,"nextIndex":1,"done":false,"id":0},
-                // {"type":"sleep","sideeffect_free":true,"sleep_until":1677_935_539_384,"id":1}
-            ]
-            await this.resumableStore.resume(restore_list, {
-                "APPLICATION": this._instance,
-            })
+            if (await fileExists(state_file)) {
+                this.logMessage("info", "Found stored Resumables, resuming them")
+                const restore_json = await fs.promises.readFile(state_file);
+                const restore_list = JSON.parse(restore_json.toString());
+                await this.resumableStore.resume(restore_list, {
+                    "APPLICATION": this._instance,
+                });
+                await fs.promises.unlink(state_file)
+            }
         })
 
         this.transitionState('started');
