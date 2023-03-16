@@ -94,7 +94,7 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
             ...manager,
             ...rest,
         })
-
+        
         this._userSpaceLogger = createDomainLogger({
             level: "debug",
             domain,

@@ -16,7 +16,7 @@ import { APP_BABEL_CONFIG } from "../app_transformer";
 import { CONSOLE_METHODS, logMessage } from "./logging";
 import { registerSourceMap } from "../app_transformer/source_maps";
 import { appmobx } from "../plugins/mobx";
-import { TYPEDAEMON_PATH } from "../common/util";
+import { TYPEDAEMON_PATH, patch } from "../common/util";
 
 type VMExtensions = Record<`.${string}`, (mod: Module, filename: string) => void>;
 
@@ -187,14 +187,6 @@ export async function createApplicationVM(app: ApplicationInstance) {
     }
 
     return vm;
-}
-
-function patch<T, K extends keyof T>(target: T, key: K, patcher: (original: T[K]) => T[K]) {
-    const original: any = target[key];
-    target[key] = function (...args) {
-        const caller = ((...args) => original.call(this, ...args)) as T[K];
-        return (patcher(caller) as any).call(this, ...args);
-    } as any;
 }
 
 export function requireFromString(src: string, filename: string) {

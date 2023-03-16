@@ -212,3 +212,11 @@ export async function* walk_files(dir, types: string[]) {
         if (types.includes(path.extname(file).slice(1))) yield file;
     }
 }
+
+export function patch<T, K extends keyof T>(target: T, key: K, patcher: (original: T[K]) => T[K]) {
+    const original: any = target[key];
+    target[key] = function (...args) {
+        const caller = ((...args) => original.call(this, ...args)) as T[K];
+        return (patcher(caller) as any).call(this, ...args);
+    } as any;
+}

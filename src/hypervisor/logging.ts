@@ -4,8 +4,10 @@ import chalk = require("chalk");
 import winston = require("winston");
 import moment = require("moment-timezone");
 
+import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weakmap"
+
 import { current } from "./current";
-import { pojso } from "../common/util";
+import { patch, pojso } from "../common/util";
 import { mapStackTrace } from "../app_transformer/source_maps";
 
 export const CONSOLE_METHODS = ['debug', 'info', 'warn', 'error', 'dir'] as const;
@@ -101,9 +103,29 @@ export interface LoggerOptions {
     file?: string;
 }
 
+export type Logger = winston.Logger;
+
 export interface ExtendedLoger extends winston.Logger {
     logMessage: (level: LogLevel, message: any[], meta?: any) => void;
 }
+
+const FILE_TRANSPORTS = new InvertedWeakMap<string, winston.transports.FileTransportInstance>();
+function getFileTransport(file: string) {
+    if (!FILE_TRANSPORTS.has(file)) {
+        FILE_TRANSPORTS.set(file, new winston.transports.File({
+            filename: file,
+            maxFiles: 1,
+            maxsize: 1024 * 256,
+            format: fmt.combine(
+                timed_formatter,
+                fmt.uncolorize({}),
+            ),
+        }))
+    }
+    return FILE_TRANSPORTS.get(file)
+}
+
+let c = 0
 
 export function createDomainLogger(opts: LoggerOptions) {
     const transports: winston.transport[] = [
@@ -113,6 +135,7 @@ export function createDomainLogger(opts: LoggerOptions) {
     ]
 
     if (opts.file) {
+        // transports.push(getFileTransport(opts.file))
         transports.push(...[
             // new winston.transports.File({
             //     filename: 'error.log',
@@ -124,6 +147,8 @@ export function createDomainLogger(opts: LoggerOptions) {
             // }),
             new winston.transports.File({
                 filename: opts.file,
+                maxFiles: 1,
+                maxsize: 1024 * 256,
                 format: fmt.combine(
                     timed_formatter,
                     fmt.uncolorize({}),
@@ -135,6 +160,7 @@ export function createDomainLogger(opts: LoggerOptions) {
     const logger = winston.createLogger({
         level: opts.level,
         levels: NUMERIC_LOG_LEVELS,
+        exitOnError: false,
         format: fmt.combine(
             timestamp(),
             scope_fmt(),
@@ -183,8 +209,12 @@ export function createDomainLogger(opts: LoggerOptions) {
         return logger.log(level, message.join(' '), meta);
     }
 
+    logger.on("finish", () => console.log("END", opts.file))
+
     return logger;
 }
+
+export type LogAMessage = typeof logMessage;
 
 export function logMessage(level: LogLevel, ...rest: any[]) {
     const ctx = current.application || current.hypervisor;
