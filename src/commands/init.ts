@@ -1,5 +1,5 @@
 import { CommandModule } from "yargs";
-import fs from 'fs-extra';
+import fs = require('fs-extra');
 import { promises as fsp } from 'fs'
 import path = require("path");
 import ejs = require("ejs");

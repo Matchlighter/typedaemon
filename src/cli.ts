@@ -18,7 +18,7 @@ cli.option('config', {
     alias: 'c',
     describe: "Specify the TypeDaemon working directory",
     string: true,
-    default: () => process.cwd(),
+    default: () => process.env['TYPEDAEMON_CONFIG'] || process.cwd(),
     coerce: (v: string) => {
         v = path.resolve(process.cwd(), v);
         // TODO Traverse and locate?

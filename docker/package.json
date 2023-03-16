@@ -1,0 +1,8 @@
+{
+    "name": "typedaemon_docker",
+    "license": "MIT",
+    "version": "0.1.0",
+    "dependencies": {
+        "typedaemon": "../typedaemon_build/"
+    }
+}
