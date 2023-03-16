@@ -8,7 +8,7 @@ import { merger } from "@matchlighter/common_library/data/config";
 import { Hypervisor } from "../hypervisor/hypervisor";
 import { TD_DEVELOPER_MODE, TYPEDAEMON_PATH } from "./util";
 import { Configuration } from "../hypervisor/config";
-import { PATH_MAPS } from "../hypervisor/vm";
+import { PATH_ALIASES } from "../hypervisor/vm";
 
 const tsconfigMerger = merger<TsConfigJson>({
     compilerOptions: merger({
@@ -32,7 +32,7 @@ export async function saveGeneratedTsconfig(hv: Hypervisor) {
 
     const paths = {}
 
-    for (let [k, v] of Object.entries(PATH_MAPS)) {
+    for (let [k, v] of Object.entries(PATH_ALIASES)) {
         paths[k] = [v.replace("@TYPEDAEMON", typedaemon_dir)]
     }
 

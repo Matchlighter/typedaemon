@@ -8,11 +8,13 @@ import { debounce } from "@matchlighter/common_library/limit";
 
 export const __package_dir = path.join(__dirname, '../../');
 export const TYPEDAEMON_PATH = path.join(__dirname, '..');
+export const TD_DEVELOPER_MODE = !TYPEDAEMON_PATH.includes("node_modules");
+
+export const TD_MODULES_PATH = TD_DEVELOPER_MODE ? path.join(__package_dir, 'node_modules') : path.join(__package_dir, '..');
 
 const TD_PACKAGE_JSON = require(path.join(__package_dir, "package.json"));
 
 export const TD_VERSION = TD_PACKAGE_JSON.version;
-export const TD_DEVELOPER_MODE = !TYPEDAEMON_PATH.includes("node_modules");
 
 // Deep ReadOnly
 export type DeepReadonly<T> =
