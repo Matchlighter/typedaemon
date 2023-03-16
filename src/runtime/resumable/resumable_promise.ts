@@ -192,7 +192,7 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
     private resumable_awaiters: ResumablePromise<any>[] = [];
 
     // All awaiters must be ResumablePromises and themselves be ready to suspend
-    treeCanSuspend() {
+    treeCanSuspend(resultCache?: Map<ResumablePromise, boolean>) {
         const handledLinks = new Set<PromiseLike<any>>();
         const pending_links: PromiseLike<any>[] = [this]
         const ctx: CanSuspendContext = {
@@ -206,7 +206,13 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
         while (pending_links.length > 0) {
             const link = pending_links.shift();
             if (link instanceof ResumablePromise) {
-                if (!link.can_suspend(ctx)) return false;
+                if (resultCache && resultCache.has(link)) {
+                    if (!resultCache.get(link)) return false;
+                } else {
+                    const can = link.can_suspend(ctx);
+                    if (resultCache) resultCache.set(link, can);
+                    if (!can) return false;
+                }
             } else {
                 return false;
             }
