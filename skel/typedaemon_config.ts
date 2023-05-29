@@ -10,28 +10,27 @@ export default async function (): Promise<Configuration> {
             home_assistant: {
                 type: "home_assistant",
                 url: "",
-                access_token: "",
+                access_token: "", // Optional if installed via Home Assistent Supervisor
             },
             mqtt: {
                 type: "mqtt",
-                url: "mqtt://",
                 host: "",
                 username: "",
                 password: "",
             }
         },
         apps: {
-            // test: {
-            //     source: "applications/lite_app.ts",
-            //     config: {
-            //         bob: 7
-            //     }
-            // },
-            big: {
+            lite_example: {
+                source: "applications/lite_app.ts",
+                config: {
+                    some_option: "Lite Mode",
+                },
+            },
+            full_example: {
                 source: "applications/full_app",
                 config: {
-                    bob: 5
-                }
+                    some_option: "Full Mode",
+                },
             },
         }
     }

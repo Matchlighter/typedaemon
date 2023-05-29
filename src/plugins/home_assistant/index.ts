@@ -122,7 +122,7 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
 
         try {
             const ha = await createConnection({
-                auth: createLongLivedTokenAuth(this.config.url, this.config.access_token),
+                auth: createLongLivedTokenAuth(url, access_token),
             })
             this._ha_api = ha;
         } catch (ex) {
