@@ -5,6 +5,7 @@ import { MQTTPluginConfig, PluginType } from "../../hypervisor/config_plugin";
 import { BaseInstance, HyperWrapper } from "../../hypervisor/managed_apps";
 import { Plugin } from "../base";
 import { mqttApi } from "./api";
+import { SUPERVISOR_API } from "../supervisor";
 
 export class MqttPlugin extends Plugin<PluginType['mqtt']> {
     readonly api = mqttApi({ pluginId: this[HyperWrapper].id });
@@ -44,14 +45,25 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
         }
     }
 
+    private supervisorServiceConfig: any = {};
+
+    private resolveConnectionConfig(cfg = this.config) {
+        return {
+            host: cfg.host || this.supervisorServiceConfig?.host,
+            // port: this.supervisorServiceConfig?.port,
+            username: cfg.username || this.supervisorServiceConfig?.username,
+            password: cfg.password || this.supervisorServiceConfig?.password,
+        }
+    }
+
     protected createConnection(name?: string) {
         const inst = this[HyperWrapper];
         const uid = Math.random().toString(16).substr(2, 8);
         const client = mqtt.connect(this.config.url, {
             clientId: `typedaemon|${uid}|${inst.id}|${name}`,
-            host: this.config.host,
-            username: this.config.username,
-            password: this.config.password,
+
+            ...this.resolveConnectionConfig(),
+
             // will: {
             //     topic: "",
             //     payload: "",
@@ -84,6 +96,13 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
     }
 
     async initialize() {
+        if (SUPERVISOR_API && !((this.config.host && this.config.username && this.config.password) || this.config.url)) {
+            try {
+                this.supervisorServiceConfig = await SUPERVISOR_API.get("services/mqtt");
+            } catch (ex) {
+                this[HyperWrapper].logMessage("warn", `Supervisor configured, but failed to fetch MQTT Service info.`, ex);
+            }
+        }
         this.ownConnection = this.createConnection("PLUGIN");
     }
 
@@ -97,11 +116,7 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
 
     configuration_updated(new_config: MQTTPluginConfig, old_config: MQTTPluginConfig) {
         for (let conn of [this.ownConnection, ...this.applicationConnections.values()]) {
-            Object.assign(conn.options, {
-                host: new_config.host,
-                username: new_config.username,
-                password: new_config.password,
-            });
+            Object.assign(conn.options, this.resolveConnectionConfig(new_config));
             conn.reconnect();
         }
     }
