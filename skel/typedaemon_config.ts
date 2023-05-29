@@ -9,14 +9,18 @@ export default async function (): Promise<Configuration> {
         plugins: {
             home_assistant: {
                 type: "home_assistant",
-                url: "",
-                access_token: "", // Optional if installed via Home Assistent Supervisor
+
+                // Connection Info: (Optional if installed via Home Assistant Supervisor)
+                // url: "",
+                // access_token: "",
             },
             mqtt: {
                 type: "mqtt",
-                host: "",
-                username: "",
-                password: "",
+
+                // Connection Info: (Optional if installed via Home Assistant Supervisor)
+                // host: "",
+                // username: "",
+                // password: "",
             }
         },
         apps: {
