@@ -1,2 +1,2 @@
 
-node /opt/typedaemon/node_modules/.bin/typedaemon "$@"
+exec node /opt/typedaemon/node_modules/.bin/typedaemon "$@"
