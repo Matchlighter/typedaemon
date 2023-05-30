@@ -4,7 +4,7 @@ import os
 import argparse
 import json
 
-CHANNEL_DEV = "edge"
+CHANNEL_DEV = "dev"
 CHANNEL_BETA = "beta"
 CHANNEL_RELEASE = "release"
 
