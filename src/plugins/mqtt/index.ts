@@ -7,6 +7,8 @@ import { Plugin } from "../base";
 import { mqttApi } from "./api";
 import { SUPERVISOR_API } from "../supervisor";
 
+import './mqtt_patches';
+
 export class MqttPlugin extends Plugin<PluginType['mqtt']> {
     readonly api = mqttApi({ pluginId: this[HyperWrapper].id });
 
@@ -72,7 +74,11 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
             // },
         });
 
+        // Avoid re-logging duplicate traces while reconnecting
+        let last_message;
+
         client.on("connect", () => {
+            last_message = null;
             this[HyperWrapper].logMessage("debug", `MQTT (${name}) Connected!`)
         })
 
@@ -89,7 +95,11 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
         })
 
         client.on("error", (err) => {
-            this[HyperWrapper].logMessage("error", `MQTT (${name}) Error:`, err);
+            // let log_line: any = err;
+            // if (String(err) == last_message) log_line = err.message;
+            // last_message = String(err);
+
+            this[HyperWrapper].logMessage("error", `MQTT (${name}) Error:`, err.message);
         })
 
         return client;
