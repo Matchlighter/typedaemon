@@ -116,7 +116,7 @@ export class ResumableStore {
         }
     }
 
-    private async _suspendAndSerialize({ timeout = 10 }: { timeout?: number } = {}) {
+    private async _suspendAndSerialize({ timeout = 5 }: { timeout?: number } = {}) {
         this.state = 'shutdown_requested';
         this.logMessage("debug", "Resumable - shutting down resumables")
 

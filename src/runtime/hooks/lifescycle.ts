@@ -7,6 +7,25 @@ interface CODReturnSignature<P extends any[], F extends (...params: any[]) => an
     (callback: F, ...params: P): ReturnType<F>
 }
 
+/**
+ * Returns a function that wraps the given function, making it a registering call.
+ * The returned function can be used directly or as a decorator.
+ * 
+ * ```ts
+ * class App {
+ *   initialize() {
+ *     on_shutdown(() => {
+ *       ...
+ *     })
+ *   }
+ * 
+ *   @on_shutdown
+ *   do_this_at_shutdown() {
+ *     ...
+ *   }
+ * }
+ * ```
+ */
 function callback_or_decorator<const P extends any[], F extends (...params: any[]) => any>(func: (f: F, ...params: P) => void, default_params?: P): CODReturnSignature<P, F> {
     return ((...args) => {
         if (typeof args[0] != 'function') {
@@ -29,6 +48,12 @@ function callback_or_decorator<const P extends any[], F extends (...params: any[
     }) as any
 }
 
+/**
+ * Helper to run logic when an application is shutting down. May be used as a decorator, or by passing a callback function.
+ */
 export const on_shutdown = callback_or_decorator((func) => {
-    current.application.cleanups.append(func);
+    const instance = current.instance;
+    current.instance.cleanups.append(() => {
+        return instance.invoke(func);
+    })
 })

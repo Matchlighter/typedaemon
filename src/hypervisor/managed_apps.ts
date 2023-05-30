@@ -28,6 +28,14 @@ export class BaseInstanceClient<I extends BaseInstance<C>, C = any> {
     }
 
     initialize() { }
+
+    /**
+     * Add logic for destructing this application.
+     * 
+     * Called _after_ any cleanups that were registered by initialize, but _before_ any system cleanups
+     * 
+     * It is recommended to use `on_shutdown` instead when possible.
+     */
     shutdown() { }
 
     [HyperWrapper]: I;
@@ -94,7 +102,7 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
             ...manager,
             ...rest,
         })
-        
+
         this._userSpaceLogger = createDomainLogger({
             level: "debug",
             domain,
@@ -103,6 +111,10 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
         })
     }
 
+    /**
+     * Prepare for calling client-side methods.
+     * This sets up contexts/globals so that the global APIs can implicitly reference the calling application
+     */
     // @ts-ignore
     invoke<K extends ConditionalKeys<this, ((...params: any[]) => any)>>(what: K, ...parameters: Parameters<this[K]>): ReturnType<this[K]>
     invoke<F extends (...params: any[]) => any>(func: F, ...params: Parameters<F>): ReturnType<F>
@@ -111,6 +123,9 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
 
         if (typeof what == 'function') {
             const curStack = CurrentInstanceStack.getStore() || [];
+
+            if (curStack[curStack.length - 1] == this) return what.call(this.instance, ...params);
+
             return CurrentInstanceStack.run([...curStack, this], () => {
                 return what.call(this.instance, ...params);
             })

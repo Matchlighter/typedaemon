@@ -34,8 +34,8 @@ export class PluginInstance extends BaseInstance<PluginConfiguration, Plugin> {
             this.cleanups.append(disposer);
         }
 
-        await this.instance?.initialize();
         this.cleanups.append(() => this.instance.shutdown?.());
+        await this.instance?.initialize();
 
         this.transitionState('started');
     }
