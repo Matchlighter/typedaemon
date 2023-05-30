@@ -1,4 +1,5 @@
 
+import { LifecycleHelper } from "../common/lifecycle_helper";
 import { PluginType } from "../hypervisor/config_plugin";
 import { current } from "../hypervisor/current";
 import { BaseInstanceClient, HyperWrapper } from "../hypervisor/managed_apps";
@@ -58,6 +59,10 @@ export abstract class Plugin<C = any> extends BaseInstanceClient<PluginInstance>
 
     get config() {
         return this[HyperWrapper].options as any as PluginType['base'] & C;
+    }
+
+    protected addCleanup(cleaner: Parameters<LifecycleHelper['append']>[0]) {
+        this[HyperWrapper].cleanups.append(() => this[HyperWrapper].invoke(cleaner));
     }
 }
 

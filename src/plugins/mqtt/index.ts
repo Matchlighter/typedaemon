@@ -113,15 +113,18 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
                 this[HyperWrapper].logMessage("warn", `Supervisor configured, but failed to fetch MQTT Service info.`, ex);
             }
         }
-        this.ownConnection = this.createConnection("PLUGIN");
-    }
 
-    async shutdown() {
-        if (this.ownConnection) {
-            await new Promise((resolve, reject) => {
-                this.ownConnection.end(false, {}, resolve);
-            })
-        }
+        this.ownConnection = this.createConnection("PLUGIN");
+
+        this.addCleanup(() => {
+            if (this.ownConnection) {
+                return new Promise((resolve, reject) => this.ownConnection.end(false, {}, resolve))
+            }
+        })
+
+        await new Promise((resolve, reject) => {
+            this.ownConnection.once("connect", () => resolve(undefined));
+        })
     }
 
     configuration_updated(new_config: MQTTPluginConfig, old_config: MQTTPluginConfig) {

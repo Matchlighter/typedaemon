@@ -213,6 +213,8 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             await this.resumableStore.save();
         });
 
+        this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
+
         try {
             await this.invoke(() => this.instance.initialize?.());
         } catch (ex) {
@@ -220,8 +222,6 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
                 this.logClientMessage("error", `Failed while starting up: `, ex)
             })
             return
-        } finally {
-            this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
         }
 
         await this.invoke(async () => {

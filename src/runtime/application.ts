@@ -6,8 +6,10 @@ import { FallbackRequireRestart } from "../hypervisor/managed_config_events";
 
 export class Application<C = any> extends BaseInstanceClient<ApplicationInstance> {
     configuration_updated(new_config: C, old_config: C) {
-        // TODO I don't really like this
-        throw new FallbackRequireRestart();
+        // Throw if this method isn't overridden, but don't throw if it's called via super
+        if (this.configuration_updated == Application.prototype.configuration_updated) {
+            throw new FallbackRequireRestart();
+        }
     }
 
     get config() {
