@@ -106,6 +106,13 @@ export class Hypervisor {
             process.exit(0);
         });
 
+        process.on('SIGTERM', async () => {
+            this.logMessage("info", "SIGTERM received. Shutting down...");
+            await this.shutdown();
+            await new Promise(accept => this._logger.info('Done', accept))
+            process.exit(0);
+        });
+
         this.logMessage("info", "Starting Plugins");
         const proms = this.pluginInstances.sync(this.currentConfig.plugins || {});
         await timeoutPromise(10000, Promise.allSettled(proms), () => {
@@ -230,6 +237,7 @@ export class Hypervisor {
                 }, raw_cfg);
 
                 const sourcePath = path.resolve(this.working_directory, raw_cfg.source);
+                // TODO Allow sourcePath to be GitHub URL
                 const resolved = await resolveSourceFile(sourcePath);
                 if (resolved) appcfg.source = resolved;
 
@@ -244,10 +252,6 @@ export class Hypervisor {
 
             const prevConfig = this.currentConfig;
             this._currentConfig = cfg;
-
-            // TODO In the apps case, current ordering is Shutdown removed, Create added, Update changed.
-            //    Shutdown, Update, Create may be more semantic, but it probably doesn't really matter.
-            //    Possible solution: Allow handlers to yield? - Basically allowing broader watchers to wrap narrower ones
 
             // Apply watchers top-down. Do not run watchers that are removed or added by broader watchers
             const watchedKeys = new Set<string>();

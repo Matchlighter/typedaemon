@@ -98,7 +98,7 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
     async initialize() {
         if (SUPERVISOR_API && !((this.config.host && this.config.username && this.config.password) || this.config.url)) {
             try {
-                this.supervisorServiceConfig = await SUPERVISOR_API.get("services/mqtt");
+                this.supervisorServiceConfig = (await SUPERVISOR_API.get("services/mqtt")).data?.data;
             } catch (ex) {
                 this[HyperWrapper].logMessage("warn", `Supervisor configured, but failed to fetch MQTT Service info.`, ex);
             }
