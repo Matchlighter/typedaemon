@@ -29,6 +29,10 @@ export function pluginGetterFactory<T extends Plugin>(pid: string | T, default_i
     return () => get_plugin<T>(pid);
 }
 
+/**
+ * Add an annotation to the target application class (or Decorator Context).
+ * The annotation will be called when the application is started.
+ */
 export function notePluginAnnotation(target: any, annotation: (self: Annotable) => void) {
     if (isDecContext(target)) {
         target.addInitializer(function () {
