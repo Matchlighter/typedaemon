@@ -38,6 +38,11 @@ export class BaseInstanceClient<I extends BaseInstance<C>, C = any> {
      */
     shutdown() { }
 
+    /**
+     * Access the underlying Instance object in the Hypervisor.
+     * 
+     * IF YOU ARE DEVELOPING AN APPLICATION, YOU SHOULD PROBABLY AVOID THIS
+     */
     [HyperWrapper]: I;
 }
 

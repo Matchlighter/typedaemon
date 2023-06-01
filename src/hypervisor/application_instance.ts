@@ -33,6 +33,8 @@ export type MyConditionalKeys<Base, Condition> = {
     [Key in keyof Base]: Base[Key] extends Condition ? Base[Key] : never;
 };
 
+type LifecycleHookType = "started";
+
 export class ApplicationInstance extends BaseInstance<AppConfiguration, Application, {}> {
     get app_config() {
         return this.options.config;
@@ -125,6 +127,23 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
     private restartAfterSourceChange() {
         this.logMessage("info", `Source dependency updated. Restarting`)
         this.namespace.reinitializeInstance(this);
+    }
+
+    lifecycle_hooks: Partial<Record<LifecycleHookType, (() => void)[]>> = {};
+
+    private async fireLifecycleHooks(type: LifecycleHookType) {
+        const hooks = this.lifecycle_hooks[type] || []
+
+        await this.invoke(async () => {
+            for (let hook of hooks) {
+                await hook();
+            }
+        })
+    }
+
+    addLifeCycleHook(event: LifecycleHookType, hook: () => void) {
+        const hooks = this.lifecycle_hooks[event] ||= [];
+        hooks.push(hook);
     }
 
     async _start() {
@@ -231,6 +250,8 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         })
 
         this.transitionState('started');
+
+        await this.fireLifecycleHooks("started");
     }
 
     private generateOpPackageJson({ dependencies }) {
