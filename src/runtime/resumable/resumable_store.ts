@@ -66,11 +66,6 @@ export class ResumableStore {
 
         if (this.tracked_tasks.has(promise)) return;
 
-        // if (this.state == 'suspending' && promise.treeCanSuspend()) {
-        //     this.suspendedResumables.push(promise);
-        //     return;
-        // }
-
         const track_promise = promise.catch(
             (err) => {
                 if (err instanceof Suspend) {
@@ -98,6 +93,11 @@ export class ResumableStore {
             tracking_callbacks: track_promise,
         })
 
+        // Immediately suspend if we're shuttingdown and it's suspendable
+        if (this.state == 'shutdown_requested' && promise.treeCanSuspend()) {
+            promise.suspend();
+        }
+
         if (this.state == 'suspending') {
             promise.suspend();
         }
@@ -120,6 +120,15 @@ export class ResumableStore {
         this.state = 'shutdown_requested';
         this.logMessage("debug", "Resumable - shutting down resumables")
 
+        const track_states = [...this.tracked_tasks.values()];
+
+        // Suspend any suspendables that can be cleanly suspended
+        for (let state of track_states) {
+            if (state.resumable.treeCanSuspend()) {
+                state.resumable.suspend();
+            }
+        }
+
         // Wait for pending non-suspendable HA await conditions to resolve
         const flushPromise = new Promise((accept) => {
             this.onNonSuspendableClear = accept as any;
@@ -136,8 +145,6 @@ export class ResumableStore {
 
         this.state = 'suspending';
         this.logMessage("debug", "Resumable - suspending remaining resumables")
-
-        const track_states = [...this.tracked_tasks.values()];
 
         // Throw Suspend to all pending suspendable HA await conditions
         for (let state of track_states) {

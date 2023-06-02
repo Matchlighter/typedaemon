@@ -40,10 +40,7 @@ ResumablePromise.defineClass({
         const scope = data.scope as SerializedScope;
         const dep = data.depends_on[0] ? require(data.depends_on[0]) : null;
 
-        const lookupOwner = ContextResumableOwnerLookup.getStore() || defaultResumableOwnerLookup;
-        let owner;
-        if (typeof lookupOwner == 'object') owner = lookupOwner[scope.owner];
-        if (typeof lookupOwner == 'function') owner = lookupOwner(scope.owner);
+        const owner = resumable.lookup_owner(scope.owner);
         const executor: Executor<any> = owner[scope.method][UNSTARTED_EXEC].call(owner, ...scope.parameters);
 
         // TODO How to handle unregistered owner?
@@ -494,10 +491,54 @@ resumable.register_context = (id: string, thing: any, local = false) => {
     }
 }
 
+resumable.lookup_owner = (key: string) => {
+    const lookupOwner = ContextResumableOwnerLookup.getStore() || defaultResumableOwnerLookup;
+    if (typeof lookupOwner == 'object') return lookupOwner[key];
+    if (typeof lookupOwner == 'function') return lookupOwner(key);
+}
+
 resumable._wrapped_async = (innerFn, options) => {
     return new Executor(innerFn, options);
 }
 
 resumable._awrap = (value) => {
     return { __await: value };
+}
+
+/**
+ * ResumablePromise subclass that await another ResumablePromise and then calls a method on the Application
+ * 
+ * Mainly an internal helper to help with functions like `run_at().persisted()`
+ */
+export class ResumableCallbackPromise extends ResumablePromise<any> {
+    constructor(readonly awaiting_for: ResumablePromise<any>, readonly method_name: string, readonly lookup_context = "APPLICATION") {
+        super();
+
+        awaiting_for.then(() => {
+            resumable.lookup_owner(lookup_context)[method_name]();
+        }, () => {}, this);
+    }
+
+    static {
+        ResumablePromise.defineClass({
+            type: 'call_by_name',
+            resumer: (data, { require }) => {
+                return new this(require(data.depends_on[0]), data.method, data.lookup_context);
+            },
+        })
+    }
+
+    protected can_suspend(ctx: CanSuspendContext) {
+        if (!super.can_suspend(ctx)) return false;
+        return true;
+    }
+
+    serialize(): SerializedResumable {
+        return {
+            type: 'call_by_name',
+            method: this.method_name,
+            lookup_context: this.lookup_context,
+            depends_on: [this.awaiting_for],
+        }
+    }
 }
