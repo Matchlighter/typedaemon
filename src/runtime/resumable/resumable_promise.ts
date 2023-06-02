@@ -238,7 +238,10 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
         handle: () => void,
         resumable: ResumablePromise<any> | boolean = false,
     ) {
-        return this.then(handle, handle, resumable);
+        return this.then(handle, async (err) => {
+            await handle();
+            throw err;
+        }, resumable);
     }
 
     protected can_suspend({ link }: CanSuspendContext) {

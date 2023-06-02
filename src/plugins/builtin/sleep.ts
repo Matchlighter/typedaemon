@@ -1,3 +1,4 @@
+import { current } from "../../hypervisor/current";
 import { ResumablePromise, SerializedResumable } from "../../runtime/resumable";
 
 class SleeperPromise extends ResumablePromise<number>{
@@ -25,6 +26,11 @@ class SleeperPromise extends ResumablePromise<number>{
         })
     }
 
+    cancel() {
+        if (this.timer) clearTimeout(this.timer);
+        this._reject("CANCELLED");
+    }
+
     suspend() {
         if (this.timer) clearTimeout(this.timer);
         return super.suspend();
@@ -41,4 +47,8 @@ class SleeperPromise extends ResumablePromise<number>{
 
 export function sleep(time: number) {
     return new SleeperPromise(Date.now() + time);
+}
+
+export function sleep_until(u: Date) {
+    return new SleeperPromise(u.getTime());
 }
