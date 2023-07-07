@@ -27,9 +27,9 @@ export const get_plugin = <T>(identifier: string): T => {
 }
 
 /**
- * Mark a property as persistent - it's value will be saved to disk when set and restored when the app starts
+ * Mark a property as persistent - it's value will be saved to disk and restored when the app starts
  */
-export const persistent = optional_config_decorator([], (options?: PersistentEntryOptions): ClassAccessorDecorator<Application, any> => {
+export const persistent = optional_config_decorator([{}], (options?: PersistentEntryOptions): ClassAccessorDecorator<Application, any> => {
     return (accessor, context) => {
         const obsvd = (observable as any)(accessor, context);
         return {

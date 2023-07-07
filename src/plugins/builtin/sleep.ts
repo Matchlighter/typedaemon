@@ -1,10 +1,28 @@
-import { current } from "../../hypervisor/current";
-import { ResumablePromise, SerializedResumable } from "../../runtime/resumable";
+import { ResumablePromise } from "../../runtime/resumable";
 
 class SleeperPromise extends ResumablePromise<number>{
     constructor(readonly sleep_until: number) {
         super();
+        this.do_unsuspend();
+    }
 
+    private timer;
+
+    static {
+        ResumablePromise.defineClass<SleeperPromise>({
+            type: 'sleep',
+            resumer: (data) => {
+                return new this(data.sleep_until);
+            },
+        })
+    }
+
+    protected do_suspend(): void {
+        if (this.timer) clearTimeout(this.timer);
+    }
+
+    protected do_unsuspend(): void {
+        const sleep_until = this.sleep_until;
         const sleep_time = sleep_until - Date.now();
         if (sleep_time > 0) {
             this.timer = setTimeout(() => {
@@ -15,28 +33,12 @@ class SleeperPromise extends ResumablePromise<number>{
         }
     }
 
-    private timer;
-
-    static {
-        ResumablePromise.defineClass({
-            type: 'sleep',
-            resumer: (data) => {
-                return new this(data.sleep_until);
-            },
-        })
-    }
-
     cancel() {
         if (this.timer) clearTimeout(this.timer);
         this._reject("CANCELLED");
     }
 
-    suspend() {
-        if (this.timer) clearTimeout(this.timer);
-        return super.suspend();
-    }
-
-    serialize(): SerializedResumable {
+    serialize() {
         return {
             type: 'sleep',
             sideeffect_free: true,

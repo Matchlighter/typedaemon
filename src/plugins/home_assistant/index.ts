@@ -1,5 +1,5 @@
 
-import { observable } from 'mobx'
+import { action, observable, runInAction } from 'mobx'
 import * as ws from "ws";
 import {
     createConnection,
@@ -80,7 +80,7 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
     }
 
     async writeSOState(entity: string, state: any, attrs?: any) {
-
+        // TODO Write the (eg) sensor state to HA
     }
 
     onConnected(callback: () => void)
@@ -143,20 +143,23 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
         // Listen for events
         this._ha_api.subscribeEvents((ev: HassEvent) => {
             if (isStateChangedEvent(ev)) {
-                const { entity_id, new_state } = ev.data;
-                const state = this.stateStore;
-                if (new_state) {
-                    const target = state[entity_id] = state[entity_id] || observable({}, {}, { deep: false }) as any;
-                    sync_to_observable(target, new_state, { ...STATE_SYNC_OPTS, currentPath: ['$', entity_id] });
-                } else {
-                    delete state[entity_id];
-                }
+                runInAction(() => {
+                    const { entity_id, new_state } = ev.data;
+                    const state = this.stateStore;
+                    if (new_state) {
+                        const target = state[entity_id] = state[entity_id] || observable({}, {}, { deep: false }) as any;
+                        sync_to_observable(target, new_state, { ...STATE_SYNC_OPTS, currentPath: ['$', entity_id] });
+                    } else {
+                        delete state[entity_id];
+                    }
+                })
             }
 
             // TODO Dispatch event to other listeners
         })
     }
 
+    @action
     private async resyncStatesNow() {
         const ha_states = {};
         for (let ent of await getStates(this._ha_api)) {
@@ -175,8 +178,7 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
 class EventAwaiter extends ResumablePromise<any>{
     constructor(readonly hap: HomeAssistantPlugin, readonly schema) {
         super();
-        current.application.resumableStore.track(this);
-        this.ha_untrack = hap.trackEventAwaiter(this);
+        this.do_unsuspend();
     }
 
     static {
@@ -190,11 +192,14 @@ class EventAwaiter extends ResumablePromise<any>{
         })
     }
 
-    private readonly ha_untrack: () => void;
+    private ha_untrack: () => void;
 
-    suspend() {
+    protected do_suspend(): void {
         this.ha_untrack?.();
-        return super.suspend();
+    }
+
+    protected do_unsuspend(): void {
+        this.ha_untrack = this.hap.trackEventAwaiter(this);
     }
 
     serialize(): SerializedResumable {

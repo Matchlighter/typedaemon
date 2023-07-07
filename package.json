@@ -39,6 +39,7 @@
     "moment-timezone": "^0.5.41",
     "mqtt": "^4.3.7",
     "mqtt-match": "^3.0.0",
+    "nearley": "^2.20.1",
     "patch-package": "^6.5.1",
     "postinstall-postinstall": "^2.1.0",
     "prompts": "^2.4.2",
@@ -59,6 +60,7 @@
     "@types/deep-eql": "^4.0.0",
     "@types/fs-extra": "^11.0.1",
     "@types/md5": "^2.3.2",
+    "@types/nearley": "^2.11.2",
     "@types/ws": "^8.5.4",
     "@types/yargs": "^17.0.22",
     "ts-node": "^10.9.1"

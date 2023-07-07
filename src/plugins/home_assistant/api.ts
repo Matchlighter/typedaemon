@@ -1,5 +1,5 @@
 
-import { action, computed, observable } from "mobx";
+import { action, computed, observable, runInAction } from "mobx";
 import { HassEntity } from "home-assistant-js-websocket";
 
 import { optional_config_decorator } from "@matchlighter/common_library/decorators/utils";
@@ -10,6 +10,7 @@ import { Annotable, client_call_safe, makeApiExport, notePluginAnnotation, plugi
 import { current } from "../../hypervisor/current";
 import { HyperWrapper } from "../../hypervisor/managed_apps";
 import { plgmobx } from "../mobx";
+import { Constructor } from "type-fest";
 
 export interface EntityOptions {
     id?: string;
@@ -54,8 +55,42 @@ function resolveEntityId(domain: string, options: { id?: string }, decContext?: 
     return entity_id;
 }
 
+interface DecOrNew<D extends (...params: any) => any, N extends Constructor<any>> {
+    new (...params: ConstructorParameters<N>): InstanceType<N>
+    (...params: Parameters<D>): ReturnType<D>
+}
+
+function decOrNew<D extends (...params: any) => any, N extends Constructor<any>>(decMethod: D, construct: N): DecOrNew<D, N> {
+    return function (...params) {
+        if (new.target) {
+            return new construct(...params);
+        } else {
+            return decMethod(...params);
+        }
+    } as any
+}
+
+class TDEntity<T> {
+    @observable accessor state: T;
+    @observable accessor attributes;
+}
+
+class Sensor extends TDEntity<number> {
+
+}
+
 export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlugin }) {
     const _plugin = pluginGetterFactory<HomeAssistantPlugin>(options.pluginId, homeAssistantApi.defaultPluginId);
+
+    function registerEntity(entity: TDEntity<any>, device?) {
+        // TODO Make the entity discoverable. Use MQTT for MVP, possibly develop integration later
+
+        // Device to default to an application-linked device
+
+        // Will need to give some thought to unique_ids. Likely use the `<application unique_id (configurable) || application id>_<unique_id (configurable) || lowercase(undercore(name))>`
+
+        // TODO Offline the entity when the app goes down
+    }
 
     function stateOnlyDecorator<O extends {}, V>(domain: string) {
         return optional_config_decorator([], (options?: EntityOptions & O): (ClassGetterDecorator<any, V | FullState<V>> | ClassAccessorDecorator<any, V | FullState<V>>) => {
@@ -105,6 +140,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         });
     }
 
+    // TODO Allow imperitive/non-decorator calls to create these entities.
     const entities = {
         /** Create a `sensor` entity and update it whenever the decorated getter/accessor is updated */
         sensor: stateOnlyDecorator<{}, number>("sensor"),
@@ -123,6 +159,10 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
 
         /** Create a `person` entity and update it whenever the decorated getter/accessor is updated */
         person: stateOnlyDecorator<{}, string>("person"),
+
+        // TODO number, select, switch, climate, switch, light, cover
+        //  Basically the same as the inputs, but state is kept in TD instead of HA
+        //  Can be used as an accessor decorator, or as a function to register an X with custom service callbacks and state management
     }
 
     async function _ensureInput(entity_id: string, options: InputOptions<any> & { [k: string]: any }) {
@@ -145,33 +185,42 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                 current.application.logMessage("warn", `Expected entity ${entity_id} to exist in HA but it didn't`)
             }
         } else {
-            if (currentState) {
-                // Update: {"type":"input_text/update","input_text_id":"test2","name":"test2","mode":"text","max":100,"min":0,"id":59}
-                await pl.request(`${domain}/update`, {
-                    [`${domain}_id`]: entity_id.split('.')[1],
-                    ...pass,
-                })
-            } else {
+            if (!currentState) {
+                // HA Doesn't allow creation by both id and name, so we create it using the id as the name, then update it with the name
+
                 // Create: {"type":"input_text/create","name":"test3","icon":"mdi:account","min":"5","max":"102","pattern":"\\d+","id":38}
                 await pl.request(`${domain}/create`, {
                     ...pass,
+                    name: entity_id.split('.')[1],
                 })
             }
+
+            // Update: {"type":"input_text/update","input_text_id":"test2","name":"test2","mode":"text","max":100,"min":0,"id":59}
+            await pl.request(`${domain}/update`, {
+                [`${domain}_id`]: entity_id.split('.')[1],
+                ...pass,
+            })
         }
     }
 
-    function _inputDecorator<O extends {} = {}>(domain: string, options: InputOptions<any> & O) {
+    function _inputDecorator<O extends {} = {}>(domain: string, options: InputOptions<any> & O, metaOpts: { service?: string, value_key?: string } = {}) {
+
         return ((access, context) => {
             const entity_id = resolveEntityId(domain, options, context);
-            const obsvd = observable(access, context);
+            const obsvd = observable(access, context) as ClassAccessorDecoratorResult<any, any>;
 
             notePluginAnnotation(context, async (self) => {
                 await _ensureInput(entity_id, options);
 
+                const pl = _plugin();
+
                 // Read and Listen from HA
                 plgmobx.autorun(self[HyperWrapper], () => {
+                    const value = pl.state[entity_id]?.state;
                     client_call_safe(() => {
-                        obsvd.set.call(self, _plugin().state[entity_id]);
+                        runInAction(() => {
+                            obsvd.set.call(self, value);
+                        })
                     })
                 });
             })
@@ -179,19 +228,28 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
             return {
                 // NB If we decide to remove optimistic, we could just forward gets to plugin.state[]
                 ...obsvd,
-                set(value) {
+                async set(value) {
                     if (options.optimistic) {
                         obsvd.set.call(this, value);
                     }
                     // Set: {"type":"call_service","domain":"input_number","service":"set_value","service_data":{"value":50,"entity_id":"input_number.test"},"id":69}
-                    _plugin().sendMessage("call_service", {
-                        domain,
-                        service: "set_value",
-                        service_data: {
+                    try {
+                        const sparams: any = {
                             entity_id,
-                            value,
-                        }
-                    })
+                        };
+                        sparams[metaOpts.value_key || 'value'] = value;
+                        await _plugin().callService(metaOpts.service || `${domain}.set_value`, sparams)
+                    } catch (ex) {
+                        console.error(ex);
+                    }
+                    // _plugin().sendMessage("call_service", {
+                    //     domain,
+                    //     service: "set_value",
+                    //     service_data: {
+                    //         entity_id,
+                    //         value,
+                    //     }
+                    // })
                 },
             } as any
         }) as ClassAccessorDecorator<Annotable, any>
@@ -224,8 +282,11 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         /** Create an `input_select` helper and sync it with the decorated accessor */
         select: <const T extends string>(options: T[], config?: InputOptions<T>) => {
             return _inputDecorator("input_select", {
-                options: options.join(','),
+                options: options,
                 ...config,
+            }, {
+                service: "input_select.select_option",
+                value_key: "option",
             })
         },
     }
