@@ -21,6 +21,7 @@ import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./
 import { ExtendedLoger, LogLevel, createDomainLogger } from "./logging"
 import { AppNamespace } from "./managed_apps"
 import { PluginInstance } from "./plugin_instance"
+import { current } from "./current"
 
 type ConfigWatchHandler<T> = (newConfig: T, oldConfig: T) => void;
 
@@ -113,12 +114,26 @@ export class Hypervisor {
             process.exit(0);
         });
 
+        process.on("uncaughtException", (err, origin) => {
+            const app = current.application;
+            if (app) {
+                console.error("Uncaught error in application")
+                console.error(err, origin)
+            } else {
+                console.error("Uncaught error in TypeDaemon")
+                console.error(err, origin)
+                // this.shutdown();
+            }
+        })
+
         this.logMessage("info", "Starting Plugins");
         const proms = this.pluginInstances.sync(this.currentConfig.plugins || {});
         await timeoutPromise(10000, Promise.allSettled(proms), () => {
             this.logMessage("warn", `Plugins failed to start within 10s`)
         });
         this.watchConfigEntry("plugins", () => this.pluginInstances.sync(this.currentConfig.plugins));
+
+        if (this.state != 'running') return;
 
         this.logMessage("info", "Starting Apps");
         await this.appInstances.sync(this.currentConfig.apps || {});
@@ -127,6 +142,8 @@ export class Hypervisor {
 
     async shutdown() {
         this.logMessage("lifecycle", "Stopping");
+
+        this._state = 'shutting_down';
 
         // Shutdown apps
         this.logMessage("info", "Stopping apps");

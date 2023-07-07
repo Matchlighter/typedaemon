@@ -1,10 +1,9 @@
 
 import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weakmap"
 
-import { CanSuspendContext, ResumablePromise, SerializedResumable, Suspend } from "./resumable_promise";
+import { ResumablePromise, SerializeContext, SerializedResumable, Suspend } from "./resumable_promise";
 import { deep_pojso } from "../../common/util";
 import { AsyncLocalStorage } from "async_hooks";
-import { current } from "../../hypervisor/current";
 
 const Op = Object.prototype;
 const hasOwn = Op.hasOwnProperty;
@@ -32,12 +31,12 @@ const ContextResumableOwnerLookup = new AsyncLocalStorage<ResumableOwnerLookup>(
 const RESUMABLE_OWNERS = new InvertedWeakMap<string, any>()
 const defaultResumableOwnerLookup: ResumableOwnerLookup = (key) => RESUMABLE_OWNERS.get(key);
 
-export class MethodResumeError extends Error {}
+export class MethodResumeError extends Error { }
 
-ResumablePromise.defineClass({
+ResumablePromise.defineClass<Executor<any>>({
     type: "@resumable",
     resumer: (data, { require }) => {
-        const scope = data.scope as SerializedScope;
+        const scope = data.scope;
         const dep = data.depends_on[0] ? require(data.depends_on[0]) : null;
 
         const owner = resumable.lookup_owner(scope.owner);
@@ -129,7 +128,7 @@ class Executor<T> extends ResumablePromise<T> {
 
     readonly tryEntries: any[];
 
-    serialize(): SerializedResumable {
+    serialize() {
         return {
             type: "@resumable",
             depends_on: [this.pending_promise],
@@ -154,11 +153,17 @@ class Executor<T> extends ResumablePromise<T> {
         }
     }
 
-    protected can_suspend(ctx: CanSuspendContext) {
-        if (!super.can_suspend(ctx)) return false;
+    protected can_suspend() {
+        if (!super.can_suspend()) return false;
         if (deep_pojso(this.state)) return false;
-        ctx.link(this.pending_promise);
         return true;
+    }
+
+    protected awaiting_for() {
+        if (this.pending_promise) {
+            return [this.pending_promise];
+        }
+        return [];
     }
 
     private _started = false;
@@ -179,11 +184,28 @@ class Executor<T> extends ResumablePromise<T> {
         }
     }
 
+    protected do_unsuspend(): void {
+        if (!this.pending_promise) {
+            this.invoke(this.actionType, this.arg);
+        }
+    }
+
+    force_suspend(): void {
+        super.force_suspend();
+        this.pending_promise = null;
+
+        this.actionType = "throw";
+        // TODO Serialize and Deserialize the actual error.
+        this.arg = { error: "Failed to Suspend!" };
+    }
+
     private invoke(method: ResumableMethod, arg?) {
         this.actionType = method;
         this.arg = arg;
 
-        if (this._suspended) return;
+        this.compute_paused();
+
+        if (this.suspended) return;
 
         try {
             const result = this.generator_step();
@@ -216,28 +238,22 @@ class Executor<T> extends ResumablePromise<T> {
 
         this.pending_promise = awaitable;
 
+        const then_args: any[] = [
+            (value) => {
+                this.pending_promise = null;
+                this.invoke("next", value)
+            },
+            (err) => {
+                this.pending_promise = null;
+                this.invoke("throw", err);
+            },
+        ]
+
         if (awaitable instanceof ResumablePromise) {
-            return awaitable.then(
-                (value) => {
-                    this.pending_promise = null;
-                    this.invoke("next", value)
-                },
-                (err) => {
-                    if (err instanceof Suspend && this.treeCanSuspend()) {
-                        this.suspend();
-                    } else {
-                        this.pending_promise = null;
-                        this.invoke("throw", err);
-                    }
-                },
-                this
-            );
-        } else {
-            return awaitable.then(
-                (value) => this.invoke("next", value),
-                (err) => this.invoke("throw", err)
-            );
+            then_args.push(this);
         }
+
+        return awaitable.then(...then_args);
     }
 
     private generator_step() {
@@ -506,39 +522,38 @@ resumable._awrap = (value) => {
 }
 
 /**
- * ResumablePromise subclass that await another ResumablePromise and then calls a method on the Application
+ * ResumablePromise subclass that awaits another ResumablePromise and then calls a method on the Application
  * 
  * Mainly an internal helper to help with functions like `run_at().persisted()`
  */
 export class ResumableCallbackPromise extends ResumablePromise<any> {
-    constructor(readonly awaiting_for: ResumablePromise<any>, readonly method_name: string, readonly lookup_context = "APPLICATION") {
+    constructor(readonly await_for: ResumablePromise<any>, readonly method_name: string, readonly lookup_context = "APPLICATION") {
         super();
 
-        awaiting_for.then(() => {
+        await_for.then(() => {
             resumable.lookup_owner(lookup_context)[method_name]();
-        }, () => {}, this);
+        }, () => { }, this);
     }
 
     static {
-        ResumablePromise.defineClass({
+        ResumablePromise.defineClass<ResumableCallbackPromise>({
             type: 'call_by_name',
             resumer: (data, { require }) => {
-                return new this(require(data.depends_on[0]), data.method, data.lookup_context);
+                return new this(require(data.await_for), data.method, data.lookup_context);
             },
         })
     }
 
-    protected can_suspend(ctx: CanSuspendContext) {
-        if (!super.can_suspend(ctx)) return false;
-        return true;
+    protected awaiting_for(): Iterable<PromiseLike<any>> {
+        return [this.await_for]
     }
 
-    serialize(): SerializedResumable {
+    serialize(ctx: SerializeContext) {
         return {
             type: 'call_by_name',
             method: this.method_name,
             lookup_context: this.lookup_context,
-            depends_on: [this.awaiting_for],
+            await_for: ctx.ref(this.await_for),
         }
     }
 }

@@ -54,7 +54,8 @@ export class ResumableStore {
         }
     }
 
-    private state: 'active' | 'shutdown_requested' | 'suspending' | 'suspended' = 'active';
+    private _state: 'active' | 'shutdown_requested' | 'suspending' | 'suspended' = 'active';
+    get state() { return this._state }
 
     private suspendedResumables = [];
     private onNonSuspendableClear: () => void;
@@ -62,7 +63,7 @@ export class ResumableStore {
     protected tracked_tasks = new Map<ResumablePromise, TrackerEntry>();
 
     track(promise: ResumablePromise<any>) {
-        if (this.state == "suspended") throw new Error("ResumableStore is suspended and not accepting new promises");
+        if (this._state == "suspended") throw new Error("ResumableStore is suspended and not accepting new promises");
 
         if (this.tracked_tasks.has(promise)) return;
 
@@ -77,10 +78,9 @@ export class ResumableStore {
             true
         ).finally(() => {
             this.tracked_tasks.delete(promise);
-            if (this.state == 'shutdown_requested') {
-                const result_cache = new Map<ResumablePromise, boolean>();
+            if (this._state == 'shutdown_requested') {
                 for (let task of this.tracked_tasks.values()) {
-                    if (!task.resumable.treeCanSuspend(result_cache)) return;
+                    if (!task.resumable.suspended) return;
                 }
 
                 // All promises suspendable!
@@ -92,15 +92,6 @@ export class ResumableStore {
             resumable: promise,
             tracking_callbacks: track_promise,
         })
-
-        // Immediately suspend if we're shuttingdown and it's suspendable
-        if (this.state == 'shutdown_requested' && promise.treeCanSuspend()) {
-            promise.suspend();
-        }
-
-        if (this.state == 'suspending') {
-            promise.suspend();
-        }
     }
 
     protected logMessage(level: LogLevel, ...rest) {
@@ -117,23 +108,19 @@ export class ResumableStore {
     }
 
     private async _suspendAndSerialize({ timeout = 5 }: { timeout?: number } = {}) {
-        this.state = 'shutdown_requested';
+        this._state = 'shutdown_requested';
         this.logMessage("debug", "Resumable - shutting down resumables")
 
         const track_states = [...this.tracked_tasks.values()];
 
-        // Suspend any suspendables that can be cleanly suspended
-        for (let state of track_states) {
-            if (state.resumable.treeCanSuspend()) {
-                state.resumable.suspend();
-            }
+        for (let rp of track_states) {
+            rp.resumable.compute_paused();
         }
 
-        // Wait for pending non-suspendable HA await conditions to resolve
+        // Wait for pending non-suspendable promises to resolve
         const flushPromise = new Promise((accept) => {
             this.onNonSuspendableClear = accept as any;
-            const result_cache = new Map<ResumablePromise, boolean>();
-            const hasNonSuspendable = [...this.tracked_tasks.keys()].some(o => !o.treeCanSuspend(result_cache));
+            const hasNonSuspendable = [...this.tracked_tasks.keys()].some(o => !o.suspended);
             if (!hasNonSuspendable) {
                 this.onNonSuspendableClear();
             }
@@ -143,12 +130,12 @@ export class ResumableStore {
             this.logMessage("warn", "Resumable - ResumablePromises failed to resolve. Force Suspending.")
         })
 
-        this.state = 'suspending';
+        this._state = 'suspending';
         this.logMessage("debug", "Resumable - suspending remaining resumables")
 
-        // Throw Suspend to all pending suspendable HA await conditions
+        // Force suspend unsuspended Resumables
         for (let state of track_states) {
-            state.resumable.suspend();
+            if (!state.resumable.suspended) state.resumable.force_suspend();
         }
 
         await timeoutPromise(5000, Promise.allSettled(track_states.map(s => s.tracking_callbacks)), () => {
@@ -166,7 +153,7 @@ export class ResumableStore {
         Case is solved - x is not serializable
         */
 
-        this.state = 'suspended';
+        this._state = 'suspended';
         this.logMessage("debug", "Resumable - resumables suspended")
 
         // Serialize and return
