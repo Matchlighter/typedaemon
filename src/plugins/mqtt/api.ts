@@ -21,8 +21,9 @@ export function mqttApi(options: { pluginId: string }) {
     // Otherwise we'd either need to NEVER usubscribe anything, OR we'd need to implement subscription counting logic... that takes wildcards into account.
     // Since there's no shared state between apps, we can just discard the connection and not have to worry about creating individual cleanups
 
+    // TODO Support "bound" APIs where current.application is always the same
     const _plugin = pluginGetterFactory<MqttPlugin>(options.pluginId, mqttApi.defaultPluginId);
-    const _connection = () => _plugin().instanceConnection(current.instance);
+    const _connection = () => _plugin().instanceConnection(current.application);
 
     function listen(topic: string, options: SubscribeOptions, handler: MqttMessageHandler) {
         const conn = _connection();
@@ -107,6 +108,9 @@ export function mqttApi(options: { pluginId: string }) {
     return {
         _getPlugin: _plugin,
         get _plugin() { return _plugin() },
+
+        get system_topic() { return _plugin().root_topic },
+        get application_topic() { return _plugin().getApplicationTopic(current.application) },
 
         /** Returns the underlying MqttClient instance from the MQTT library. This is advanced usage and should only be used if you know what you're doing */
         _getConnection: _connection,

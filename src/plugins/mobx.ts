@@ -13,6 +13,8 @@ function wrapAndTrack<F extends (...args: any[]) => any>(f: F): F {
     }) as any;
 }
 
+// TODO Do we need to invoke()?
+
 /** MobX wrappers that automatically add disposers to the current Applications's cleanups */
 export const appmobx: typeof mobx = {
     ...mobx,
@@ -27,7 +29,10 @@ function swrapAndTrack<F extends (...args: any[]) => any>(f: F): (scope: { clean
         if (typeof disposer == 'function') {
             scope.cleanups.append(disposer)
         }
-        return disposer
+        return (() => {
+            scope.cleanups.remove(disposer);
+            return disposer();
+        }) as any
     });
 }
 

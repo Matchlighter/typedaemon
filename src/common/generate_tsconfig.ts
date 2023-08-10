@@ -51,7 +51,7 @@ export async function saveGeneratedTsconfig(hv: Hypervisor) {
                 "ESNext",
             ],
             "module": "CommonJS",
-            "moduleResolution": "node",
+            "moduleResolution": "node16",
             "sourceMap": true,
             "target": "ES2018",
             "esModuleInterop": true,

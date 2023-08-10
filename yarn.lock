@@ -1021,14 +1021,15 @@
     "@jridgewell/resolve-uri" "3.1.0"
     "@jridgewell/sourcemap-codec" "1.4.14"
 
-"@matchlighter/common_library@^1.5.9":
-  version "1.5.9"
-  resolved "https://registry.yarnpkg.com/@matchlighter/common_library/-/common_library-1.5.9.tgz#5b43726230bbc65baeb16db5f01546e9551198b1"
-  integrity sha512-aN/T1jtun8la2EmJntx0xtyUjvzZ/EEI8ALdAZlNZ6swrlmCIpCUsU/xJyt6/I4urrd6gTgGjTfQ+1gf8k8yeQ==
+"@matchlighter/common_library@^1.5.13":
+  version "1.5.13"
+  resolved "https://registry.yarnpkg.com/@matchlighter/common_library/-/common_library-1.5.13.tgz#91d991d156488325cd3697d5a943e76a4df21678"
+  integrity sha512-5mqSysTHTGXiBhT023S36kINCzVdGrGDailde4UctzpzlaQ9B3S8PDl/zZ/pYHSkaibwCu2jWuz+h2ZGAPEiVQ==
   dependencies:
     classnames "^2.2.6"
     jsonpath "^1.0.2"
     react-reverse-portal "^2.1.1"
+    type-fest "^3.6.1"
     underscore "^1.9.1"
 
 "@tsconfig/node10@^1.0.7":
@@ -2729,6 +2730,11 @@ type-fest@^3.6.0:
   version "3.6.0"
   resolved "https://registry.yarnpkg.com/type-fest/-/type-fest-3.6.0.tgz#827c36c0e7fcff0cb2d55d091a5c4cf586432b8a"
   integrity sha512-RqTRtKTzvPpNdDUp1dVkKQRunlPITk4mXeqFlAZoJsS+fLRn8AdPK0TcQDumGayhU7fjlBfiBjsq3pe3rIfXZQ==
+
+type-fest@^3.6.1:
+  version "3.12.0"
+  resolved "https://registry.yarnpkg.com/type-fest/-/type-fest-3.12.0.tgz#4ce26edc1ccc59fc171e495887ef391fe1f5280e"
+  integrity sha512-qj9wWsnFvVEMUDbESiilKeXeHL7FwwiFcogfhfyjmvT968RXSvnl23f1JOClTHYItsi7o501C/7qVllscUP3oA==
 
 typedarray@^0.0.6:
   version "0.0.6"

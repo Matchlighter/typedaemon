@@ -17,10 +17,12 @@ export interface HomeAssistantPluginConfig {
     type: "home_assistant";
     url: string;
     access_token: string;
+    mqtt_plugin?: string;
 }
 
 export interface MQTTPluginConfig {
     type: "mqtt";
+    base_topic?: string;
     url?: string;
     host?: string;
     username?: string;

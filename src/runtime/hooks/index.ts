@@ -1,6 +1,6 @@
 
 import { optional_config_decorator } from "@matchlighter/common_library/decorators/utils";
-import type { ClassAccessorDecorator } from "@matchlighter/common_library/decorator_fills";
+import type { ClassAccessorDecorator } from "@matchlighter/common_library/decorators/20223fills";
 
 import { Application, appProxy } from "../application";
 import { PersistentEntryOptions } from "../../hypervisor/persistent_storage";

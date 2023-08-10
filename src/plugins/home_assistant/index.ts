@@ -29,6 +29,8 @@ import { Plugin } from '../base';
 import { HyperWrapper } from '../../hypervisor/managed_apps';
 import { current } from '../../hypervisor/current';
 import { DeepReadonly } from '../../common/util';
+import { mqtt } from '..';
+import { MqttPlugin } from '../mqtt';
 
 // @ts-ignore
 global.WebSocket ||= ws.WebSocket
@@ -81,6 +83,16 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
 
     async writeSOState(entity: string, state: any, attrs?: any) {
         // TODO Write the (eg) sensor state to HA
+    }
+
+    mqttPlugin() {
+        return get_plugin(this.config.mqtt_plugin || "mqtt") as MqttPlugin;
+    }
+
+    mqttApi() {
+        const pl = this.mqttPlugin();
+        if (!pl) return null;
+        return mqtt._apiFactory({ pluginId: pl as any });
     }
 
     onConnected(callback: () => void)
