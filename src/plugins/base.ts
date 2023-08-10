@@ -1,5 +1,8 @@
 
+import { Constructor } from "type-fest";
+
 import { LifecycleHelper } from "../common/lifecycle_helper";
+import { ApplicationInstance } from "../hypervisor/application_instance";
 import { PluginType } from "../hypervisor/config_plugin";
 import { current } from "../hypervisor/current";
 import { BaseInstanceClient, HyperWrapper } from "../hypervisor/managed_apps";
@@ -92,4 +95,25 @@ export function makeApiExport<API extends {}>(factory: ApiFactory<API>) {
     const defaultApi = factory({ pluginId: factory.defaultPluginId });
     Object.setPrototypeOf(extended, defaultApi);
     return extended as typeof extended & typeof defaultApi;
+}
+
+type StoresByType<T = any> = Map<Constructor<T>, T>
+type PluginStores = WeakMap<PluginInstance, StoresByType>
+type AppPluginStores = WeakMap<ApplicationInstance, PluginStores>
+
+const LocalDatas: AppPluginStores = new WeakMap();
+
+function getOrMakeEntry<K extends object, V>(map: Map<K, V> | WeakMap<K, V>, key: K, builder: () => V) {
+    if (!map.has(key)) {
+        map.set(key, builder());
+    }
+    return map.get(key);
+}
+
+export function getOrCreateLocalData<T, P extends Plugin>(plugin: P, app: ApplicationInstance, key: any, builder: (plugin: P, app: ApplicationInstance) => T): T {
+    const app_data = getOrMakeEntry(LocalDatas, app, () => new WeakMap());
+    const plugin_data = getOrMakeEntry(app_data, plugin[HyperWrapper], () => new Map());
+    const data = getOrMakeEntry(plugin_data, key, () => builder(plugin, app))
+
+    return data;
 }

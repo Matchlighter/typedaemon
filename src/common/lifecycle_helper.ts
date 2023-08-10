@@ -23,6 +23,7 @@ abstract class BaseLifecycleHelper {
     }
 
     protected abstract push(cleaner: Cleaner);
+    abstract remove(cleaner: Cleaner);
     abstract cleanup();
 }
 
@@ -34,13 +35,20 @@ class OrderedLifecycleHelper extends BaseLifecycleHelper {
     append(cleaner: Cleaner) {
         this.cleanups.push(cleaner);
     }
-    
+
     prepend(cleaner: Cleaner) {
         this.cleanups.unshift(cleaner);
     }
-    
+
     protected push(cleaner: Cleaner) {
         this.cleanups.push(cleaner);
+    }
+
+    remove(cleaner: Cleaner) {
+        const index = this.cleanups.indexOf(cleaner);
+        if (index > -1) {
+            this.cleanups.splice(index, 1);
+        }
     }
 
     async cleanup() {
@@ -63,6 +71,10 @@ class UnorderedLifecycleHelper extends BaseLifecycleHelper {
 
     pop(cleaner: Cleaner) {
         this.cleanups.delete(cleaner);
+    }
+
+    remove(cleaner: Cleaner) {
+        this.pop(cleaner);
     }
 
     async cleanup() {

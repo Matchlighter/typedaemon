@@ -228,7 +228,11 @@ export function redirectConsole() {
         console[cm] = (m, ...rest) => {
             const ctx = current.application || current.hypervisor;
             const logger = ctx?.logger || UKNOWN_LOGGER
-            logger.log(cm, m, ...rest);
+            try {
+                logger.logMessage(cm, [m, ...rest]);
+            } catch (ex) {
+                ORIGINAL_CONSOLE.error(ex)
+            }
         }
     }
 }

@@ -36,6 +36,10 @@ export type MyConditionalKeys<Base, Condition> = {
 type LifecycleHookType = "started";
 
 export class ApplicationInstance extends BaseInstance<AppConfiguration, Application, {}> {
+    get uuid() {
+        return this.options.uuid || this.id;
+    }
+
     get app_config() {
         return this.options.config;
     }

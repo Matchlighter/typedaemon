@@ -8,6 +8,9 @@ export interface AppConfiguration {
     /** Only needed if using named, non-default export */
     export?: string;
 
+    /** A unique id for the app. Defaults to the app name */
+    uuid?: string;
+
     operating_directory?: string;
 
     watch?: {
