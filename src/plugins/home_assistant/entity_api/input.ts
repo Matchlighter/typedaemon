@@ -116,7 +116,7 @@ class InputEntity<T> extends TDEntity<T> {
 
         if (this.options.existing) {
             if (!currentState) {
-                current.application.logMessage("warn", `Expected entity ${entity_id} to exist in HA but it didn't`)
+                this.application.logMessage("warn", `Expected entity ${entity_id} to exist in HA but it didn't`)
             }
         } else {
             if (!currentState) {

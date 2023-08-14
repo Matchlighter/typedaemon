@@ -193,11 +193,14 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
         });
     }
 
-    @debounce({ timeToStability: 100, key_on: ([instance]) => typeof instance == 'string' ? instance : instance.id })
+    @debounce({ timeToStability: 100, key_on: ([instance]) => typeof instance == 'string' ? instance : instance.id, unref: true })
     async reinitializeInstance(instance: string | T) {
         if (typeof instance == "string") {
             instance = this.instances[instance];
         }
+
+        if (instance.state == 'stopping' || instance.state == 'stopped') return;
+
         const id = instance.id;
         await this._shutdownInstance(instance);
         await this._startInstance(id);
@@ -227,6 +230,10 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
         if (typeof instance == "string") {
             instance = this.instances[instance];
         }
+
+        if (instance.state == 'stopping' || instance.state == 'stopped') return;
+
+        // TODO Handle starting state (should probably wait for it to finish and then stop it)
 
         const id = instance?.id;
 

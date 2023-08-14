@@ -55,7 +55,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
     }
 
     function _stateOnlyDecorator<O extends {}, V>(domain: string, options: EntityOptions & O, metaOpts: { service?: string, value_key?: string } = {}) {
-        return ((access, context) => {
+        return ((access, context: DecoratorContext) => {
             const entity_id = resolveEntityId(domain, options, context);
 
             let getter: (self: any) => any = null;
@@ -71,6 +71,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                 }
                 ents.set(self, ent);
                 await registerEntity(ent);
+                // TODO Store a list of decorator-created entities. Destroy any that are no longer present
             }
 
             if (context.kind == 'getter') {
@@ -85,19 +86,10 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
             if (context.kind == 'accessor') {
                 const obsvd = (observable as any)(access, context);
 
+                getter = self => (obsvd.get as Function).call(self);
                 notePluginAnnotation(context, init);
 
-                return {
-                    ...obsvd,
-                    get() {
-                        init(this);
-                        return gent(this).state;
-                    },
-                    set(value) {
-                        init(this);
-                        gent(this).state = value;
-                    },
-                }
+                return obsvd;
             }
         }) as ClassAccessorDecorator<Annotable, any> & ClassGetterDecorator<Annotable, any>
     }
@@ -275,20 +267,16 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
             get api() { return _mqttApi() },
             get typedaemon_topic() {
                 return _mqttApi().system_topic;
-                // return _mqttPlugin().root_topic;
-                // return "td"
             },
             get application_topic() {
                 return _mqttApi().application_topic;
-                // return _mqttPlugin().getApplicationTopic(current.application);
-                // return `${this.typedaemon_topic}/applications/${current.application.uuid}`;
             },
         },
 
         get application_device(): Readonly<TDDevice> {
             const app = current.application;
             return {
-                name: app.id,
+                name: app.options?.human_name || `TypeDaemon - ${app.id}`,
                 manufacturer: "TypeDaemon",
                 connections: [
                     ["td_app", app.uuid],

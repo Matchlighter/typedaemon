@@ -102,8 +102,12 @@ export class Hypervisor {
         process.on('SIGINT', async () => {
             console.log('');
             this.logMessage("info", "SIGINT received. Shutting down...");
-            await this.shutdown();
-            await new Promise(accept => this._logger.info('Done', accept))
+            try {
+                await this.shutdown();
+                await new Promise(accept => this._logger.info('Done', accept))
+            } catch (ex) {
+                console.error("Error while shutting down; Forcing", ex)
+            }
             process.exit(0);
         });
 

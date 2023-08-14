@@ -6,8 +6,9 @@ import { MqttPlugin } from "../../mqtt";
 
 export class EntityStore {
     constructor(readonly plugin: HomeAssistantPlugin, readonly application: ApplicationInstance) {
-        application.cleanups.append(() => this.cleanup());
         this.mqttPlugin = plugin.mqttPlugin();
+        this.mqttConnection(); // Force MQTT cleanup to run after store cleanup
+        application.cleanups.append(() => this.cleanup());
     }
 
     private tracked_entities = new Set<TDEntity<any>>();
@@ -23,7 +24,7 @@ export class EntityStore {
 
         entity['_bound_store'] = this;
         entity['_disposers'].prepend(() => {
-            this._untrackEtity(entity)
+            this._untrackEntity(entity)
             entity['_bound_store'] = null;
         })
 
@@ -32,7 +33,7 @@ export class EntityStore {
         await entity['_register_in_ha']();
     }
 
-    protected _untrackEtity(entity: TDEntity<any>) {
+    protected _untrackEntity(entity: TDEntity<any>) {
         this.tracked_entities.delete(entity);
     }
 
@@ -43,6 +44,9 @@ export class EntityStore {
     mqttConnection() {
         return this.mqttPlugin.instanceConnection(this.application);
     }
+
+    get mqtt_system_topic() { return this.mqttPlugin.root_topic }
+    get mqtt_application_topic() { return this.mqttPlugin.getApplicationTopic(this.application) }
 
     cleanup() {
         // May not really be needed - marking the entities as `unavailable` will already be handled by the app status topic. All (current) event subscriptions are app-scoped
