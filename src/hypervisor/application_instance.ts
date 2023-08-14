@@ -127,7 +127,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         });
     }
 
-    @debounce({ timeToStability: 2000 })
+    @debounce({ timeToStability: 2000, unref: true })
     private restartAfterSourceChange() {
         this.logMessage("info", `Source dependency updated. Restarting`)
         this.namespace.reinitializeInstance(this);
@@ -195,12 +195,18 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             devPackages: true,
         });
 
+        // Abort if the app started shutting down
+        if (this.state as AppLifecycle != "initializing") return;
+
         this.transitionState("compiling");
 
         const module = await this.compileModule();
         this.cleanups.append(() => this._vm.removeAllListeners?.());
         const mainExport = module[this.options.export || 'default'];
         const metadata: ApplicationMetadata = (typeof mainExport == 'object' && mainExport) || mainExport.metadata || module.metadata || { applicationClass: mainExport, ...module, ...mainExport };
+
+        // Abort if the app started shutting down
+        if (this.state as AppLifecycle != "compiling") return;
 
         this.transitionState("starting")
 

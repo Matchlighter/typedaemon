@@ -5,6 +5,8 @@ import { LogLevel } from "./logging";
 export interface AppConfiguration {
     source: string;
 
+    human_name?: string;
+
     /** Only needed if using named, non-default export */
     export?: string;
 

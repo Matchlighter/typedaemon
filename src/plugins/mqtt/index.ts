@@ -18,6 +18,10 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
     private applicationConnections = new Map<BaseInstance<any>, ExtMqttClient>()
 
     instanceConnection(instance: BaseInstance<any>) {
+        if (this[HyperWrapper].state != 'started') {
+            throw new Error("Attempt to start an MQTT connection after shutdown!")
+        }
+
         if (instance == this[HyperWrapper]) {
             return this.ownConnection;
         } else {
@@ -112,7 +116,7 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
             // if (String(err) == last_message) log_line = err.message;
             // last_message = String(err);
 
-            this[HyperWrapper].logMessage("error", `MQTT (${name}) Error:`, err.message);
+            this[HyperWrapper].logMessage("error", `MQTT (${name}) Error:`, err);
         })
 
         Object.assign(client, {

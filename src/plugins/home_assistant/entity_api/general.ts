@@ -27,10 +27,15 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         // Device to default to an application-linked device
         this.device = options?.device || ha.application_device;
 
-        this.uuid = resolveUUID(uuid, this);
+        this._uuid = uuid;
     }
 
-    readonly uuid: string;
+    private _uuid: string;
+    private _abs_uuid: string;
+    get uuid() {
+        this._abs_uuid ||= resolveUUID(this._uuid, this);
+        return this._abs_uuid;
+    }
 
     /** Compute and return the current state object (attributes included) */
     abstract getState(): T;
@@ -82,7 +87,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
     }
 
     protected get mqtt_topic() {
-        return `${ha.mqtt.application_topic}/entities/${this.uuid}`;
+        return `${this._bound_store.mqtt_application_topic}/entities/${this.uuid}`;
     }
 
     get mqtt_state_topic() {
@@ -96,8 +101,8 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
     protected discovery_data() {
         return {
             availability: [
-                { topic: `${ha.mqtt.typedaemon_topic}/status` }, // TD
-                { topic: `${ha.mqtt.application_topic}/status` }, // App
+                { topic: `${this._bound_store.mqtt_system_topic}/status` }, // TD
+                { topic: `${this._bound_store.mqtt_application_topic}/status` }, // App
                 { topic: `${this.mqtt_topic}/status` }, // Entity
             ],
 
