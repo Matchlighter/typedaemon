@@ -37,6 +37,8 @@ export interface LightOptions extends EntityOptionsCommon, EntityOptionsCommonW 
 }
 
 export class TDLight extends EntityClass<boolean, {}, LightOptions> {
+    static domain = "light";
+
     protected discovery_data() {
         const dd = super.discovery_data();
         Object.assign(dd, {
