@@ -1,13 +1,19 @@
 
-import * as ne from "nearley"
+import * as cron from "cron-parser";
+import * as ne from "nearley";
+import parse_duration from "parse-duration";
+import * as SunCalc from "suncalc";
+import moment = require("moment-timezone");
 
 import { current } from "../../hypervisor/current";
 import { callback_or_decorator2 } from "./util";
 
-import grammar_cmp from "./schedule_grammar"
+import { get_plugin } from ".";
 import { sleep } from "../..";
-import { ResumableCallbackPromise } from "../resumable/resumable_method";
 import { sleep_until } from "../../plugins/builtin/sleep";
+import { HomeAssistantPlugin } from "../../plugins/home_assistant";
+import { ResumableCallbackPromise } from "../resumable/resumable_method";
+import grammar_cmp from "./schedule_grammar";
 
 const grammar = ne.Grammar.fromCompiled(grammar_cmp)
 
@@ -22,6 +28,12 @@ export type Schedule = {
 
 export interface SchedulerHandler {
     (): void;
+}
+
+type SunOptions = "td" | `ha:${string}` | {
+    lat,
+    long,
+    elev?,
 }
 
 /**
@@ -40,40 +52,200 @@ export interface SchedulerHandler {
  * - `2023/05/30 sunrise-1:00:30`
  * - `sunrise-1:00:30`
  */
-export const schedule = callback_or_decorator2((func: SchedulerHandler, sched: Schedule) => {
+export const schedule = callback_or_decorator2((func: SchedulerHandler, sched: Schedule, options?: { sun?: SunOptions }) => {
+    const ctx = current.application;
+
     if (typeof sched == "string") {
         if (sched.match(/\d+ ?(h|m|s|d|w)/)) {
             // TODO Is it run_every or run_in? Should it just not be supported here?
             // https://www.npmjs.com/package/parse-duration
-            // 1 hour
+            const parsed = parse_duration(sched);
         } else if (isCronValid(sched)) {
             // https://www.npmjs.com/package/cron-parser
+            const parsed = cron.parseExpression(sched, {})
+            return scheduleRecurring(() => {
+                parsed.reset(Date.now());
+                return parsed.next().toDate();
+            }, func)
         } else {
-            // 2023/05/30 4:23:00 PM
-            // 16:23:00
-            // 4:23:00 PM
-            // 4:23 PM
-            // */*/{15,30} 4:23:00 PM
-            // */{5-8}/10 4:23:00 PM
-            // */{*/3}/10 4:23:00 PM
-            // */{*}/10 4:23:00 PM
+            const get_next = _parseTDFormat(sched, options?.sun);
 
-            // */{*}/10 sunset+4:23:00
-
-            const parser = new ne.Parser(grammar);
-            parser.feed(sched);
-            const parsed = parser.results[0];
+            return scheduleRecurring(() => {
+                const nextCronDate = get_next();
+                return nextCronDate?.toDate();
+            }, func)
         }
     }
 
+    // Run once at the date
     if (sched instanceof Date) {
-        // Run once at the date
-    }
-
-    if (typeof sched == "object") {
-
+        return scheduleTimer(sched, func);
     }
 })
+
+export const _parseTDFormat = (sched: string, sun_options: SunOptions = "ha:default") => {
+    // 2023/05/30 4:23:00 PM
+    // 16:23:00
+    // 4:23:00 PM
+    // 4:23 PM
+    // */*/{15,30} 4:23:00 PM
+    // */{5-8}/10 4:23:00 PM
+    // */{*/3}/10 4:23:00 PM
+    // */{*}/10 4:23:00 PM
+    // */{*}/10 sunset+4:23:00
+
+    const parser = new ne.Parser(grammar);
+    parser.feed(sched);
+    const parsed = parser.results[0];
+
+    parsed.date ||= { year: '*', month: '*', day: '*' };
+
+    // TODO Addd year support (likely patch-package)
+
+    const cfg = current.hypervisor?.currentConfig;
+
+    // TODO TZ support in parser
+    let tz = cfg?.location?.timezone || moment.tz.guess();
+
+    // Sun-relative time
+    if (parsed.time?.ref) {
+        const srel_cron = cron.parseExpression(cronifyBits([
+            "59",
+            "59",
+            "23",
+            parsed.date.day,
+            parsed.date.month,
+            "*",
+        ]), {
+            tz,
+        });
+
+        const applySunOffset = (dt: moment.Moment, sunrel: { ref: keyof SunCalc.GetTimesResult, offset: any }) => {
+            const mdt = dt.clone().tz(tz);
+            const dtStart = mdt.clone().startOf('day');
+            const dtEnd = mdt.clone().endOf('day');
+
+            if (typeof sun_options == 'string' && sun_options.startsWith('ha:')) {
+                const plg_name = sun_options.substring(3);
+                const plg = get_plugin(plg_name) as HomeAssistantPlugin;
+
+                if (!plg) sun_options = "td";
+
+                // TODO Get From HA
+                sun_options = null;
+            }
+
+            if (sun_options == "td" || !sun_options) {
+                sun_options = {
+                    lat: cfg?.location?.latitude,
+                    long: cfg?.location?.longitude,
+                    elev: cfg?.location?.elevation,
+                }
+            }
+
+            let chosen: moment.Moment;
+
+            // suncalc is affected by the time-part of the passed Date and I'm not sure how to fix that cleanly
+            const dateTrials = [0, -1, 1];
+            for (let dto of dateTrials) {
+                const mdto = mdt.clone();
+                mdto.add(dto, 'days');
+
+                const suntimes = SunCalc.getTimes(mdto.toDate(), sun_options.lat, sun_options.long, sun_options.elev);
+                const refdt = suntimes[sunrel.ref];
+                if (dtStart.isBefore(refdt) && dtEnd.isAfter(refdt)) {
+                    chosen = toMoment(refdt);
+                    break;
+                }
+            }
+
+            const off = sunrel.offset
+            if (off?.dir) {
+                const mthd = sunrel.offset.dir == '+' ? "add" : "subtract";
+                chosen[mthd](off.hour || 0, 'hours');
+                chosen[mthd](off.minute || 0, 'minutes');
+                chosen[mthd](off.second || 0, 'seconds');
+            }
+
+            return chosen;
+        }
+
+        return () => {
+            srel_cron.reset(Date.now());
+
+            let next_day = toMoment(srel_cron.next());
+            next_day = applySunOffset(next_day, parsed.time);
+
+            // Get sun___ on next_day. If past, bump next_day
+            if (next_day.isBefore(Date.now())) {
+                next_day = toMoment(srel_cron.next());
+                next_day = applySunOffset(next_day, parsed.time);
+            }
+
+            return next_day;
+        }
+
+    } else {
+        const cron_time = cron.parseExpression(cronifyBits([
+            parsed.time.second || '0',
+            parsed.time.minute,
+            applyMeridian(parsed.time.hour, parsed.time.meridian),
+            parsed.date.day,
+            parsed.date.month,
+            "*",
+        ]), {
+            tz,
+        });
+
+        return () => {
+            cron_time.reset(Date.now());
+            const next_time = cron_time.next();
+            return next_time && toMoment(next_time)
+        }
+    }
+}
+
+const toMoment = (date: cron.CronDate | Date) => {
+    if (date instanceof Date) {
+        return moment(date)
+    } else {
+        return moment(date.toDate());
+    }
+}
+
+const applyMeridian = (hour: any, meridian: 'AM' | 'PM') => {
+    if (hour == '*') {
+        if (meridian == 'AM') return { type: 'range', left: 0, right: 11 };
+        if (meridian == 'PM') return { type: 'range', left: 12, right: 23 };
+        return "*"
+    };
+
+    const diff = meridian == "PM" ? 12 : 0;
+    if (typeof hour == 'string') hour = parseInt(hour);
+    if (typeof hour == 'number') return hour + diff;
+    if (Array.isArray(hour)) return hour.map(h => applyMeridian(h, meridian));
+    if (hour.type == "range") return {
+        ...hour,
+        left: applyMeridian(hour.left, meridian),
+        right: applyMeridian(hour.right, meridian),
+    };
+    if (hour.type == "modulo") return {
+        ...hour,
+        left: applyMeridian(hour.left, meridian),
+    };
+}
+
+const cronifyBit = (bit) => {
+    if (typeof bit == 'string') return bit;
+    if (typeof bit == 'number') return String(bit);
+    if (Array.isArray(bit)) return bit.join(',')
+    if (bit.type == "range") return `${bit.left}-${bit.right}`;
+    if (bit.type == "modulo") return `${cronifyBit(bit.left)}/${bit.right}`;
+}
+
+const cronifyBits = (bits: any[]) => {
+    return bits.map(cronifyBit).join(' ')
+}
 
 const schedule_cleanups = () => current.application.cleanups.unorderedGroup("schedules");
 
@@ -89,20 +261,59 @@ function runAtDate(date: Date, func: () => any) {
 
 function scheduleTimer(when: Date, callback: () => any) {
     const handle = runAtDate(when, callback);
+    const cleanups = schedule_cleanups();
     const cleanup = () => {
         clearTimeout(handle);
-        schedule_cleanups().pop(cleanup);
+        cleanups.pop(cleanup);
     }
-    schedule_cleanups().push(cleanup);
+    cleanups.push(cleanup);
     return cleanup;
 }
 
+function scheduleRecurring(computeNext: () => Date, callback: () => any) {
+    const ctx = current.application;
+
+    let cancelled = false;
+    let currentDisposer: () => void;
+
+    const schedule_next = () => {
+        if (cancelled) return;
+
+        const nextTime = computeNext();
+
+        if (!nextTime) {
+            currentDisposer = null;
+            return
+        }
+
+        // ctx.logMessage('debug', `Scheduling recurring callback at ${nextTime.toISOString()}`)
+
+        currentDisposer = scheduleTimer(nextTime, async () => {
+            await ctx.invoke(async () => {
+                await callback();
+                schedule_next();
+            })
+        });
+    }
+
+    schedule_next();
+
+    return () => {
+        cancelled = true;
+        currentDisposer?.();
+    }
+}
+
+/**
+ * Run the given function once after the given amount of time has passed
+ */
 export function run_in(period: string) {
-    const sleep_time = 10; // TODO Parse period
-    const func = (cb) => scheduleTimer(new Date(Date.now() + sleep_time * 1000), cb)
+    const parsed = parse_duration(period);
+
+    const func = (cb) => scheduleTimer(new Date(Date.now() + parsed), cb)
 
     func.persisted = (action: string) => {
-        const sleep_prom = sleep(sleep_time);
+        const sleep_prom = sleep(parsed);
         new ResumableCallbackPromise(sleep_prom, action);
         return () => sleep_prom.cancel();
     }
@@ -110,8 +321,13 @@ export function run_in(period: string) {
     return func
 }
 
+/**
+ * Run the given function once at the given time
+ */
 export function run_at(time: string) {
-    const run_time: Date = null; // TODO Parse time
+    const parsed = _parseTDFormat(time);
+
+    const run_time: Date = parsed().toDate();
     const func = (cb) => scheduleTimer(run_time, cb);
 
     func.persisted = (action: string) => {
@@ -123,6 +339,17 @@ export function run_at(time: string) {
     return func
 }
 
+/**
+ * Run the given function whenever `period` time has passed
+ * 
+ * Note that runs will not be exactly `period` apart - the logic waits for the function to complete before scheduling the next run.
+ */
 export function run_every(period: string) {
-    // TODO
+    const parsed = parse_duration(period);
+
+    const func = (cb) => {
+        return scheduleRecurring(() => new Date(Date.now() + parsed), cb)
+    }
+
+    return func;
 }

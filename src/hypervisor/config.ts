@@ -23,6 +23,9 @@ export interface Configuration {
     },
 
     location?: {
+        latitude?: number;
+        longitude?: number;
+        elevation?: number;
         timezone?: string;
     },
 

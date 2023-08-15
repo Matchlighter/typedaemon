@@ -47,8 +47,8 @@ class SleeperPromise extends ResumablePromise<number>{
     }
 }
 
-export function sleep(time: number) {
-    return new SleeperPromise(Date.now() + time);
+export function sleep(time_ms: number) {
+    return new SleeperPromise(Date.now() + time_ms);
 }
 
 export function sleep_until(u: Date) {
