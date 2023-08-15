@@ -271,8 +271,6 @@ function scheduleTimer(when: Date, callback: () => any) {
 }
 
 function scheduleRecurring(computeNext: () => Date, callback: () => any) {
-    const ctx = current.application;
-
     let cancelled = false;
     let currentDisposer: () => void;
 
@@ -289,10 +287,8 @@ function scheduleRecurring(computeNext: () => Date, callback: () => any) {
         // ctx.logMessage('debug', `Scheduling recurring callback at ${nextTime.toISOString()}`)
 
         currentDisposer = scheduleTimer(nextTime, async () => {
-            await ctx.invoke(async () => {
-                await callback();
-                schedule_next();
-            })
+            await callback();
+            schedule_next();
         });
     }
 

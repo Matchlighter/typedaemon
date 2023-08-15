@@ -86,7 +86,7 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
 
     async _shutdown() {
         this.transitionState('stopping')
-        await this.cleanups.cleanup();
+        await this.invoke(() => this.cleanups.cleanup())
         this.transitionState('stopped')
     }
 

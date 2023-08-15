@@ -134,7 +134,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                 const obsvd = (observable as any)(access, context);
 
                 _linkFieldEntity(ecls, options, context, (self, ent) => {
-                    ent.getState = (obsvd.get as Function).call(self);
+                    ent.getState = () => (obsvd.get as Function).call(self);
                 })
 
                 return obsvd;
@@ -163,7 +163,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
             const obsvd = (observable as any)(access, context);
 
             _linkFieldEntity(ecls, options, context, (self, ent) => {
-                ent.getState = (obsvd.get as Function).call(self);
+                ent.getState = () => (obsvd.get as Function).call(self);
                 const updateVal = (v) => (obsvd.set as Function).call(self, v);
                 init_callback(self, ent, updateVal);
             })
