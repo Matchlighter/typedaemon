@@ -36,8 +36,6 @@ abstract class TDEntity<T> {
 
     abstract id: string;
 
-    abstract uuid: string;
-
     get domain() {
         return this.id.split('.')[0];
     }
@@ -80,7 +78,6 @@ abstract class TDEntity<T> {
 
 export interface EntityOptions {
     id?: string;
-    uuid?: string;
     name?: string;
 
     [key: string]: any;

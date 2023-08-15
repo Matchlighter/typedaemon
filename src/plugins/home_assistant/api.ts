@@ -33,17 +33,12 @@ function decOrNew<D extends (...params: any) => any, N extends Constructor<any>>
 }
 
 class StateOnlyEntity<T> extends TDAbstractEntity<T> {
-    constructor(readonly options: EntityOptions) {
-        super(options.uuid, options);
-        this.id = resolveEntityId((this.constructor as any).domain, options);
+    constructor(readonly options: EntityOptions, getter: () => T) {
+        super(options.id, options);
+        this.getState = getter;
     }
 
-    readonly id: string;
-    @observable state: T;
-
-    getState(): T {
-        return this.state;
-    }
+    readonly getState: () => T;
 }
 
 export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlugin }) {
@@ -65,10 +60,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
             const init = async (self) => {
                 if (gent(self)) return;
 
-                const ent = new StateOnlyEntity({ ...options, id: entity_id });
-                if (getter) {
-                    ent.getState = () => getter(self);
-                }
+                const ent = new StateOnlyEntity({ ...options, id: entity_id }, () => getter(self));
                 ents.set(self, ent);
                 await registerEntity(ent);
                 // TODO Store a list of decorator-created entities. Destroy any that are no longer present
