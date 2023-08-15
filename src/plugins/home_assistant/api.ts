@@ -10,6 +10,8 @@ import { HomeAssistantPlugin } from ".";
 import { current } from "../../hypervisor/current";
 import { Annotable, client_call_safe, getOrCreateLocalData, makeApiExport, notePluginAnnotation, pluginGetterFactory } from "../base";
 import { ButtonOptions, EntityOptions, InputButton, InputEntity, InputOptions, NumberInputOptions, TDAbstractEntity, TDDevice, TDEntity, resolveEntityId } from "./entity_api";
+import { domain_entities } from "./entity_api/domains";
+import { EntityClass, EntityClassConstructor, EntityClassOptions, EntityClassType } from "./entity_api/domains/base";
 import { EntityStore } from "./entity_api/store";
 
 export interface FullState<V> {
@@ -64,6 +66,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                 ents.set(self, ent);
                 await registerEntity(ent);
                 // TODO Store a list of decorator-created entities. Destroy any that are no longer present
+                //   Entries will need to track plugin type, plugin id, and any plugin/entry specific info
             }
 
             if (context.kind == 'getter') {
@@ -90,16 +93,102 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         return (options: EntityOptions) => _stateOnlyDecorator(domain, options);
     }
 
+    function _linkFieldEntity<E extends EntityClass<any, any>>(
+        ecls: EntityClassConstructor<E>,
+        options: EntityClassOptions<E> & { id?: string },
+        context: DecoratorContext,
+        init_callback: (self, ent: E) => void,
+    ) {
+        const ents = new WeakMap<any, StateOnlyEntity<any>>();
+        const gent = (self) => ents.get(self);
+
+        const init = async (self) => {
+            if (gent(self)) return;
+
+            const { id, ...rest } = options;
+            const ent = new ecls(id, rest as any);
+            init_callback(self, ent);
+            ents.set(self, ent);
+
+            await registerEntity(ent);
+            // TODO Store a list of decorator-created entities. Destroy any that are no longer present
+            //   Entries will need to track plugin type, plugin id, and any plugin/entry specific info
+        }
+
+        notePluginAnnotation(context, init);
+    }
+
+    function _stateOnlyDecorator2<E extends EntityClass<any, any>>(ecls: EntityClassConstructor<E>, options: EntityClassOptions<E> & { id?: string }) {
+        return ((access, context: DecoratorContext) => {
+            if (context.kind == 'getter') {
+                const comptd = (computed as any)(access, context);
+
+                _linkFieldEntity(ecls, options, context, (self, ent) => {
+                    ent.getState = () => self[context.name];
+                })
+
+                return comptd;
+            }
+
+            if (context.kind == 'accessor') {
+                const obsvd = (observable as any)(access, context);
+
+                _linkFieldEntity(ecls, options, context, (self, ent) => {
+                    ent.getState = (obsvd.get as Function).call(self);
+                })
+
+                return obsvd;
+            }
+        }) as ClassAccessorDecorator<Annotable, any> & ClassGetterDecorator<Annotable, any>
+    }
+
+    // TODO These should support additional syntaxes:
+    //   @sensor({...})
+    //     - Will automatically destroy if removed/uuid changed
+    //   sensor({ ... })(() => value)
+    //     - Will automatically destroy if in initializer
+    //   new sensor({ ... })
+    function stateOnlyApi<E extends EntityClass<any, any>>(entCls: EntityClassConstructor<E>) {
+        return (options: EntityClassOptions<E> & { id?: string }) => _stateOnlyDecorator2(entCls, options);
+    }
+
+    type RWInitCallback<E extends EntityClass<any, any, any>> = (self, entity: E, set: (v: EntityClassType<E>) => void) => void
+
+    function _basicRWDecorator<E extends EntityClass<any, any>>(
+        ecls: EntityClassConstructor<E>,
+        options: EntityClassOptions<E> & { id?: string },
+        init_callback: RWInitCallback<E>,
+    ) {
+        return ((access, context: DecoratorContext) => {
+            const obsvd = (observable as any)(access, context);
+
+            _linkFieldEntity(ecls, options, context, (self, ent) => {
+                ent.getState = (obsvd.get as Function).call(self);
+                const updateVal = (v) => (obsvd.set as Function).call(self, v);
+                init_callback(self, ent, updateVal);
+            })
+
+            return obsvd;
+        }) as ClassAccessorDecorator<Annotable, any>
+    }
+
+    function basicRWApi<E extends EntityClass<any, any>>(entCls: EntityClassConstructor<E>, autoinit_callback: RWInitCallback<E>) {
+        return (options: EntityClassOptions<E> & { id?: string }) => _basicRWDecorator(entCls, options, autoinit_callback);
+    }
+
     // TODO Allow imperitive/non-decorator calls to create these entities.
     const entities = {
+        ...domain_entities,
+
         /** Create a `sensor` entity and update it whenever the decorated getter/accessor is updated */
-        sensor: stateOnlyDecorator<{}, number>("sensor"),
+        sensor: stateOnlyApi(domain_entities.sensor),
+        // sensor: stateOnlyDecorator<{}, number>("sensor"),
 
         /** Create a `binary_sensor` entity and update it whenever the decorated getter/accessor is updated */
         binary_sensor: stateOnlyDecorator<{}, boolean>("binary_sensor"),
 
-        /** Create a `text_sensor` entity and update it whenever the decorated getter/accessor is updated */
-        text_sensor: stateOnlyDecorator<{}, string>("text_sensor"),
+        // /** Create a `text_sensor` entity and update it whenever the decorated getter/accessor is updated */
+        // text_sensor: stateOnlyDecorator<{}, string>("text_sensor"),
 
         /** Create a `weather` entity and update it whenever the decorated getter/accessor is updated */
         weather: stateOnlyDecorator<{}, {}>("weather"),
@@ -113,6 +202,11 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         // TODO number, select, text, switch, climate, light, cover
         //  Basically the same as the inputs, but state is kept in TD instead of HA
         //  Can be used as an accessor decorator, or as a constructor to register an X with custom service callbacks and state management
+
+        switch: basicRWApi(domain_entities.switch, (app, entity, set) => {
+            entity.on("turn_on", () => set(true));
+            entity.on("turn_off", () => set(false));
+        }),
     }
 
     function _inputDecorator<O extends {} = {}>(domain: string, options: InputOptions<any> & O, metaOpts: { service?: string, value_key?: string } = {}) {
@@ -144,7 +238,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         }) as ClassAccessorDecorator<Annotable, any>
     }
 
-    function inputDecorator<V, O extends {} = {}>(domain: string) {
+    function inputApi<V, O extends {} = {}>(domain: string) {
         return optional_config_decorator([], (options?: InputOptions<V> & O): ClassAccessorDecorator<Annotable, V> => {
             return _inputDecorator(domain, options);
         });
@@ -175,16 +269,16 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         number: (options: NumberInputOptions) => _inputDecorator("input_number", options),
 
         /** Create an `input_text` helper and sync it with the decorated accessor */
-        text: inputDecorator<string, { min?: number, max?: number, pattern?: string | RegExp, mode?: 'text' | 'password' }>("input_text"),
+        text: inputApi<string, { min?: number, max?: number, pattern?: string | RegExp, mode?: 'text' | 'password' }>("input_text"),
 
         /** Create an `input_boolean` helper and sync it with the decorated accessor */
-        boolean: inputDecorator<boolean>("input_boolean"),
+        boolean: inputApi<boolean>("input_boolean"),
 
         /** Create an `input_boolean` helper and sync it with the decorated accessor */
-        bool: inputDecorator<boolean>("input_boolean"),
+        bool: inputApi<boolean>("input_boolean"),
 
         /** Create an `input_datetime` helper and sync it with the decorated accessor */
-        datetime: inputDecorator<Date | number | Iso8601String, { has_date?: boolean, has_time?: boolean }>("input_datetime"),
+        datetime: inputApi<Date | number | Iso8601String, { has_date?: boolean, has_time?: boolean }>("input_datetime"),
 
         /** Create an `input_select` helper and sync it with the decorated accessor */
         select: <const T extends string>(options: T[], config?: InputOptions<T>) => {
