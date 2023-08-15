@@ -2,33 +2,46 @@ import { observable } from "mobx";
 
 import { ha } from "../..";
 import { plgmobx } from "../../mobx";
-import { TDDevice, TDEntity } from "./base";
-import { logMessage } from "../../../hypervisor/logging";
+import { TDDevice, TDEntity, resolveEntityId } from "./base";
 
 // Will need to give some thought to unique_ids.
 //   Likely use `<application unique_id (configurable) || application id>_<unique_id (configurable) || lowercase(undercore(name))>`
 //   Will want an escape hatch where no interpolation is performed (when user prefixes it with a `/` or some other character?)
 const resolveUUID = (uuid: string, ent: TDEntity<any>) => {
+    if (uuid && uuid.startsWith('/')) return uuid.substring(1);
+
     const ent_bits = ent.id.split('.');
     const ent_did = ent_bits[ent_bits.length - 1]
-    uuid ||= ent_did;
-
-    if (uuid.startsWith('/')) return uuid.substring(1);
+    // uuid ||= ent_did;
+    uuid ||= ent_bits.join('-');
 
     return `td-${ent['application'].uuid}-${uuid}`
 }
 
 abstract class TDAbstractEntity<T> extends TDEntity<T> {
-    constructor(uuid: string, options?: { device?: TDDevice, name?: string }) {
+    constructor(id: string, options?: {
+        device?: TDDevice,
+        name?: string,
+        /**
+         * If for some reason you need to override the generated UUID, you can.
+         * Should only be needed if you change your Entity ID or App ID, but needing to do so should be a rarity.
+         * Prefix the value with a "/" to disable TD default interpolation of UUIDs
+         */
+        uuid?: string,
+    }) {
         super();
+
+        this.id = resolveEntityId((this.constructor as any).domain, { id });
 
         this.name = options.name;
 
         // Device to default to an application-linked device
         this.device = options?.device || ha.application_device;
 
-        this._uuid = uuid;
+        this._uuid = options?.uuid;
     }
+
+    readonly id: string;
 
     private _uuid: string;
     private _abs_uuid: string;
@@ -81,7 +94,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         this.markUnavailable();
     }
 
-    async handle_service(payload: any) {
+    protected async handle_service(payload: any) {
         // TODO Map services
         // TODO
     }
@@ -148,64 +161,6 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
     protected get mqttConn() {
         return this._bound_store.mqttConnection();
     }
-}
-
-type AnyFunc = (...params: any[]) => any;
-
-type SimpleThis<C extends TDAbstractEntity<any>, T> = C & { state: T }
-
-type SimpleMethods<C extends TDAbstractEntity<any>, T> = {
-    [K in keyof C]?: C[K] extends AnyFunc ? ((this: SimpleThis<C, T>, ...params: Parameters<C[K]>) => ReturnType<C[K]>) : never;
-}
-
-class ISimpleEntity<T> extends TDAbstractEntity<T> {
-    id: string;
-
-    state: T;
-
-    getState(): T { return null }
-}
-
-function makeSimpleClass<T, C extends typeof TDAbstractEntity<T>>(cls: C, methods: SimpleMethods<InstanceType<C>, T>): typeof ISimpleEntity<T> {
-    class SimpleEntity extends (cls as typeof TDAbstractEntity<T>) {
-        id: string;
-
-        @observable state: T;
-
-        getState() {
-            return this.state;
-        }
-    }
-
-    Object.assign(SimpleEntity.prototype, methods);
-
-    return SimpleEntity as any;
-}
-
-export abstract class TDSensor extends TDAbstractEntity<number> {
-    static domain = 'sensor';
-}
-export abstract class TDTextSensor extends TDAbstractEntity<string> {
-    static domain = 'text_sensor';
-}
-
-export abstract class TDSwitch extends TDAbstractEntity<boolean> {
-    static domain = 'switch';
-
-    // static Simple = makeSimpleClass<boolean, typeof TDSwitch>(TDSwitch, {
-    //     turn_on() { this.state = true; },
-    //     turn_off() { this.state = false; },
-    // });
-
-    abstract turn_on();
-    abstract turn_off();
-}
-
-export abstract class TDLight extends TDAbstractEntity<number> {
-    static domain = 'light';
-
-    abstract turn_on();
-    abstract turn_off();
 }
 
 export { TDAbstractEntity };
