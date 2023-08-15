@@ -1840,10 +1840,10 @@ help-me@^3.0.0:
     glob "^7.1.6"
     readable-stream "^3.6.0"
 
-home-assistant-js-websocket@^8.0.1:
-  version "8.0.1"
-  resolved "https://registry.yarnpkg.com/home-assistant-js-websocket/-/home-assistant-js-websocket-8.0.1.tgz#4c91f6e740600de9a59e0da3f018ea3487568415"
-  integrity sha512-CVi1yu4+hj3m3+ZxgzEYiP+UYFmjf/iAsUKVyCmhVm9T8Pn7ZCeW16O3pniC4h1DOmTuXW+z4v373UwKxVOMAg==
+home-assistant-js-websocket@^8.2.0:
+  version "8.2.0"
+  resolved "https://registry.yarnpkg.com/home-assistant-js-websocket/-/home-assistant-js-websocket-8.2.0.tgz#3505bf004cc3026c5d0cfdae5c031a44b0fcb01b"
+  integrity sha512-B163iuvC1hsObkbSXm89JfjjOguyQXSQeQsGf6KQblUj9QwMgFkQt13TiCYjeFFTMzhQ8Qj3/gKx/6MnSeYUqA==
 
 human-signals@^2.1.0:
   version "2.1.0"
@@ -2768,10 +2768,10 @@ typedarray@^0.0.6:
   resolved "https://registry.yarnpkg.com/typedarray/-/typedarray-0.0.6.tgz#867ac74e3864187b1d3d47d996a78ec5c8830777"
   integrity sha512-/aCDEGatGvZ2BIk+HmLf4ifCJFwvKFNb9/JeZPMulfgFracn9QFcAf5GO8B/mweUjSoblS5In0cWhqpfs/5PQA==
 
-typescript@^5.0.0-beta:
-  version "5.0.0-beta"
-  resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.0.0-beta.tgz#791fa95411d6ff64ee77d677ed1e6f32a2eaabaf"
-  integrity sha512-+SSabbSXG5mtF+QGdV9uXXt9Saq1cSyI6hSG7znhaLoquleJpnmfkwSxFngK9c2fWWi1W/263TuzXQOsIcdjjA==
+typescript@^5.1.6:
+  version "5.1.6"
+  resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.1.6.tgz#02f8ac202b6dad2c0dd5e0913745b47a37998274"
+  integrity sha512-zaWCozRZ6DLEWAWFrVDz1H6FVXzUSfTy5FUMWsQlU8Ym5JP9eO4xkTIROFCQvhQf61z6O/G6ugw3SgAnvvm+HA==
 
 underscore@1.12.1:
   version "1.12.1"

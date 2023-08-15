@@ -1,0 +1,28 @@
+diff --git a/node_modules/home-assistant-js-websocket/package.json b/node_modules/home-assistant-js-websocket/package.json
+index 761c985..2eb84bc 100644
+--- a/node_modules/home-assistant-js-websocket/package.json
++++ b/node_modules/home-assistant-js-websocket/package.json
+@@ -1,6 +1,5 @@
+ {
+   "name": "home-assistant-js-websocket",
+-  "type": "module",
+   "sideEffects": false,
+   "version": "8.2.0",
+   "description": "Home Assistant websocket client",
+@@ -8,16 +7,6 @@
+   "types": "dist/index.d.ts",
+   "main": "dist/haws.umd.js",
+   "module": "dist/index.js",
+-  "exports": {
+-    ".": {
+-      "import": "./dist/index.js",
+-      "require": "./dist/haws.cjs",
+-      "default": "./dist/haws.umd.js"
+-    },
+-    "./haws.cjs": "./dist/haws.cjs",
+-    "./haws.umd.js": "./dist/haws.umd.js",
+-    "./dist/*": "./dist/*"
+-  },
+   "repository": {
+     "url": "https://github.com/home-assistant/home-assistant-js-websocket.git",
+     "type": "git"
