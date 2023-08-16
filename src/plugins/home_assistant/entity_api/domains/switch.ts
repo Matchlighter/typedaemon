@@ -46,4 +46,10 @@ export class TDSwitch extends EntityClass<boolean, SwitchServices, SwitchOptions
         })
         return dd;
     }
+
+    protected _serializeState(state: boolean) {
+        if (state === true) return "ON";
+        if (state === false) return "OFF";
+        return state;
+    }
 }
