@@ -261,13 +261,9 @@ function runAtDate(date: Date, func: () => any) {
 
 function scheduleTimer(when: Date, callback: () => any) {
     const handle = runAtDate(when, callback);
-    const cleanups = schedule_cleanups();
-    const cleanup = () => {
+    return schedule_cleanups().addExposed(() => {
         clearTimeout(handle);
-        cleanups.pop(cleanup);
-    }
-    cleanups.push(cleanup);
-    return cleanup;
+    })
 }
 
 function scheduleRecurring(computeNext: () => Date, callback: () => any) {

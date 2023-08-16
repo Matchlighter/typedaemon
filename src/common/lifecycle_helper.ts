@@ -69,6 +69,21 @@ class UnorderedLifecycleHelper extends BaseLifecycleHelper {
         return () => this.cleanups.delete(cleaner);
     }
 
+    /** Add a cleanup function and return a wrapped version that can be called manually */
+    addExposed(cleaner: Cleaner) {
+        const wrapped_cleaner = () => {
+            try {
+                cleaner();
+            } finally {
+                this.pop(wrapped_cleaner)
+            }
+        }
+
+        this.push(wrapped_cleaner);
+
+        return wrapped_cleaner;
+    }
+
     pop(cleaner: Cleaner) {
         this.cleanups.delete(cleaner);
     }

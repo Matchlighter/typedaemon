@@ -1,5 +1,5 @@
 
-import { HassEntity } from "home-assistant-js-websocket";
+import { HassEntity, MessageBase } from "home-assistant-js-websocket";
 import { action, computed, observable } from "mobx";
 import { Constructor } from "type-fest";
 
@@ -41,6 +41,13 @@ class StateOnlyEntity<T> extends TDAbstractEntity<T> {
     }
 
     readonly getState: () => T;
+}
+
+type WebhookMethods = "GET" | "POST" | "PUT" | "HEAD";
+type WebhookPayload<T = any> = {
+    payload: T,
+    headers: Record<string, string>,
+    params: Record<string, string>,
 }
 
 export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlugin }) {
@@ -331,9 +338,72 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         return response1['entity'] || [];
     }
 
-    function subscribe() {
-        // TODO
-        // TODO Add the subscription to a cleanup registry!
+    function sync_subscribe(message: MessageBase, callback: (value) => void) {
+        let disposer;
+        _plugin()._ha_api.subscribeMessage(callback, message, { resubscribe: true }).then(disp => {
+            if (disposer) disp();
+            disposer = disp;
+        })
+        const cleanups = current.application.cleanups.unorderedGroup("ha:subscriptions");
+        return cleanups.addExposed(() => {
+            if (disposer) disposer();
+            disposer = true;
+        })
+    }
+
+    /**
+     * Start a websocket subscription with Home Assistant
+     * 
+     * Basically a passthrough of `subscribeMessage` from `home-assistant-js-websocket`
+     */
+    function subscribe<T>(msg: MessageBase) {
+        function executor(callback: (payload: T) => void)
+        function executor(target, context: ClassMethodDecoratorContext<any, (payload: T) => void>)
+        function executor(target, context?: ClassMethodDecoratorContext) {
+            if (context) {
+                notePluginAnnotation(context, (self) => {
+                    executor((payload) => {
+                        self[context.name](payload);
+                    })
+                });
+            } else {
+                sync_subscribe(msg, target);
+            }
+        }
+        return executor;
+    }
+
+    /**
+     * Create a Home Assistant Webhook with the given ID. Requires https://github.com/zachowj/hass-node-red/tree/main
+     */
+    function webhook<T>(id: string, options?: { allowed_methods?: WebhookMethods[], name?: string }) {
+        function webhook_executor(callback: (payload: WebhookPayload<T>) => void)
+        function webhook_executor(target, context: ClassMethodDecoratorContext<any, (payload: WebhookPayload<T>) => void>)
+        function webhook_executor(target, context?: ClassMethodDecoratorContext) {
+            if (context) {
+                notePluginAnnotation(context, (self) => {
+                    sync_subscribe({
+                        type: "nodered/webhook",
+                        server_id: "not used",
+                        name: options?.name || context.name || id,
+                        webhook_id: id,
+                        allowed_methods: options?.allowed_methods || ['GET'],
+                    }, (payload) => {
+                        self[context.name](payload?.data);
+                    })
+                });
+            } else {
+                sync_subscribe({
+                    type: "nodered/webhook",
+                    server_id: "not used",
+                    name: options?.name || id,
+                    webhook_id: id,
+                    allowed_methods: options?.allowed_methods || ['GET'],
+                }, (payload) => target(payload?.data))
+            }
+        }
+
+        return webhook_executor;
     }
 
     const _mqttApi = () => _plugin().mqttApi();
@@ -342,12 +412,23 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         _getPlugin: _plugin,
         get _plugin() { return _plugin() },
 
-        /** Returns the underlying Connection object from `home-assistant-js-websocket`. This is advanced usage and should only be used if you know what you're doing */
+        /**
+         * Returns the underlying Connection object from `home-assistant-js-websocket`.
+         * This is advanced usage and should only be used if you know what you're doing.
+         * You MUST handle disposal of any subscriptions or objects returned.
+         */
         _getConnection: () => _plugin()._ha_api,
-        /** Returns the underlying Connection object from `home-assistant-js-websocket`. This is advanced usage and should only be used if you know what you're doing */
+        /**
+         * Returns the underlying Connection object from `home-assistant-js-websocket`.
+         * This is advanced usage and should only be used if you know what you're doing.
+         * You MUST handle disposal of any subscriptions or objects returned.
+         */
         get _connection() { return _plugin()._ha_api },
 
         get states() { return _plugin().state },
+
+        subscribe,
+        webhook,
 
         mqtt: {
             get api() { return _mqttApi() },
@@ -373,8 +454,8 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
             }
         },
 
-        entity: entities,
         registerEntity,
+        entity: entities,
         input,
         button,
         callService,
