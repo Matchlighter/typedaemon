@@ -38,7 +38,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 
         this.id = resolveEntityId((this.constructor as any).domain, { id });
 
-        this.name = options.name;
+        this.name = options?.name;
 
         // Device to default to an application-linked device
         this.device = options?.device || ha.application_device;
@@ -178,11 +178,16 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 
         // Observe getState() and getAttributes(), pushing any changes to HA (use one topic so we can have atomic updates)
         this._disposers.append(plgmobx.reaction(this.application, () => ({ state: this.getState(), attrs: this.getExtraAttributes() }), (v: RawStatePayload<T>) => {
+            v.state = this._serializeState(v.state);
             const payload = this._getStatePayload(v);
             this.mqttConn.publish(this.mqtt_state_topic, JSON.stringify(payload), {
                 retain: true,
             });
         }, { fireImmediately: true }))
+    }
+
+    protected _serializeState(state: T): any {
+        return state;
     }
 
     protected _getStatePayload(state: RawStatePayload<T>): any {

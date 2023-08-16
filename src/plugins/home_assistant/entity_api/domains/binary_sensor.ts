@@ -41,4 +41,10 @@ export class TDBinarySensor extends EntityClass<boolean, {}, BinarySensorOptions
         })
         return dd;
     }
+
+    protected _serializeState(state: boolean) {
+        if (state === true) return "ON";
+        if (state === false) return "OFF";
+        return state;
+    }
 }

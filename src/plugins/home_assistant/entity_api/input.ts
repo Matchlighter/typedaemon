@@ -91,7 +91,7 @@ class InputEntity<T> extends TDEntity<T> {
                 const value = pl.state[this.id]?.state;
                 client_call_safe(() => {
                     runInAction(() => {
-                        this._state = value;
+                        this._state = value as any;
                     })
                 })
             })
@@ -164,4 +164,16 @@ class InputButton extends InputEntity<never> {
     }
 }
 
-export { InputEntity, InputButton };
+export interface SelectOptions<T extends string> extends EntityOptions {
+    options: T[]
+}
+
+class InputSelect<const T extends string> extends InputEntity<T> {
+    static domain = "input_select";
+
+    constructor(options: SelectOptions<T>) {
+        super(options);
+    }
+}
+
+export { InputEntity, InputButton, InputSelect };
