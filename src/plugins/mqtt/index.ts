@@ -14,8 +14,20 @@ type ExtMqttClient = mqtt.MqttClient & { shutdown: () => Promise<any> };
 export class MqttPlugin extends Plugin<PluginType['mqtt']> {
     readonly api = mqttApi({ pluginId: this[HyperWrapper].id });
 
-    private ownConnection: ExtMqttClient;
     private applicationConnections = new Map<BaseInstance<any>, ExtMqttClient>()
+
+    private _ownConnection: ExtMqttClient;
+    private establishOwnConnection() {
+        this._ownConnection = this.createConnection("PLUGIN", `${this.td_system_topic}/status`);
+    }
+    private get ownConnection() {
+        if (!this._ownConnection) this.establishOwnConnection();
+        return this._ownConnection;
+    }
+
+    getInstanceTopic(app: ApplicationInstance) {
+        return `${this.td_system_topic}/applications/${app.uuid}`;
+    }
 
     instanceConnection(instance: BaseInstance<any>) {
         if (this[HyperWrapper].state != 'started') {
@@ -28,7 +40,7 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
             if (this.applicationConnections.has(instance)) {
                 return this.applicationConnections.get(instance);
             } else {
-                const conn = this.createConnection("App:" + instance.id, `${this.getApplicationTopic(instance as ApplicationInstance)}/status`);
+                const conn = this.createConnection("App:" + instance.id, `${this.getInstanceTopic(instance as ApplicationInstance)}/status`);
                 this.applicationConnections.set(instance, conn);
 
                 let cleanedup = false;
@@ -51,15 +63,36 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
         }
     }
 
-    get root_topic() {
-        return this.config.base_topic || "td";
+    get td_system_topic() {
+        return this.config.system_topic || "td";
     }
 
-    getApplicationTopic(app: ApplicationInstance) {
-        return `${this.root_topic}/applications/${app.uuid}`;
+    protected shouldSilenceSystem() {
+        if (this.config.system_topic === false) return true;
+        if (this.config.system_topic === null) return true;
+        if (this.config.system_topic === "") return true;
+
+        // If a system_topic was explicitly given, we don't need to be silent
+        if (!!this.config.system_topic) return false;
+
+        // If we _know_ that this is the HA MQTT Server, we can default to making noise
+        if (this.config.system_topic === undefined) {
+            if (this.supervisorServiceConfig) {
+                return false;
+            }
+
+            // Look at haConfig.mqtt_plugin as well
+            const plcfgs = this[HyperWrapper]?.hypervisor?.currentConfig?.plugins || {};
+            for (let [k, cfg] of Object.entries(plcfgs)) {
+                if (cfg.type == "home_assistant" && cfg.mqtt_plugin == this[HyperWrapper].id) return false;
+            }
+        }
+
+        // Otherwise, we default to silence so we don't publish anything automatically
+        return true;
     }
 
-    private supervisorServiceConfig: any = {};
+    private supervisorServiceConfig: any;
 
     private resolveConnectionConfig(cfg = this.config) {
         return {
@@ -73,19 +106,20 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
     protected createConnection(name: string, status_topic?: string): ExtMqttClient {
         const inst = this[HyperWrapper];
         const uid = Math.random().toString(16).substr(2, 8);
-        status_topic ||= `${this.root_topic}/${uid}/status`
+        const publish_status = !this.shouldSilenceSystem();
+        status_topic ||= `${this.td_system_topic}/${uid}/status`
 
         const client = mqtt.connect(this.config.url, {
             clientId: `typedaemon|${uid}|${inst.id}|${name}`,
 
             ...this.resolveConnectionConfig(),
 
-            will: {
+            will: publish_status ? {
                 topic: status_topic,
                 payload: "offline",
                 qos: 0,
                 retain: false,
-            },
+            } : null,
         });
 
         // Avoid re-logging duplicate traces while reconnecting
@@ -94,9 +128,11 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
         client.on("connect", () => {
             last_message = null;
             this[HyperWrapper].logMessage("debug", `MQTT (${name}) Connected!`)
-            client.publish(status_topic, "online", {
-                retain: true,
-            })
+            if (publish_status) {
+                client.publish(status_topic, "online", {
+                    retain: true,
+                })
+            }
         })
 
         client.on("disconnect", () => {
@@ -121,9 +157,11 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
 
         Object.assign(client, {
             shutdown: async () => {
-                client.publish(status_topic, "offline", {
-                    retain: true,
-                })
+                if (publish_status) {
+                    client.publish(status_topic, "offline", {
+                        retain: true,
+                    })
+                }
                 await new Promise((resolve, reject) => {
                     client.end(false, {}, resolve);
                 })
@@ -142,17 +180,20 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
             }
         }
 
-        this.ownConnection = this.createConnection("PLUGIN", `${this.root_topic}/status`);
+        // Own Connection is only needed if we need to publish Plugin status
+        if (!this.shouldSilenceSystem()) {
+            this.establishOwnConnection();
+        }
 
         this.addCleanup(() => {
-            if (this.ownConnection) {
-                return this.ownConnection.shutdown();
-            }
+            return this.ownConnection?.shutdown();
         })
 
-        await new Promise((resolve, reject) => {
-            this.ownConnection.once("connect", () => resolve(undefined));
-        })
+        if (this.ownConnection) {
+            await new Promise((resolve, reject) => {
+                this.ownConnection.once("connect", () => resolve(undefined));
+            })
+        }
     }
 
     configuration_updated(new_config: MQTTPluginConfig, old_config: MQTTPluginConfig) {
