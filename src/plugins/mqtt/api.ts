@@ -109,8 +109,8 @@ export function mqttApi(options: { pluginId: string }) {
         _getPlugin: _plugin,
         get _plugin() { return _plugin() },
 
-        get system_topic() { return _plugin().root_topic },
-        get application_topic() { return _plugin().getApplicationTopic(current.application) },
+        get system_topic() { return _plugin().td_system_topic },
+        get application_topic() { return _plugin().getInstanceTopic(current.application) },
 
         /** Returns the underlying MqttClient instance from the MQTT library. This is advanced usage and should only be used if you know what you're doing */
         _getConnection: _connection,

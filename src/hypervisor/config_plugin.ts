@@ -22,7 +22,7 @@ export interface HomeAssistantPluginConfig {
 
 export interface MQTTPluginConfig {
     type: "mqtt";
-    base_topic?: string;
+    system_topic?: string | false;
     url?: string;
     host?: string;
     username?: string;
