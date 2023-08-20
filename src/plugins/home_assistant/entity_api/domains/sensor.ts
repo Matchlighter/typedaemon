@@ -1,4 +1,5 @@
 
+import { RawStatePayload } from "..";
 import { EntityClass, EntityOptionsCommon, HATemplate, discoveryPassOptions } from "./base";
 
 type SensorDeviceClass = string;
@@ -54,8 +55,8 @@ export class TDSensor extends EntityClass<number, {}, SensorOptions> {
         // TODO
     }
 
-    protected _getStatePayload(state) {
+    protected _publishState(state: RawStatePayload<number>) {
         // TODO last_reset
-        return { ...state, last_reset: null }
+        return super._publishState({ ...state, last_reset: null })
     }
 }

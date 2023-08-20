@@ -9,6 +9,12 @@ export class EntityStore {
         this.mqttPlugin = plugin.mqttPlugin();
         this.mqttConnection(); // Force MQTT cleanup to run after store cleanup
         application.cleanups.append(() => this.cleanup());
+
+        if (application.state == 'starting') {
+            application.addLifeCycleHook("started", () => {
+                // TODO Mark registered items and look for persisted entries that need to be destroyed.
+            })
+        }
     }
 
     private tracked_entities = new Set<TDEntity<any>>();
@@ -16,10 +22,10 @@ export class EntityStore {
     private mqttPlugin: MqttPlugin;
 
     async registerEntity(entity: TDEntity<any>) {
-        logMessage("debug", `Registering entity '${entity.id}'`)
+        logMessage("debug", `Registering entity '${entity.uuid}'`)
 
         if (entity['_bound_store']) {
-            throw new Error(`Entity ${entity.id} already registered!`)
+            throw new Error(`Entity ${entity.uuid} already registered!`)
         }
 
         entity['_bound_store'] = this;
@@ -45,8 +51,8 @@ export class EntityStore {
         return this.mqttPlugin.instanceConnection(this.application);
     }
 
-    get mqtt_system_topic() { return this.mqttPlugin.root_topic }
-    get mqtt_application_topic() { return this.mqttPlugin.getApplicationTopic(this.application) }
+    get mqtt_system_topic() { return this.mqttPlugin.td_system_topic }
+    get mqtt_application_topic() { return this.mqttPlugin.getInstanceTopic(this.application) }
 
     cleanup() {
         // May not really be needed - marking the entities as `unavailable` will already be handled by the app status topic. All (current) event subscriptions are app-scoped
