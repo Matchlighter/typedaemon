@@ -1,36 +1,34 @@
 
-import { action, observable, runInAction } from 'mobx'
-import * as ws from "ws";
 import {
-    createConnection,
-    getStates,
-    StateChangedEvent,
     Connection,
-    callService,
-    HassServiceTarget,
-    createLongLivedTokenAuth,
-    HassEvent,
     ERR_CANNOT_CONNECT,
     ERR_CONNECTION_LOST,
     ERR_HASS_HOST_REQUIRED,
     ERR_INVALID_AUTH,
     ERR_INVALID_HTTPS_TO_HTTP,
-    HassEntity,
     HassEntities,
-} from 'home-assistant-js-websocket'
+    HassEvent,
+    HassServiceTarget,
+    StateChangedEvent,
+    callService,
+    createConnection,
+    createLongLivedTokenAuth,
+    getStates
+} from 'home-assistant-js-websocket';
+import { action, observable, runInAction } from 'mobx';
+import * as ws from "ws";
 
-import { sync_to_observable } from '@matchlighter/common_library/sync_observable'
+import { sync_to_observable } from '@matchlighter/common_library/sync_observable';
 
-import { ResumablePromise, SerializedResumable } from "../../runtime/resumable";
-import { HomeAssistantApi, homeAssistantApi } from './api';
-import { get_plugin } from '../../runtime/hooks';
-import { HomeAssistantPluginConfig, PluginType } from '../../hypervisor/config_plugin';
-import { Plugin } from '../base';
-import { HyperWrapper } from '../../hypervisor/managed_apps';
-import { current } from '../../hypervisor/current';
-import { DeepReadonly } from '../../common/util';
 import { mqtt } from '..';
+import { DeepReadonly } from '../../common/util';
+import { HomeAssistantPluginConfig, PluginType } from '../../hypervisor/config_plugin';
+import { HyperWrapper } from '../../hypervisor/managed_apps';
+import { get_plugin } from '../../runtime/hooks';
+import { ResumablePromise, SerializedResumable } from "../../runtime/resumable";
+import { Plugin } from '../base';
 import { MqttPlugin } from '../mqtt';
+import { HomeAssistantApi, homeAssistantApi } from './api';
 
 // @ts-ignore
 global.WebSocket ||= ws.WebSocket
@@ -81,10 +79,6 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
         return await callService(this._ha_api, domain, service, data, target);
     }
 
-    async writeSOState(entity: string, state: any, attrs?: any) {
-        // TODO Write the (eg) sensor state to HA
-    }
-
     mqttPlugin() {
         return get_plugin(this.config.mqtt_plugin || "mqtt") as MqttPlugin;
     }
@@ -95,15 +89,15 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
         return mqtt._apiFactory({ pluginId: pl as any });
     }
 
-    onConnected(callback: () => void)
-    onConnected(when: OnConnectedWhen, callback: () => void)
-    onConnected(arg1, arg2?) {
+    // onConnected(callback: () => void)
+    // onConnected(when: OnConnectedWhen, callback: () => void)
+    // onConnected(arg1, arg2?) {
+    //     // TODO
+    // }
 
-    }
-
-    subscribe(callback: (event: HassEvent) => void) {
-
-    }
+    // subscribe(callback: (event: HassEvent) => void) {
+    //     // TODO
+    // }
 
     private readonly stateStore: any = observable({}, {}, { deep: false }) as any;
     get state(): DeepReadonly<HassEntities> { return this.stateStore }
@@ -111,12 +105,12 @@ export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
     _ha_api: Connection;
     private pingInterval;
 
-    awaitForEvent(pattern) {
-        const app = current.application;
-        return new EventAwaiter(this, pattern);
-    }
+    // awaitForEvent(pattern) {
+    //     const app = current.application;
+    //     return new EventAwaiter(this, pattern);
+    // }
 
-    trackEventAwaiter(awaiter: EventAwaiter) {
+    protected trackEventAwaiter(awaiter: EventAwaiter) {
         // TODO
         return () => {
 
@@ -211,7 +205,7 @@ class EventAwaiter extends ResumablePromise<any>{
     }
 
     protected do_unsuspend(): void {
-        this.ha_untrack = this.hap.trackEventAwaiter(this);
+        this.ha_untrack = this.hap['trackEventAwaiter'](this);
     }
 
     serialize(): SerializedResumable {
