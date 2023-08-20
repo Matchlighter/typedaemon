@@ -184,7 +184,7 @@ class Resolver {
             return false;
         }
     }
-    
+
     async pathTestIsFile(path) {
         try {
             const stat = await fs.promises.stat(path);
@@ -221,4 +221,23 @@ export function patch<T, K extends keyof T>(target: T, key: K, patcher: (origina
         const caller = ((...args) => original.call(this, ...args)) as T[K];
         return (patcher(caller) as any).call(this, ...args);
     } as any;
+}
+
+import { eachLine } from "line-reader";
+
+export function read_lines(file: string, options: LineReaderOptions, iteratee: (line: string, last: boolean) => void) {
+    return new Promise((resolve, reject) => {
+        eachLine(file, options, iteratee, (err) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(null);
+            }
+        })
+    })
+}
+
+export function split_once(str: string, splitter: string) {
+    const i = str.indexOf(splitter);
+    return [str.slice(0,i), str.slice(i+1)];
 }

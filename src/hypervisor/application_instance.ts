@@ -49,7 +49,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
     }
 
     resumableStore: ResumableStore;
-    readonly persistedStorage: PersistentStorage = new PersistentStorage();
+    persistedStorage: PersistentStorage;
 
     protected loggerOptions(): InstanceLogConfig {
         const lopts = this.options.logging;
@@ -210,6 +210,10 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
         this.transitionState("starting")
 
+        this.persistedStorage = new PersistentStorage(path.join(this.operating_directory, ".persistence.jkv"));
+        await this.persistedStorage.load();
+        this.cleanups.append(() => this.persistedStorage.dispose());
+
         const AppClass = metadata.applicationClass;
         this._instance = new AppClass(this);
 
@@ -293,9 +297,10 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             return path.resolve(wd, this.options.operating_directory);
         }
 
-        if (this.isThickApp) {
-            return path.dirname(this.entrypoint);
-        }
+        // Nice but conflicting if there are multiple app instances
+        // if (this.isThickApp) {
+        //     return path.dirname(this.entrypoint);
+        // }
 
         return path.resolve(this.hypervisor.operations_directory, "app_environments", this.id);
     }
