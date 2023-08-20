@@ -22,6 +22,7 @@ import { ExtendedLoger, LogLevel, createDomainLogger } from "./logging"
 import { AppNamespace } from "./managed_apps"
 import { PluginInstance } from "./plugin_instance"
 import { current } from "./current"
+import { CrossCallStore } from "./cross_call"
 
 type ConfigWatchHandler<T> = (newConfig: T, oldConfig: T) => void;
 
@@ -85,6 +86,8 @@ export class Hypervisor {
         })
     }
 
+    crossCallStore: CrossCallStore;
+
     async start() {
         this.logMessage("lifecycle", "Starting");
 
@@ -139,6 +142,9 @@ export class Hypervisor {
 
         if (this.state != 'running') return;
 
+        this.crossCallStore = new CrossCallStore(this);
+        await this.crossCallStore.load();
+
         this.logMessage("info", "Starting Apps");
         await this.appInstances.sync(this.currentConfig.apps || {});
         this.watchConfigEntry("apps", () => this.appInstances.sync(this.currentConfig.apps));
@@ -152,6 +158,8 @@ export class Hypervisor {
         // Shutdown apps
         this.logMessage("info", "Stopping apps");
         await this.appInstances.shutdown();
+
+        await this.crossCallStore.dispose();
 
         // Shutdown plugins
         this.logMessage("info", "Stopping plugins");

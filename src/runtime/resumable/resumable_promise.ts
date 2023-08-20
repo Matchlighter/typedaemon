@@ -37,7 +37,7 @@ interface ResumerContext {
     metadata?: FullySerializedResumable;
 }
 export interface SerializeContext {
-    ref: (rp: ResumablePromise) => PromiseReference;
+    ref: (rp: PromiseLike<any>) => PromiseReference;
 }
 
 interface Resumer<T extends ResumablePromise, S = ReturnType<T['serialize']>> {
@@ -172,6 +172,11 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
 
             const context: SerializeContext = {
                 ref: (rp) => {
+                    if (!(rp instanceof ResumablePromise)) {
+                        // Non-resumable promises shouldn't reach this point. If they do, that means
+                        //   `can_suspend` logic is missing them
+                        throw new Error("Tried to serialize a non-resumable promise.")
+                    }
                     discover(rp);
                     const dep_entry = promise_to_serialized.get(rp);
                     srepr.depends_on.push(dep_entry.id);
