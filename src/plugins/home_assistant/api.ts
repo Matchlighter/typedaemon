@@ -65,7 +65,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         return response1['entity'] || [];
     }
 
-    function sync_subscribe(message: MessageBase, callback: (value) => void) {
+    function _sync_subscribe(message: MessageBase, callback: (value) => void) {
         let disposer;
         _plugin()._ha_api.subscribeMessage(callback, message, { resubscribe: true }).then(disp => {
             if (disposer) disp();
@@ -94,7 +94,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                     })
                 });
             } else {
-                sync_subscribe(msg, target);
+                _sync_subscribe(msg, target);
             }
         }
         return executor;
@@ -111,7 +111,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         function webhook_executor(target, context?: ClassMethodDecoratorContext) {
             if (context) {
                 notePluginAnnotation(context, (self) => {
-                    sync_subscribe({
+                    _sync_subscribe({
                         type: "nodered/webhook",
                         server_id: "not used",
                         name: options?.name || context.name || id,
@@ -122,7 +122,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                     })
                 });
             } else {
-                sync_subscribe({
+                _sync_subscribe({
                     type: "nodered/webhook",
                     server_id: "not used",
                     name: options?.name || id,
