@@ -7,6 +7,9 @@ import { optional_config_decorator } from "@matchlighter/common_library/decorato
 import { HyperWrapper } from "../../hypervisor/managed_apps";
 import { PersistentEntryOptions } from "../../hypervisor/persistent_storage";
 import { Application } from "../application";
+import { current } from "../../hypervisor/current";
+
+// TODO Autoclean @persistent entries
 
 /**
  * Mark a property as persistent - it's value will be saved to disk and restored when the app starts
@@ -33,3 +36,18 @@ export const persistent = optional_config_decorator([{}], (options?: Partial<Per
     }
 })
 
+export const persistence = {
+    property: persistent,
+    set(key: string, value: any, options?: Partial<PersistentEntryOptions>) {
+        const ps = current.application.persistedStorage;
+        return ps.setValue(key, value, { min_time_to_disk: 1, max_time_to_disk: 3, ...options });
+    },
+    get(key: string) {
+        const ps = current.application.persistedStorage;
+        return ps.getValue(key);
+    },
+    delete(key: string, options?: Partial<PersistentEntryOptions>) {
+        const ps = current.application.persistedStorage;
+        return ps.setValue(key, undefined, { min_time_to_disk: 1, max_time_to_disk: 3, ...options });
+    },
+}
