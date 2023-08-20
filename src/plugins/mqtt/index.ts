@@ -75,6 +75,8 @@ export class MqttPlugin extends Plugin<PluginType['mqtt']> {
         // If a system_topic was explicitly given, we don't need to be silent
         if (!!this.config.system_topic) return false;
 
+        if (this[HyperWrapper].id == "mqtt") return false;
+
         // If we _know_ that this is the HA MQTT Server, we can default to making noise
         if (this.config.system_topic === undefined) {
             if (this.supervisorServiceConfig) {
