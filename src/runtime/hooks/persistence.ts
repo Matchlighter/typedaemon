@@ -11,24 +11,23 @@ import { Application } from "../application";
 /**
  * Mark a property as persistent - it's value will be saved to disk and restored when the app starts
  */
-export const persistent = optional_config_decorator([{}], (options?: PersistentEntryOptions): ClassAccessorDecorator<Application, any> => {
+export const persistent = optional_config_decorator([{}], (options?: Partial<PersistentEntryOptions> & { id?: string }): ClassAccessorDecorator<Application, any> => {
     return (accessor, context) => {
         const obsvd = (observable as any)(accessor, context);
+        const key = options.id || `@persistent-${String(context.name)}`;
         return {
             ...obsvd,
             init(value) {
-                if (obsvd.init) value = obsvd.init.call(this, value);
                 const hva = this[HyperWrapper];
-                if (context.name in hva.persistedStorage) {
-                    return hva.persistedStorage[context.name];
-                } else {
-                    return value;
+                if (hva.persistedStorage.hasKey(key)) {
+                    value = hva.persistedStorage.getValue(key);
                 }
+                return obsvd.init.call(this, value);
             },
             set(value) {
                 const hva = this[HyperWrapper];
                 obsvd.set.call(this, value);
-                hva.persistedStorage.notifyValueChanged(context.name as string, value, options);
+                hva.persistedStorage.setValue(key, value, { max_time_to_disk: 3, min_time_to_disk: 1, ...options})
             },
         }
     }

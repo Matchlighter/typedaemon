@@ -222,6 +222,12 @@ export function logMessage(level: LogLevel, ...rest: any[]) {
     logger.logMessage(level, rest);
 }
 
+export function logSystemMessage(level: LogLevel, ...rest: any[]) {
+    const ctx = current.hypervisor;
+    const logger = ctx?.logger || UKNOWN_LOGGER
+    logger.logMessage(level, rest);
+}
+
 const UKNOWN_LOGGER = createDomainLogger({ domain: chalk.yellow("???") });
 export function redirectConsole() {
     for (let cm of CONSOLE_METHODS) {
