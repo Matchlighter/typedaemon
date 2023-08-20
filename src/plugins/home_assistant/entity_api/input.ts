@@ -14,11 +14,14 @@ export interface InputOptions<T> extends EntityOptions {
 
     /** Whether the state of the property should update immediately, or if it should wait for HA to confirm the updated value */
     optimistic?: boolean;
+
     /**
      * By default, Typedaemon will look for and link an existing entity, or create one if it doesn't exist.
      * Setting this to `true` will prevent the creation of an entity, setting it to `false` will assert that the entity doesn't already exist
      */
     existing?: boolean;
+
+    domain?: string;
 }
 
 export interface NumberInputOptions extends InputOptions<number> {
@@ -29,15 +32,16 @@ export interface NumberInputOptions extends InputOptions<number> {
 }
 
 class InputEntity<T> extends TDEntity<T> {
-    constructor(readonly options: InputOptions<T>) {
+    constructor(readonly id: string, readonly options: InputOptions<T>) {
         super();
-        this.id = resolveEntityId((this.constructor as any).domain, options);
     }
 
-    readonly id: string;
+    get uuid() {
+        return `${this.domain}.${this.id}`
+    }
 
     get domain() {
-        return this.id.split('.')[0];
+        return this.options?.domain || (this.constructor as any).domain;
     }
 
     @observable
@@ -56,7 +60,7 @@ class InputEntity<T> extends TDEntity<T> {
 
         let service: string;
         const service_params: any = {
-            entity_id: this.id,
+            entity_id: this.uuid,
         };
 
         if (this.domain == "input_select") {
@@ -88,7 +92,7 @@ class InputEntity<T> extends TDEntity<T> {
         // Read and Listen from HA
         this._disposers.append(
             plgmobx.autorun(this.application, () => {
-                const value = pl.state[this.id]?.state;
+                const value = pl.state[this.uuid]?.state;
                 client_call_safe(() => {
                     runInAction(() => {
                         this._state = value as any;
@@ -99,7 +103,7 @@ class InputEntity<T> extends TDEntity<T> {
     }
 
     protected async ensureExists(pl: HomeAssistantPlugin) {
-        const entity_id = this.id;
+        const entity_id = this.uuid;
         const domain = this.domain;
         const currentState = pl.state[entity_id];
 
@@ -146,8 +150,10 @@ export interface ButtonOptions extends EntityOptions {
 }
 
 class InputButton extends InputEntity<never> {
-    constructor(options: ButtonOptions) {
-        super(options);
+    static domain = "input_button";
+
+    constructor(id: string, options: ButtonOptions) {
+        super(id, options);
     }
 
     on_pressed() { }
@@ -171,8 +177,8 @@ export interface SelectOptions<T extends string> extends EntityOptions {
 class InputSelect<const T extends string> extends InputEntity<T> {
     static domain = "input_select";
 
-    constructor(options: SelectOptions<T>) {
-        super(options);
+    constructor(id: string, options: SelectOptions<T>) {
+        super(id, options);
     }
 }
 

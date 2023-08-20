@@ -1,56 +1,44 @@
-import { observable } from "mobx";
 
 import { ha } from "../..";
 import { plgmobx } from "../../mobx";
-import { TDDevice, TDEntity, resolveEntityId } from "./base";
+import { TDDevice, TDEntity } from "./base";
 
 // Will need to give some thought to unique_ids.
 //   Likely use `<application unique_id (configurable) || application id>_<unique_id (configurable) || lowercase(undercore(name))>`
 //   Will want an escape hatch where no interpolation is performed (when user prefixes it with a `/` or some other character?)
-const resolveUUID = (uuid: string, ent: TDEntity<any>) => {
+const resolveUUID = (uuid: string, ent: TDAbstractEntity<any>) => {
     if (uuid && uuid.startsWith('/')) return uuid.substring(1);
-
-    const ent_bits = ent.id.split('.');
-    const ent_did = ent_bits[ent_bits.length - 1]
-    // uuid ||= ent_did;
-    uuid ||= ent_bits.join('-');
-
-    return `td-${ent['application'].uuid}-${uuid}`
+    if (uuid && uuid.startsWith('uuid:')) return uuid.substring(5);
+    return `td-${ent['application'].uuid}-${ent.domain}-${uuid}`
 }
 
 export interface TDAbstractEntityOptions {
     device?: TDDevice,
     name?: string,
-    /**
-     * If for some reason you need to override the generated UUID, you can.
-     * Should only be needed if you change your Entity ID or App ID, but needing to do so should be a rarity.
-     * Prefix the value with a "/" to disable TD default interpolation of UUIDs
-     */
-    uuid?: string,
 
     /** Used instead of name for automatic generation of entity_id */
     object_id?: string;
+
+    domain?: string;
 }
 
 abstract class TDAbstractEntity<T> extends TDEntity<T> {
     constructor(id: string, options?: TDAbstractEntityOptions) {
         super();
 
-        this.id = resolveEntityId((this.constructor as any).domain, { id });
+        this._uuid = id;
+
+        this.options = options || {};
 
         this.name = options?.name;
 
         // Device to default to an application-linked device
         this.device = options?.device || ha.application_device;
-
-        this._uuid = options?.uuid;
-        this.options ||= {};
     }
 
-    readonly id: string;
-    readonly options?: Readonly<TDAbstractEntityOptions>;
+    protected readonly options?: Readonly<TDAbstractEntityOptions>;
 
-    private _uuid: string;
+    private readonly _uuid: string;
     private _abs_uuid: string;
     get uuid() {
         this._abs_uuid ||= resolveUUID(this._uuid, this);
@@ -58,10 +46,10 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
     }
 
     /** Compute and return the current state value */
-    abstract getState(): T;
+    protected abstract getState(): T;
 
     /** Compute and return any additional attributes */
-    getExtraAttributes(): any {
+    protected getExtraAttributes(): any {
         return {}
     }
 
@@ -69,11 +57,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
     protected readonly device: Readonly<TDDevice>;
 
     get domain() {
-        return this.id.split('.')[0];
-    }
-
-    get domain_id() {
-        return this.id.split('.')[1];
+        return this.options?.domain || (this.constructor as any).domain;
     }
 
     async markAvailable() {
@@ -110,7 +94,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         this.markUnavailable();
     }
 
-    protected async handle_service(payload: any) {
+    protected async handle_command(payload: any) {
         // TODO Map services
         // TODO
     }
@@ -137,9 +121,9 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 
             availability_mode: "all",
 
-            name: this.name,
+            name: this.name || this._uuid, // TODO humanize(_uuid)?
             unique_id: this.uuid,
-            object_id: this.options?.object_id || this.domain_id,
+            object_id: this.options?.object_id,
 
             state_topic: this.mqtt_state_topic,
             json_attributes_topic: this.mqtt_state_topic,
@@ -170,7 +154,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 
         // Listen for Commands
         this._disposers.append(mqtt.subscribe(this.mqtt_command_topic, (topic, payload) => {
-            this.handle_service(payload);
+            this.handle_command(payload);
         }))
 
         // Post availability
@@ -179,10 +163,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         // Observe getState() and getAttributes(), pushing any changes to HA (use one topic so we can have atomic updates)
         this._disposers.append(plgmobx.reaction(this.application, () => ({ state: this.getState(), attrs: this.getExtraAttributes() }), (v: RawStatePayload<T>) => {
             v.state = this._serializeState(v.state);
-            const payload = this._getStatePayload(v);
-            this.mqttConn.publish(this.mqtt_state_topic, JSON.stringify(payload), {
-                retain: true,
-            });
+            this._publishState(v);
         }, { fireImmediately: true }))
     }
 
@@ -190,8 +171,10 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         return state;
     }
 
-    protected _getStatePayload(state: RawStatePayload<T>): any {
-        return state;
+    protected _publishState(v: RawStatePayload<T>) {
+        this.mqttConn.publish(this.mqtt_state_topic, JSON.stringify(v), {
+            retain: true,
+        });
     }
 
     protected get mqttConn() {
@@ -202,6 +185,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 export type RawStatePayload<T> = {
     state: T;
     attrs: any;
+    [k: string]: any;
 }
 
 export { TDAbstractEntity };

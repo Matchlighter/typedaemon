@@ -5,7 +5,7 @@ import { TDAbstractEntity, TDAbstractEntityOptions } from "../general";
 export const KEEP_ATTRS = Symbol("Keep Attrs")
 
 export class EntityClass<T, S extends Record<string, any[]>, O = {}> extends TDAbstractEntity<T> {
-    constructor(id: string, options?: TDAbstractEntityOptions & O) {
+    constructor(id: string, options?: TDAbstractEntityOptions & O, builder?: (s: EntityClass<any, any>) => void) {
         super(id, options);
     }
 
@@ -23,8 +23,9 @@ export class EntityClass<T, S extends Record<string, any[]>, O = {}> extends TDA
 
     }
 
-    protected async handle_service(payload: any) {
-
+    protected async handle_command(payload: any) {
+        // TODO
+        console.log(payload)
     }
 
     protected discovery_data() {
@@ -52,7 +53,8 @@ export class EntityClass<T, S extends Record<string, any[]>, O = {}> extends TDA
     }
 }
 
-export type EntityClassNewParams<E extends EntityClass<any, any>> = ConstructorParameters<typeof EntityClass<any, any, EntityClassOptions<E>>>;
+// export type EntityClassNewParams<E extends EntityClass<any, any>> = ConstructorParameters<typeof EntityClass<any, any, EntityClassOptions<E>>>;
+export type EntityClassNewParams<E extends EntityClass<any, any>> = [string, EntityClassOptions<E>?, ((entity: E) => void)?];
 
 export type EntityClassConstructor<E extends EntityClass<any, any, any>> = {
     new(...params: EntityClassNewParams<E>): E
@@ -113,37 +115,3 @@ export interface EntityOptionsCommonW {
     /** If the published message should have the retain flag on or not. */
     retain?: boolean;
 }
-
-// const x = new Entities.switch("bob");
-
-// type ETypes = {
-//     switch: {
-//         domain: "switch",
-//         type: boolean,
-//         services: {
-//             turn_on: [],
-//             turn_off: [],
-//         }
-//     }
-//     light: {
-//         domain: "light",
-//         type: boolean,
-//         services: {
-//             turn_on: [],
-//             turn_off: [],
-//         }
-//     }
-// }
-
-// type Ent2<K extends keyof ETypes> = {
-//     state: ETypes[K]['type']
-//     on(event: keyof ETypes[K]['services'])
-// }
-
-// type EntId<D extends keyof ETypes> = `${ETypes[D]['domain']}.${string}`
-
-// const ent2 = <D extends keyof ETypes>(id: EntId<D>): Ent2<ETypes[D]['domain']> => {
-//     return {} as any
-// }
-
-// const x = ent2("switch.bob")

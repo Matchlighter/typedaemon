@@ -52,4 +52,9 @@ export class TDSwitch extends EntityClass<boolean, SwitchServices, SwitchOptions
         if (state === false) return "OFF";
         return state;
     }
+
+    protected async handle_command(payload: any) {
+        // if (payload == "ON") // TODO
+        // if (payload == "OFF") // TODO
+    }
 }

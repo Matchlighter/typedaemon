@@ -2,6 +2,7 @@
 import { LifecycleHelper } from "../../../common/lifecycle_helper";
 import { ApplicationInstance } from "../../../hypervisor/application_instance";
 import { current } from "../../../hypervisor/current";
+import { logMessage } from "../../../hypervisor/logging";
 import { EntityStore } from "./store";
 
 export class TDDevice {
@@ -34,12 +35,6 @@ abstract class TDEntity<T> {
         this.application = current.application;
     }
 
-    abstract id: string;
-
-    get domain() {
-        return this.id.split('.')[0];
-    }
-
     protected readonly application: ApplicationInstance;
     protected _bound_store: EntityStore;
 
@@ -47,11 +42,15 @@ abstract class TDEntity<T> {
     protected abstract _unlink(); // Unbind data/events, mark unavailable, remove from store
     protected abstract _destroy(); // _unlink() and remove from HA - the opposite of _link()
 
+    abstract get uuid(): string;
+
     /**
      * Completely disconnect this Entity from all events and from HA (but leave it as Unavailable in HA)
      */
     async unlink() {
         if (!this._bound_store) throw new Error("Not registered");
+        logMessage("debug", `Unlinking entity '${this.uuid}'`)
+
         await this._unlink();
         await this._disposers.cleanup();
     }
@@ -68,6 +67,8 @@ abstract class TDEntity<T> {
      */
     async destroy() {
         if (!this._bound_store) throw new Error("Not registered");
+        logMessage("debug", `Destroying entity '${this.uuid}'`)
+
         await this._destroy();
         await this._disposers.cleanup();
     }
