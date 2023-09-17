@@ -6,8 +6,6 @@ export interface AsyncLockOptions {
     maxOccupationTime?: number;
     maxExecutionTime?: number;
     maxPending?: number;
-
-    domainReentrant?: boolean;
 }
 
 export class AsyncLock {
@@ -17,18 +15,6 @@ export class AsyncLock {
         // format: {key : [fn, fn]}
         // queues[key] = null indicates no job running for key
         this.queues = Object.create(null);
-
-        // lock is reentrant for same domain
-        this.domainReentrant = opts.domainReentrant || false;
-        if (this.domainReentrant) {
-            if (typeof process === 'undefined' || typeof process.domain === 'undefined') {
-                throw new Error(
-                    'Domain-reentrant locks require `process.domain` to exist. Please flip `opts.domainReentrant = false`, ' +
-                    'use a NodeJS version that still implements Domain, or install a browser polyfill.');
-            }
-            // domain of current running func {key : fn}
-            this.domains = Object.create(null);
-        }
 
         this.timeout = opts.timeout || AsyncLock.DEFAULT_TIMEOUT;
         this.maxOccupationTime = opts.maxOccupationTime || AsyncLock.DEFAULT_MAX_OCCUPATION_TIME;
@@ -43,8 +29,6 @@ export class AsyncLock {
     readonly Promise: typeof Promise;
 
     private queues;
-    private domainReentrant
-    private domains
     private timeout
     private maxOccupationTime
     private maxExecutionTime
@@ -63,7 +47,7 @@ export class AsyncLock {
      * @param {function} cb 	callback function, otherwise will return a promise
      * @param {Object} opts 	options
      */
-    acquire(key: string | string[], fn: () => void, cb?: (err, ret) => void, opts?) {
+    acquire(key: string | string[], fn: (arg?) => void, cb?: (err, ret) => void, opts?) {
         if (Array.isArray(key)) {
             return this._acquireBatch(key, fn, cb, opts);
         }
@@ -110,9 +94,6 @@ export class AsyncLock {
                 if (!!this.queues[key] && this.queues[key].length === 0) {
                     delete this.queues[key];
                 }
-                if (this.domainReentrant) {
-                    delete this.domains[key];
-                }
             }
 
             if (!resolved) {
@@ -149,10 +130,6 @@ export class AsyncLock {
             if (timer) {
                 clearTimeout(timer);
                 timer = null;
-            }
-
-            if (this.domainReentrant && locked) {
-                this.domains[key] = process.domain;
             }
 
             var maxExecutionTime = opts.maxExecutionTime || this.maxExecutionTime;
@@ -195,18 +172,9 @@ export class AsyncLock {
             }
         };
 
-        if (this.domainReentrant && !!process.domain) {
-            exec = process.domain.bind(exec);
-        }
-
         if (!this.queues[key]) {
             this.queues[key] = [];
             exec(true);
-        }
-        else if (this.domainReentrant && !!process.domain && process.domain === this.domains[key]) {
-            // If code is in the same domain of current running task, run it directly
-            // Since lock is re-enterable
-            exec(false);
         }
         else if (this.queues[key].length >= this.maxPending) {
             done(false, new Error('Too many pending tasks in queue ' + key));

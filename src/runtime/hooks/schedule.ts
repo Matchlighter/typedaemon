@@ -30,11 +30,13 @@ export interface SchedulerHandler {
     (): void;
 }
 
-type SunOptions = "td" | `ha:${string}` | {
+type SunConfig = {
     lat,
     long,
     elev?,
 }
+
+type SunOptions = "td" | `ha:${string}` | SunConfig
 
 /**
  * Helper to schedule future tasks.
@@ -143,6 +145,8 @@ export const _parseTDFormat = (sched: string, sun_options: SunOptions = "ha:defa
                 }
             }
 
+            const sun_config = sun_options as SunConfig;
+
             let chosen: moment.Moment;
 
             // suncalc is affected by the time-part of the passed Date and I'm not sure how to fix that cleanly
@@ -151,7 +155,7 @@ export const _parseTDFormat = (sched: string, sun_options: SunOptions = "ha:defa
                 const mdto = mdt.clone();
                 mdto.add(dto, 'days');
 
-                const suntimes = SunCalc.getTimes(mdto.toDate(), sun_options.lat, sun_options.long, sun_options.elev);
+                const suntimes = SunCalc.getTimes(mdto.toDate(), sun_config.lat, sun_config.long, sun_config.elev);
                 const refdt = suntimes[sunrel.ref];
                 if (dtStart.isBefore(refdt) && dtEnd.isAfter(refdt)) {
                     chosen = toMoment(refdt);

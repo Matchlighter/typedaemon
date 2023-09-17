@@ -164,7 +164,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     /** Create a `button` entity and trigger the decorated method when pressed */
     const _buttonDecorator = (options: EntityClassOptions<TDButton> & { id?: string }): ClassMethodDecorator => {
         return (func, context) => {
-            _linkFieldEntityClass(domain_entities.button, options, context, (self, btn) => {
+            _linkFieldEntityClass(domain_entities.button, options, context, (self, btn: TDButton) => {
                 // Listen to button press
                 btn.on_pressed = () => client_call_safe(() => self[context.name]());
             })
@@ -177,9 +177,9 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     /** Create a `scene` entity and trigger the decorated method when triggered */
     const _sceneDecorator = (options: EntityClassOptions<TDScene> & { id?: string }): ClassMethodDecorator => {
         return (func, context) => {
-            _linkFieldEntityClass(domain_entities.scene, options, context, (self, btn) => {
+            _linkFieldEntityClass(domain_entities.scene, options, context, (self, scene: TDScene) => {
                 // Listen to button press
-                btn.on_pressed = () => client_call_safe(() => self[context.name]());
+                scene.on_pressed = () => client_call_safe(() => self[context.name]());
             })
 
             // @action()

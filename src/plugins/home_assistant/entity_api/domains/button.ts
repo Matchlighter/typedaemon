@@ -11,6 +11,8 @@ export interface ButtonOptions extends EntityOptionsCommon, EntityOptionsCommonW
 export class TDButton extends EntityClass<boolean, {}, ButtonOptions> {
     static domain = "button";
 
+    on_pressed: () => void;
+
     protected discovery_data() {
         const dd = super.discovery_data();
         Object.assign(dd, {
