@@ -10,6 +10,7 @@ RUN yarn install --frozen-lockfile
 # Add App
 COPY tsconfig.json ./
 COPY src/ ./src/
+COPY script/ ./script/
 RUN yarn build
 
 # Remove Dev Dependencies
@@ -25,7 +26,7 @@ RUN rm -rf src/ node_modules/ docker/
 WORKDIR /opt/typedaemon
 
 COPY ./docker .
-RUN yarn install --production --no-lockfile
+RUN yarn install --production --frozen-lockfile
 RUN yarn patch-package --patch-dir node_modules/typedaemon/patches/
 
 # Build Runtime Image
@@ -40,19 +41,20 @@ RUN \
     apt-get update \
     \
     && apt-get install -y --no-install-recommends \
-        bash=5.1-2+deb11u1 \
-        ca-certificates=20210119 \
-        curl=7.74.0-1.3+deb11u7 \
-        jq=1.6-2.1 \
-        tzdata=2021a-1+deb11u10 \
-        xz-utils=5.2.5-2.1~deb11u1 \
+        bash \
+        ca-certificates \
+        curl \
+        jq \
+        tzdata \
+        xz-utils \
     \
     && c_rehash \
     \
     && S6_ARCH="${TARGETARCH}" \
     && if [ "${TARGETARCH}" = "i386" ]; then S6_ARCH="i686"; \
     elif [ "${TARGETARCH}" = "amd64" ]; then S6_ARCH="x86_64"; \
-    elif [ "${TARGETARCH}" = "armv7" ]; then S6_ARCH="arm"; fi \
+    elif [ "${TARGETARCH}" = "armv7" ]; then S6_ARCH="arm"; \
+    elif [ "${TARGETARCH}" = "arm64" ]; then S6_ARCH="arm"; fi \
     \
     && curl -L -s "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" \
         | tar -C / -Jxpf - \
@@ -80,7 +82,7 @@ RUN \
 
 ENTRYPOINT [ "/init" ]
 
-COPY docker/rootfs /
+COPY ./docker/rootfs /
 
 WORKDIR /opt/typedaemon
 
