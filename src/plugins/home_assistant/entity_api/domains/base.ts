@@ -11,8 +11,8 @@ export class EntityClass<T, S extends Record<string, any[]>, O = {}> extends TDA
 
     declare readonly options: Readonly<TDAbstractEntityOptions & O>;
 
-    @observable state: T;
-    @observable.struct state_attrs: any = {};
+    @observable accessor state: T;
+    @observable.struct accessor state_attrs: any = {};
 
     getState(): T { return this.state }
     getExtraAttributes() {
