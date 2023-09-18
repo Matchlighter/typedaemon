@@ -101,4 +101,4 @@ ENV S6_KEEP_ENV 1
 ENV TYPEDAEMON_ENV production
 ENV TYPEDAEMON_CONFIG /config
 
-# CMD [ "./startup.sh" ]
+CMD [ "./startup.sh" ]
