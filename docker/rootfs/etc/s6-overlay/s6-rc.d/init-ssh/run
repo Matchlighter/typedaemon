@@ -8,8 +8,8 @@ readonly SSH_AUTHORIZED_KEYS_PATH=/etc/ssh/authorized_keys
 readonly SSH_CONFIG_PATH=/etc/ssh/sshd_config
 readonly SSH_HOST_ED25519_KEY=/data/ssh_host_ed25519_key
 readonly SSH_HOST_RSA_KEY=/data/ssh_host_rsa_key
-declare password
-declare username
+# declare password
+# declare username
 
 username=root
 
@@ -39,12 +39,25 @@ username=root
 # fi
 # chpasswd <<< "${username}:${password}" 2&> /dev/null
 
-# Sets up the authorized SSH keys
-if bashio::config.has_value 'ssh.authorized_keys'; then
-    while read -r key; do
-        echo "${key}" >> "${SSH_AUTHORIZED_KEYS_PATH}"
-    done <<< "$(bashio::config 'ssh.authorized_keys')"
+key_file="$TYPEDAEMON_CONFIG/.typedaemon/connection_key"
+
+if [ ! -f key_file ]; then
+    ssh-keygen -b 2048 -t rsa -f "$key_file" -q -N ""
 fi
+
+cat "$key_file.pub" > "${SSH_AUTHORIZED_KEYS_PATH}"
+chmod 777 "$key_file"
+mkdir -p /root/.ssh
+cp "${SSH_AUTHORIZED_KEYS_PATH}" "/root/.ssh/authorized_keys"
+
+cat "TD_CONNECTION_MODE=SSH" > "$TYPEDAEMON_CONFIG/.typedaemon/connection_params"
+
+# Sets up the authorized SSH keys
+# if bashio::config.has_value 'ssh.authorized_keys'; then
+#     while read -r key; do
+#         echo "${key}" >> "${SSH_AUTHORIZED_KEYS_PATH}"
+#     done <<< "$(bashio::config 'ssh.authorized_keys')"
+# fi
 
 # SFTP access
 # sed -i '/Subsystem sftp/s/^#//g' "${SSH_CONFIG_PATH}"

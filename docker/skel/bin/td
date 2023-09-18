@@ -11,6 +11,17 @@ findconfig() {
   fi
 }
 
+findsocket() {
+  if [ -S "$1" ]; then
+    printf '%s\n' "${PWD%/}/$1"
+  elif [ "$PWD" = / ]; then
+    false
+  else
+    # a subshell so that we don't affect the caller's $PWD
+    (cd .. && findsocket "$1")
+  fi
+}
+
 function findexec() {
     if [ -x "$(command -v $1)" ]; then
         echo "$(which "$1")"
@@ -24,7 +35,7 @@ conn_params="$(findconfig .typedaemon/connection_params)"
 source "$conn_params"
 
 if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
-    exec "$(findexec ssh) -o StrictHostKeyChecking=no -i "$(findconfig .typedaemon/connection_key)" -o "ProxyCommand $(findexec socat) - UNIX-CLIENT:$(findconfig .typedaemon/ssh_sock)" root@td"
+    exec "ssh" -o StrictHostKeyChecking=no -i $(findconfig .typedaemon/connection_key) -o "ProxyCommand nc -U $(findsocket .typedaemon/ssh_sock)" root@td
 elif [ "$TD_CONNECTION_MODE" = "DOCKER" ]; then
     exec docker run --rm -it -v $PWD:/config typedaemon td "$@"
 elif [ -x "$(command -v td)" ]; then
