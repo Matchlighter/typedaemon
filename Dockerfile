@@ -1,3 +1,4 @@
+# ======= TD Package Builder ======= #
 FROM node:18 AS builder
 
 WORKDIR /opt/typedaemon_build
@@ -29,7 +30,8 @@ COPY ./docker .
 RUN yarn install --production --frozen-lockfile
 RUN yarn patch-package --patch-dir node_modules/typedaemon/patches/
 
-# Build Runtime Image
+
+# ======= TD Runtime ======= #
 FROM node:18
 
 ARG TARGETARCH
@@ -84,6 +86,8 @@ RUN \
 ENTRYPOINT [ "/init" ]
 
 COPY ./docker/rootfs /
+
+RUN mkdir /var/run/sshd
 
 WORKDIR /opt/typedaemon
 
