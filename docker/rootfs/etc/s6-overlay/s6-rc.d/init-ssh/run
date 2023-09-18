@@ -63,7 +63,7 @@ echo "TD_CONNECTION_MODE=SSH" > "$TYPEDAEMON_CONFIG/.typedaemon/connection_param
 # sed -i '/Subsystem sftp/s/^#//g' "${SSH_CONFIG_PATH}"
 
 # Change Port
-sed -i "s/Port\\ .*/Port\\ 7722/" "${SSH_CONFIG_PATH}"
+sed -i "s/#Port\\ .*/Port\\ 7722/" "${SSH_CONFIG_PATH}"
 
 # Allow specified user to log in
 sed -i "s/PermitRootLogin\\ .*/PermitRootLogin\\ yes/" "${SSH_CONFIG_PATH}"

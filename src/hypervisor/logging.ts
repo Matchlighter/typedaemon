@@ -3,6 +3,7 @@ import { TupleToUnion } from "type-fest";
 import chalk = require("chalk");
 import winston = require("winston");
 import moment = require("moment-timezone");
+import { inspect } from 'util'
 
 import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weakmap"
 
@@ -190,7 +191,7 @@ export function createDomainLogger(opts: LoggerOptions) {
                 const cleanTrace = cleanAndMapStacktrace(b);
                 return cleanTrace?.join('\n') || b.message;
             };
-            if (typeof b == 'object' && pojso(b)) return JSON.stringify(b);
+            if (typeof b == 'object' && pojso(b)) return inspect(b);
             return String(b);
         })
 
