@@ -40,6 +40,9 @@ export async function installDependencies({ dir, logger, ...opts }: InstallOpts,
     await handle_subproc(
         execa('yarn', ['install', ...flags], {
             cwd: dir,
+            env: {
+                NODE_ENV: "development",
+            }
         }),
         logger,
     )
