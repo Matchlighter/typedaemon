@@ -4,7 +4,7 @@ import path = require('path');
 import chalk = require('chalk');
 import deepEqual = require('deep-eql');
 import fs = require('fs');
-import execa = require('execa');
+import md5 = require('md5');
 import extract_comments = require('extract-comments');
 import { AsyncReturnType } from 'type-fest';
 
@@ -55,9 +55,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         const lopts = this.options.logging;
         let file = lopts?.file;
 
-        if (!file) {
-            file = this.isThickApp ? path.join(this.operating_directory, "application.log") : lopts._thin_app_file;
-        }
+        file ||= path.join(this.operating_directory, "application.log");
 
         file = path.resolve(this.hypervisor.working_directory, file);
 
@@ -167,7 +165,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         // Items in the config override any that are in the source
         Object.assign(dependencies, this.options.dependencies || {});
 
-        const packageFilePath = path.join(this.operating_directory, "package.json");
+        const packageFilePath = path.join(this.shared_operating_directory, "package.json");
         let packageJson: any = {};
         let shouldManagePackage = !await fileExists(packageFilePath);
         if (!shouldManagePackage) {
@@ -189,7 +187,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         // if (Object.keys(packageJson?.dependencies || {}).length > 0) {
         this.logMessage("info", `Installing packages`);
         await installDependencies({
-            dir: this.operating_directory,
+            dir: this.shared_operating_directory,
             logger: (...args) => this.logMessage("debug", ...args),
             lockfile: this.isThickApp,
             devPackages: true,
@@ -288,6 +286,15 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             this._isThickApp = fs.existsSync(path.join(this.source_directory, 'package.json'));
         }
         return this._isThickApp;
+    }
+
+    get shared_operating_directory() {
+        if (this.isThickApp) return this.source_directory;
+
+        // TODO Cleanup this directory automatically when no apps are using it?
+        let entrypoint = path.relative(this.hypervisor.working_directory, this.entrypoint);
+        let uname = entrypoint.replace(/\.\.\\/g, "").replace(/\//g, "_") + "-" + md5(entrypoint).slice(0, 6);
+        return path.resolve(this.hypervisor.operations_directory, "source_environments", uname)
     }
 
     get operating_directory() {

@@ -99,7 +99,7 @@ export async function createApplicationVM(app: ApplicationInstance) {
     ]
     const EXTENSIONS = ["js", "ts", "jsx", "tsx"]
 
-    const opModulesPath = path.join(app.operating_directory, "node_modules");
+    const opModulesPath = path.join(app.shared_operating_directory, "node_modules");
 
     const vm = new VM.NodeVM({
         sourceExtensions: EXTENSIONS,
