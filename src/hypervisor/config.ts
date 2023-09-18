@@ -20,7 +20,6 @@ export interface Configuration {
             app_source?: boolean;
             // app_debounce?: number;
         },
-        ssh_tunnel?: boolean;
     },
 
     location?: {

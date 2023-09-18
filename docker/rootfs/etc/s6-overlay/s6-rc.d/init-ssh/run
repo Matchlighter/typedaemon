@@ -62,6 +62,9 @@ echo "TD_CONNECTION_MODE=SSH" > "$TYPEDAEMON_CONFIG/.typedaemon/connection_param
 # SFTP access
 # sed -i '/Subsystem sftp/s/^#//g' "${SSH_CONFIG_PATH}"
 
+# Change Port
+sed -i "s/Port\\ .*/Port\\ 7722/" "${SSH_CONFIG_PATH}"
+
 # Allow specified user to log in
 sed -i "s/PermitRootLogin\\ .*/PermitRootLogin\\ yes/" "${SSH_CONFIG_PATH}"
 
@@ -73,3 +76,5 @@ sed -i "s/GatewayPorts.*/GatewayPorts\\ yes/" "${SSH_CONFIG_PATH}"
 
 # Allow TCP forewarding
 sed -i "s/AllowTcpForwarding.*/AllowTcpForwarding\\ yes/" "${SSH_CONFIG_PATH}"
+
+echo "ListenAddress 127.0.0.1" >> "${SSH_CONFIG_PATH}"
