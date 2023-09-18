@@ -35,9 +35,21 @@ conn_params="$(findconfig .typedaemon/connection_params)"
 source "$conn_params"
 
 if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
-    exec "ssh" -o StrictHostKeyChecking=no -i $(findconfig .typedaemon/connection_key) -o "ProxyCommand nc -U $(findsocket .typedaemon/ssh_sock)" root@td
+  socket="$(findsocket .typedaemon/ssh_sock)"
+  proxy_cmd=""
+
+  if [ -x "$(command -v nc)" ]; then
+    proxy_cmd="nc -U $socket"
+  elif [ -x "$(command -v socat)" ]; then
+    proxy_cmd="socat - UNIX-CLIENT:$socket"
+  else
+    echo "socat or netcat must be installed"
+    exit 1
+  fi
+
+  exec "ssh" -o StrictHostKeyChecking=no -i $(findconfig .typedaemon/connection_key) -o "ProxyCommand $proxy_cmd" root@td
 elif [ "$TD_CONNECTION_MODE" = "DOCKER" ]; then
-    exec docker run --rm -it -v $PWD:/config typedaemon td "$@"
+  exec docker run --rm -it -v $PWD:/config typedaemon td "$@"
 elif [ -x "$(command -v td)" ]; then
-    exec td "$@"
+  exec td "$@"
 fi
