@@ -27,7 +27,7 @@ RUN rm -rf src/ node_modules/ docker/
 WORKDIR /opt/typedaemon
 
 COPY yarn.lock ./
-COPY ./docker .
+COPY ./docker/package.json .
 RUN yarn install --production --pure-lockfile
 RUN yarn patch-package --patch-dir node_modules/typedaemon/patches/
 
@@ -94,8 +94,9 @@ WORKDIR /opt/typedaemon
 
 COPY --from=builder /opt/typedaemon .
 
-RUN mv td /usr/bin/td \
-    && chmod +x /usr/bin/td \
+COPY ./docker/td /usr/bin/td
+COPY ./docker/startup.sh ./startup.sh
+RUN chmod +x /usr/bin/td \
     && chmod +x ./startup.sh
 
 ENV S6_KEEP_ENV 1
