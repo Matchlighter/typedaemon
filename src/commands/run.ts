@@ -1,5 +1,3 @@
-
-import path = require("path");
 import { CommandModule } from "yargs";
 
 import { Hypervisor } from "../hypervisor/hypervisor";
