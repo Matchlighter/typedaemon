@@ -26,8 +26,9 @@ RUN rm -rf src/ node_modules/ docker/
 
 WORKDIR /opt/typedaemon
 
+COPY yarn.lock ./
 COPY ./docker .
-RUN yarn install --production --frozen-lockfile
+RUN yarn install --production --pure-lockfile
 RUN yarn patch-package --patch-dir node_modules/typedaemon/patches/
 
 
