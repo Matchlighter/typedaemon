@@ -125,10 +125,10 @@ export class Hypervisor {
             const app = current.application;
             if (app) {
                 console.error("Uncaught error in application")
-                console.error(err, origin)
+                console.error(err, err?.stack, origin)
             } else {
                 console.error("Uncaught error in TypeDaemon")
-                console.error(err, origin)
+                console.error(err, err?.stack, origin)
                 // this.shutdown();
             }
         })
