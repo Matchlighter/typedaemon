@@ -1,0 +1,6 @@
+#!/command/with-contenv sh
+
+mkdir -p "$TYPEDAEMON_CONFIG/.typedaemon/bin"
+
+cp $(which ssh) "$TYPEDAEMON_CONFIG/.typedaemon/bin/ssh"
+cp $(which socat) "$TYPEDAEMON_CONFIG/.typedaemon/bin/socat"
