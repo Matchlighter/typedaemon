@@ -41,7 +41,7 @@ username=root
 
 key_file="$TYPEDAEMON_CONFIG/.typedaemon/connection_key"
 
-if [ ! -f key_file ]; then
+if [ ! -f "$key_file" ]; then
     ssh-keygen -b 2048 -t rsa -f "$key_file" -q -N ""
 fi
 
@@ -50,7 +50,7 @@ chmod 777 "$key_file"
 mkdir -p /root/.ssh
 cp "${SSH_AUTHORIZED_KEYS_PATH}" "/root/.ssh/authorized_keys"
 
-cat "TD_CONNECTION_MODE=SSH" > "$TYPEDAEMON_CONFIG/.typedaemon/connection_params"
+echo "TD_CONNECTION_MODE=SSH" > "$TYPEDAEMON_CONFIG/.typedaemon/connection_params"
 
 # Sets up the authorized SSH keys
 # if bashio::config.has_value 'ssh.authorized_keys'; then
