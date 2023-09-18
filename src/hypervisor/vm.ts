@@ -96,6 +96,7 @@ export async function createApplicationVM(app: ApplicationInstance) {
     const SYSTEM_MODULES: (string | RegExp)[] = [
         'mobx',
         'typedaemon',
+        'axios',
     ]
     const EXTENSIONS = ["js", "ts", "jsx", "tsx"]
 
