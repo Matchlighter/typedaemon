@@ -154,6 +154,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         }
 
         await fs.promises.mkdir(this.operating_directory, { recursive: true });
+        await fs.promises.mkdir(this.shared_operating_directory, { recursive: true });
 
         this.markFileDependency(this.entrypoint);
 
@@ -293,7 +294,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
         // TODO Cleanup this directory automatically when no apps are using it?
         let entrypoint = path.relative(this.hypervisor.working_directory, this.entrypoint);
-        let uname = entrypoint.replace(/\.\.\\/g, "").replace(/\//g, "_") + "-" + md5(entrypoint).slice(0, 6);
+        let uname = entrypoint.replace(/\.\.\\/g, "").replace(/\.[tj]s$/, "").replace(/\//g, "_") + "-" + md5(entrypoint).slice(0, 6);
         return path.resolve(this.hypervisor.operations_directory, "source_environments", uname)
     }
 
