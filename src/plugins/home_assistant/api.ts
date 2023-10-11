@@ -66,15 +66,23 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
     }
 
     function _sync_subscribe(message: MessageBase, callback: (value) => void) {
+        let disposed = false;
         let disposer;
         _plugin()._ha_api.subscribeMessage(callback, message, { resubscribe: true }).then(disp => {
-            if (disposer) disp();
-            disposer = disp;
+            if (disposer) disposer();
+            if (disposed) {
+                disp();
+            } else {
+                disposer = disp;
+            }
+        }, (err) => {
+            console.error(err)
         })
         const cleanups = current.application.cleanups.unorderedGroup("ha:subscriptions");
-        return cleanups.addExposed(() => {
-            if (disposer) disposer();
-            disposer = true;
+        return cleanups.addExposed(async () => {
+            if (disposer) await disposer();
+            disposer = null;
+            disposed = true;
         })
     }
 
