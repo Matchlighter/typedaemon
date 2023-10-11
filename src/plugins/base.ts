@@ -78,8 +78,19 @@ export interface ApiFactory<API extends {}> {
     defaultPluginId: string;
 }
 
+export function bind_callback_env<T extends (...args: any[]) => any>(callback: T): T {
+    const app = current.application;
+    return ((...args: Parameters<T>) => {
+        return app.invoke(callback, ...args)
+    }) as any
+}
+
 export function handle_client_error(ex: any) {
-    current.application?.logClientMessage("error", ex);
+    if (current.application) {
+        current.application?.logClientMessage("error", ex);
+    } else {
+        console.error(ex)
+    }
 }
 
 export function client_call_safe<P extends any[]>(mthd: (...params: P) => any, ...params: P) {

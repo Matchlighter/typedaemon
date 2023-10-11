@@ -52,10 +52,11 @@ export const convertTypescript = async (source: string, filename: string) => {
 const plainObjectString = Object.toString()
 
 export function pojso(value: any) {
+    if (value == null) return true;
+
     const proto = Object.getPrototypeOf(value)
-    if (proto == null) {
-        return true
-    }
+    if (proto == null) return true;
+
     const protoConstructor = Object.hasOwnProperty.call(proto, "constructor") && proto.constructor
     return (
         typeof protoConstructor === "function" && protoConstructor.toString() === plainObjectString

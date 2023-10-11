@@ -5,7 +5,7 @@ import "@matchlighter/common_library/decorators/20223fills";
 
 import { HomeAssistantPlugin } from ".";
 import { current } from "../../hypervisor/current";
-import { makeApiExport, notePluginAnnotation, pluginGetterFactory } from "../base";
+import { bind_callback_env, makeApiExport, notePluginAnnotation, pluginGetterFactory } from "../base";
 import { _entitySubApi } from "./api_entities";
 import { TDDevice } from "./entity_api";
 
@@ -68,7 +68,8 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
     function _sync_subscribe(message: MessageBase, callback: (value) => void) {
         let disposed = false;
         let disposer;
-        _plugin()._ha_api.subscribeMessage(callback, message, { resubscribe: true }).then(disp => {
+
+        _plugin()._ha_api.subscribeMessage(bind_callback_env(callback), message, { resubscribe: true }).then(disp => {
             if (disposer) disposer();
             if (disposed) {
                 disp();
@@ -78,6 +79,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         }, (err) => {
             console.error("Error subscribing", message, err)
         })
+
         const cleanups = current.application.cleanups.unorderedGroup("ha:subscriptions");
         return cleanups.addExposed(async () => {
             if (disposer) await disposer();
