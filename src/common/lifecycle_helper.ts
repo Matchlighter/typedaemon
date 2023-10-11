@@ -71,9 +71,9 @@ class UnorderedLifecycleHelper extends BaseLifecycleHelper {
 
     /** Add a cleanup function and return a wrapped version that can be called manually */
     addExposed(cleaner: Cleaner) {
-        const wrapped_cleaner = () => {
+        const wrapped_cleaner = async () => {
             try {
-                cleaner();
+                await cleaner();
             } finally {
                 this.pop(wrapped_cleaner)
             }
@@ -94,7 +94,11 @@ class UnorderedLifecycleHelper extends BaseLifecycleHelper {
 
     async cleanup() {
         for (let cl of this.cleanups) {
-            await cl();
+            try {
+                await cl();
+            } catch (ex) {
+                console.error("Disposer failed:", ex);
+            }
         }
         this.cleanups.clear();
     }
