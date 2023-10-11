@@ -133,6 +133,18 @@ export class Hypervisor {
             }
         })
 
+        process.on("unhandledRejection", (err, origin) => {
+            const app = current.application;
+            if (app) {
+                console.error("Unhandled rejection in application")
+                console.error(err, origin)
+            } else {
+                console.error("Unhandled rejection in TypeDaemon")
+                console.error(err, origin)
+                // this.shutdown();
+            }
+        })
+
         this.logMessage("info", "Starting Plugins");
         const proms = this.pluginInstances.sync(this.currentConfig.plugins || {});
         await timeoutPromise(10000, Promise.allSettled(proms), () => {
