@@ -9,14 +9,16 @@ import {
     HassEntities,
     HassEvent,
     HassServiceTarget,
+    MessageBase,
     StateChangedEvent,
     callService,
-    createConnection,
+    createConnection as _createConnection,
     createLongLivedTokenAuth,
     getStates
 } from 'home-assistant-js-websocket';
 import { action, observable, runInAction } from 'mobx';
 import * as ws from "ws";
+import objectHash = require('object-hash');
 
 import { sync_to_observable } from '@matchlighter/common_library/sync_observable';
 
@@ -26,7 +28,7 @@ import { HomeAssistantPluginConfig, PluginType } from '../../hypervisor/config_p
 import { HyperWrapper } from '../../hypervisor/managed_apps';
 import { get_plugin } from '../../runtime/hooks';
 import { ResumablePromise, SerializedResumable } from "../../runtime/resumable";
-import { Plugin } from '../base';
+import { Plugin, handle_client_error } from '../base';
 import { MqttPlugin } from '../mqtt';
 import { HomeAssistantApi, homeAssistantApi } from './api';
 
@@ -50,6 +52,59 @@ function isStateChangedEvent(event: HassEvent): event is StateChangedEvent {
 }
 
 type OnConnectedWhen = 'always' | 'once' | 'once_per_host';
+
+interface CountedSubscription {
+    message: MessageBase;
+    callbacks: Set<(...args: any[]) => void>;
+    unsubscribe: () => any;
+}
+class SubCountingConnection extends Connection {
+    private subscription_counts: Record<string, CountedSubscription> = {};
+
+    async subscribeMessage<Result>(callback: (result: Result) => void, subscribeMessage: MessageBase, options?: { resubscribe?: boolean; }): Promise<() => Promise<void>> {
+        const hash_key = objectHash(subscribeMessage);
+
+        let counter = this.subscription_counts[hash_key];
+        if (!counter) {
+            counter = this.subscription_counts[hash_key] = {
+                message: { ...subscribeMessage },
+                callbacks: new Set(),
+                unsubscribe: null,
+            }
+
+            const unsubscribe = await super.subscribeMessage((...args) => {
+                for (let h of counter.callbacks) {
+                    try {
+                        const result = h(...args) as any;
+                        if (result && "then" in result) {
+                            result.catch(handle_client_error);
+                        }
+                    } catch (ex) {
+                        handle_client_error(ex);
+                    }
+                }
+            }, subscribeMessage);
+
+            counter.unsubscribe = unsubscribe;
+        }
+
+        counter.callbacks.add(callback);
+
+        return async () => {
+            counter.callbacks.delete(callback);
+            if (counter.callbacks.size == 0) {
+                delete this.subscription_counts[hash_key];
+                await counter.unsubscribe();
+            }
+        }
+    }
+}
+const createConnection: typeof _createConnection = async (...args) => {
+    const conn = await _createConnection(...args) as any as SubCountingConnection;
+    Object.setPrototypeOf(conn, SubCountingConnection.prototype);
+    conn['subscription_counts'] = {};
+    return conn;
+}
 
 export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
     readonly api: HomeAssistantApi = homeAssistantApi({ pluginId: this[HyperWrapper].id });
