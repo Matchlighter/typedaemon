@@ -64,6 +64,8 @@ class SubCountingConnection extends Connection {
     async subscribeMessage<Result>(callback: (result: Result) => void, subscribeMessage: MessageBase, options?: { resubscribe?: boolean; }): Promise<() => Promise<void>> {
         const hash_key = objectHash(subscribeMessage);
 
+        // TODO Support resubscribe: false
+
         let counter = this.subscription_counts[hash_key];
         if (!counter) {
             counter = this.subscription_counts[hash_key] = {
