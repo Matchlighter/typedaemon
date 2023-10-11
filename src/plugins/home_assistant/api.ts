@@ -76,7 +76,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                 disposer = disp;
             }
         }, (err) => {
-            console.error(err)
+            console.error("Error subscribing", message, err)
         })
         const cleanups = current.application.cleanups.unorderedGroup("ha:subscriptions");
         return cleanups.addExposed(async () => {

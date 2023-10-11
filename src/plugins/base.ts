@@ -78,6 +78,10 @@ export interface ApiFactory<API extends {}> {
     defaultPluginId: string;
 }
 
+export function handle_client_error(ex: any) {
+    current.application?.logClientMessage("error", ex);
+}
+
 export function client_call_safe<P extends any[]>(mthd: (...params: P) => any, ...params: P) {
     try {
         return mthd(...params);
