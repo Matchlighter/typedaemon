@@ -1,7 +1,5 @@
 
 import { LifecycleHelper } from "../../../common/lifecycle_helper";
-import { ApplicationInstance } from "../../../hypervisor/application_instance";
-import { current } from "../../../hypervisor/current";
 import { logMessage } from "../../../hypervisor/logging";
 import { EntityStore } from "./store";
 
@@ -31,12 +29,10 @@ export class TDDevice {
 // uuid should be required when creating an Entity.
 
 abstract class TDEntity<T> {
-    constructor() {
-        this.application = current.application;
-    }
-
-    protected readonly application: ApplicationInstance;
     protected _bound_store: EntityStore;
+    protected get application() {
+        return this._bound_store?.application;
+    }
 
     // protected abstract _link(); // Connect to HA, ensure exists, bind data/events
     protected abstract _unlink(); // Unbind data/events, mark unavailable, remove from store

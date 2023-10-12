@@ -22,13 +22,13 @@ export class EntityStore {
     private mqttPlugin: MqttPlugin;
 
     async registerEntity(entity: TDEntity<any>) {
-        logMessage("debug", `Registering entity '${entity.uuid}'`)
-
         if (entity['_bound_store']) {
             throw new Error(`Entity ${entity.uuid} already registered!`)
         }
 
         entity['_bound_store'] = this;
+        logMessage("debug", `Registering entity '${entity.uuid}'`)
+
         entity['_disposers'].prepend(() => {
             this._untrackEntity(entity)
             entity['_bound_store'] = null;
