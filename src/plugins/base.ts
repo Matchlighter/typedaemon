@@ -85,6 +85,11 @@ export function bind_callback_env<T extends (...args: any[]) => any>(callback: T
     }) as any
 }
 
+class NoApplicationError extends Error {}
+export function assert_application_context() {
+    if (!current.application) throw new NoApplicationError("Method can only be called from an Application. If it was, a callback was likely called without invoke()")
+}
+
 export function handle_client_error(ex: any) {
     if (current.application) {
         current.application?.logClientMessage("error", ex);
@@ -97,7 +102,7 @@ export function client_call_safe<P extends any[]>(mthd: (...params: P) => any, .
     try {
         return mthd(...params);
     } catch (ex) {
-        current.application?.logClientMessage("error", ex);
+        handle_client_error(ex);
     }
 }
 

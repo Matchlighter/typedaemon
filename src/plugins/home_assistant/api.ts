@@ -5,7 +5,7 @@ import "@matchlighter/common_library/decorators/20223fills";
 
 import { HomeAssistantPlugin } from ".";
 import { current } from "../../hypervisor/current";
-import { bind_callback_env, makeApiExport, notePluginAnnotation, pluginGetterFactory } from "../base";
+import { assert_application_context, bind_callback_env, makeApiExport, notePluginAnnotation, pluginGetterFactory } from "../base";
 import { _entitySubApi } from "./api_entities";
 import { TDDevice } from "./entity_api";
 
@@ -66,6 +66,8 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
     }
 
     function _sync_subscribe(message: MessageBase, callback: (value) => void) {
+        assert_application_context();
+
         let disposed = false;
         let disposer;
 
