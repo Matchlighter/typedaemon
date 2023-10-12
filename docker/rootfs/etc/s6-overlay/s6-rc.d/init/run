@@ -2,3 +2,8 @@
 
 # Copy/update td shim
 cat "$TYPEDAEMON_MODULE/skel/bin/td" > "$TYPEDAEMON_CONFIG/bin/td"
+
+# Pass some env vars to shells
+echo "" > /root/.bashrc
+echo "export TYPEDAEMON_MODULE=$TYPEDAEMON_MODULE" >> /root/.bashrc
+echo "export TYPEDAEMON_CONFIG=$TYPEDAEMON_CONFIG" >> /root/.bashrc
