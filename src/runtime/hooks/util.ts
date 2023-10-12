@@ -61,12 +61,12 @@ export function callback_or_decorator<const P extends any[], F extends (...param
 
 type COD2ReturnSignatureBase<P extends any[], F extends (...params: any[]) => any, R> = {
     (...params: P): {
-        (decoratee: F): R
+        (callback: F): R
         (decoratee: F, ctx: DecoratorContext): void
     }
 }
 type COD2ReturnSignatureDirect<P extends any[], F extends (...params: any[]) => any, R> = {
-    (decoratee: F): R
+    (callback: F): R
     (decoratee: F, ctx: DecoratorContext): void
 }
 
@@ -88,8 +88,8 @@ export function callback_or_decorator2<const P extends any[], F extends (...para
                 return func(args[0], default_params);
             } else {
                 notePluginAnnotation(args[1], (self) => {
-                    const inst_method = self[args[1].name];
-                    func(inst_method, ...default_params);
+                    const inst_method: Function = self[args[1].name];
+                    func(inst_method.bind(self), ...default_params);
                 })
             }
         } else {
@@ -98,11 +98,10 @@ export function callback_or_decorator2<const P extends any[], F extends (...para
             return (target, context?) => {
                 if (!context) {
                     return func(target, ...params);
-
                 } else {
                     notePluginAnnotation(context, (self) => {
-                        const inst_method = self[context.name];
-                        func(inst_method, ...params);
+                        const inst_method: Function = self[context.name];
+                        func(inst_method.bind(self), ...params);
                     })
                 }
             }
