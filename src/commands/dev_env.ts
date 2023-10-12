@@ -70,6 +70,10 @@ export default {
 
     }),
     handler: async (argv) => {
+        // This loads Babel, which has a custom resolver. We need to execute from where TD is installed, but against the TD config
+        if (process.env['TYPEDAEMON_MODULE']) {
+            process.chdir(path.join(process.env['TYPEDAEMON_MODULE'], '../..'));
+        }
         await syncDevEnv(argv.config as string);
     },
 } as CommandModule
