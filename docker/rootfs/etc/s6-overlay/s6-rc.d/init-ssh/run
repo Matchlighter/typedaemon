@@ -6,26 +6,23 @@
 # ==============================================================================
 readonly SSH_AUTHORIZED_KEYS_PATH=/etc/ssh/authorized_keys
 readonly SSH_CONFIG_PATH=/etc/ssh/sshd_config
-readonly SSH_HOST_ED25519_KEY=/data/ssh_host_ed25519_key
-readonly SSH_HOST_RSA_KEY=/data/ssh_host_rsa_key
+readonly SSH_HOST_ED25519_KEY="$TYPEDAEMON_CONFIG/.typedaemon/ssh_host_ed25519_key"
+readonly SSH_HOST_RSA_KEY="$TYPEDAEMON_CONFIG/.typedaemon/ssh_host_rsa_key"
 # declare password
 # declare username
 
 username=root
 
-# # Generate host keys
-# if ! bashio::fs.file_exists "${SSH_HOST_RSA_KEY}"; then
-#     bashio::log.notice 'RSA host key missing, generating one...'
+if [ ! -f "$SSH_HOST_RSA_KEY" ]; then
+    ssh-keygen -t rsa -f "${SSH_HOST_RSA_KEY}" -N ""
+fi
+cp "${SSH_HOST_RSA_KEY}" "/etc/ssh/ssh_host_rsa_key"
 
-#     ssh-keygen -t rsa -f "${SSH_HOST_RSA_KEY}" -N "" \
-#         || bashio::exit.nok 'Failed to generate RSA host key'
-# fi
+if [ ! -f "$SSH_HOST_ED25519_KEY" ]; then
+    ssh-keygen -t ed25519 -f "${SSH_HOST_ED25519_KEY}" -N ""
+fi
+cp "${SSH_HOST_ED25519_KEY}" "/etc/ssh/ssh_host_ed25519_key"
 
-# if ! bashio::fs.file_exists "${SSH_HOST_ED25519_KEY}"; then
-#     bashio::log.notice 'ED25519 host key missing, generating one...'
-#     ssh-keygen -t ed25519 -f "${SSH_HOST_ED25519_KEY}" -N "" \
-#         || bashio::exit.nok 'Failed to generate ED25519 host key'
-# fi
 
 # username=$(bashio::config 'ssh.username')
 # username=$(bashio::string.lower "${username}")

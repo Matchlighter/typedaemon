@@ -34,7 +34,10 @@ conn_params="$(findconfig .typedaemon/connection_params)"
 
 source "$conn_params"
 
+# TODO cd to same relative dir inside container
+
 if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
+  key_file="$(mktemp)"
   socket="$(findsocket .typedaemon/ssh_sock)"
   proxy_cmd=""
 
@@ -47,7 +50,10 @@ if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
     exit 1
   fi
 
-  exec "ssh" -o StrictHostKeyChecking=no -i $(findconfig .typedaemon/connection_key) -o "ProxyCommand $proxy_cmd" root@td
+  cat "$(findconfig .typedaemon/connection_key)" > "$key_file"
+  chmod 700 "$key_file"
+
+  exec "ssh" -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td
 elif [ "$TD_CONNECTION_MODE" = "DOCKER" ]; then
   exec docker run --rm -it -v $PWD:/config typedaemon td "$@"
 elif [ -x "$(command -v td)" ]; then
