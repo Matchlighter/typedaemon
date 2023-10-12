@@ -4,7 +4,7 @@ import mqtt_match = require('mqtt-match')
 
 import { MqttPlugin } from ".";
 import { current } from "../../hypervisor/current";
-import { client_call_safe, makeApiExport, notePluginAnnotation, pluginAnnotationDecorator, pluginGetterFactory } from "../base";
+import { assert_application_context, bind_callback_env, client_call_safe, makeApiExport, notePluginAnnotation, pluginAnnotationDecorator, pluginGetterFactory } from "../base";
 import { computed, observable } from "mobx";
 import { plgmobx } from "../mobx";
 import { HyperWrapper } from "../../hypervisor/managed_apps";
@@ -23,11 +23,17 @@ export function mqttApi(options: { pluginId: string }) {
 
     // TODO Support "bound" APIs where current.application is always the same
     const _plugin = pluginGetterFactory<MqttPlugin>(options.pluginId, mqttApi.defaultPluginId);
-    const _connection = () => _plugin().instanceConnection(current.application);
+    const _connection = () => {
+        assert_application_context();
+        return _plugin().instanceConnection(current.application);
+    }
 
     function listen(topic: string, options: SubscribeOptions, handler: MqttMessageHandler) {
         const conn = _connection();
         conn.subscribe(topic, options);
+
+        handler = bind_callback_env(handler);
+
         const wrappedHandler = (rtopic, payload, packet) => {
             if (mqtt_match(topic, rtopic)) {
                 let spayload = payload.toString();

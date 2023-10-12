@@ -10,6 +10,7 @@ import { callback_or_decorator2 } from "./util";
 
 import { get_plugin } from ".";
 import { sleep } from "../..";
+import { bind_callback_env } from "../../plugins/base";
 import { sleep_until } from "../../plugins/builtin/sleep";
 import { HomeAssistantPlugin } from "../../plugins/home_assistant";
 import { ResumableCallbackPromise } from "../resumable/resumable_method";
@@ -264,6 +265,8 @@ function runAtDate(date: Date, func: () => any) {
 }
 
 function scheduleTimer(when: Date, callback: () => any) {
+    callback = bind_callback_env(callback);
+
     const handle = runAtDate(when, callback);
     return schedule_cleanups().addExposed(() => {
         clearTimeout(handle);

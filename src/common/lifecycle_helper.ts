@@ -70,18 +70,18 @@ class UnorderedLifecycleHelper extends BaseLifecycleHelper {
     }
 
     /** Add a cleanup function and return a wrapped version that can be called manually */
-    addExposed(cleaner: Cleaner) {
-        const wrapped_cleaner = async () => {
+    addExposed<T extends Cleaner>(cleaner: T): T {
+        const wrapped_cleaner = () => {
             try {
-                await cleaner();
+                return cleaner();
             } finally {
                 this.pop(wrapped_cleaner)
             }
         }
 
-        this.push(wrapped_cleaner);
+        this.push(cleaner);
 
-        return wrapped_cleaner;
+        return wrapped_cleaner as any;
     }
 
     pop(cleaner: Cleaner) {

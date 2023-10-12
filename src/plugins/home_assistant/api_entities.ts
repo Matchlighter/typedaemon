@@ -7,7 +7,7 @@ import { optional_config_decorator } from "@matchlighter/common_library/decorato
 import { HomeAssistantPlugin } from ".";
 import { funcOrNew } from "../../common/alternative_calls";
 import { current } from "../../hypervisor/current";
-import { Annotable, client_call_safe, getOrCreateLocalData, notePluginAnnotation } from "../base";
+import { Annotable, assert_application_context, client_call_safe, getOrCreateLocalData, notePluginAnnotation } from "../base";
 import { ButtonOptions, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity, resolveEntityId } from "./entity_api";
 import { domain_entities } from "./entity_api/domains";
 import { EntityClass, EntityClassConstructor, EntityClassOptions, EntityClassType } from "./entity_api/domains/base";
@@ -23,7 +23,10 @@ export interface EntityRegistrationOptions {
 type EntDecoratorOptions<O extends {}> = O & { id?: string }
 
 export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
-    const _entity_store = () => getOrCreateLocalData(_plugin(), current.application, "entities", (plg, app) => new EntityStore(plg, app));
+    const _entity_store = () => {
+        assert_application_context();
+        return getOrCreateLocalData(_plugin(), current.application, "entities", (plg, app) => new EntityStore(plg, app));
+    }
 
     // ========= Shared Entity Helpers ========= //
     /** Register the entity */
