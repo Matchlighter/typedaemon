@@ -1,10 +1,12 @@
 
-import { HassEntity, MessageBase } from "home-assistant-js-websocket";
+import { HassEntity, HassEvent, MessageBase, StateChangedEvent } from "home-assistant-js-websocket";
 
 import "@matchlighter/common_library/decorators/20223fills";
 
 import { HomeAssistantPlugin } from ".";
+import { escapeRegExp } from "../../common/util";
 import { current } from "../../hypervisor/current";
+import { callback_or_decorator2 } from "../../runtime/hooks/util";
 import { assert_application_context, bind_callback_env, makeApiExport, notePluginAnnotation, pluginGetterFactory } from "../base";
 import { _entitySubApi } from "./api_entities";
 import { TDDevice } from "./entity_api";
@@ -71,7 +73,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
         let disposed = false;
         let disposer;
 
-        _plugin()._ha_api.subscribeMessage(bind_callback_env(callback), message, { resubscribe: true }).then(disp => {
+        _plugin()._ha_api.subscribeMessage(callback, message, { resubscribe: true }).then(disp => {
             if (disposer) disposer();
             if (disposed) {
                 disp();
@@ -95,7 +97,7 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
      * 
      * Basically a passthrough of `subscribeMessage` from `home-assistant-js-websocket`
      */
-    function subscribe<T>(msg: MessageBase) {
+    function subscribe_message<T>(msg: MessageBase) {
         function executor(callback: (payload: T) => void)
         function executor(target, context: ClassMethodDecoratorContext<any, (payload: T) => void>)
         function executor(target, context?: ClassMethodDecoratorContext) {
@@ -106,11 +108,63 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
                     })
                 });
             } else {
-                _sync_subscribe(msg, target);
+                _sync_subscribe(msg, bind_callback_env(target));
             }
         }
         return executor;
     }
+
+    const subscribe_events = callback_or_decorator2((f: (event: HassEvent) => void, event_type: string | string[]) => {
+        f = bind_callback_env(f);
+
+        if (!Array.isArray(event_type)) event_type = [event_type];
+        const event_types_set = new Set(event_type);
+
+        // TODO Should we have HA filter the event_type, or do it in the callback?
+        //   If we do it in the callback, we end up just using the cached/global subscription instead of creating a second
+        return _sync_subscribe({ type: "subscribe_events" }, (evt: HassEvent) => {
+            if (event_types_set.has(evt.event_type) || event_type == '*') {
+                f(evt);
+            }
+        })
+    });
+
+    const subscribe_state = callback_or_decorator2((f: (new_state: HassEntity, old_state: HassEntity, entity_id: string) => void, entity: string | string[] | RegExp) => {
+        f = bind_callback_env(f);
+
+        let match: (evt: StateChangedEvent) => boolean;
+        if (typeof entity == 'string') {
+            if (entity == "*") {
+                match = () => true;
+            } else if (entity.endsWith(".*")) {
+                const [domain] = entity.split('.');
+                const prefix = domain + ".";
+                match = (evt) => evt.data.entity_id.startsWith(prefix);
+            } else if (entity.includes("*")) {
+                let pattern = entity;
+                pattern = escapeRegExp(pattern);
+                pattern = pattern.replace(/\\\*/g, "\\w*");
+                pattern = `^${pattern}$`;
+                const regex = new RegExp(pattern);
+                match = (evt) => !!evt.data.entity_id.match(regex);
+            } else {
+                match = (evt) => evt.data.entity_id == entity;
+            }
+        } else if (Array.isArray(entity)) {
+            const ent_set = new Set(entity);
+            match = (evt) => ent_set.has(evt.data.entity_id);
+        } else if (entity instanceof RegExp) {
+            match = (evt) => !!evt.data.entity_id.match(entity);
+        }
+
+        // TODO Should we have HA filter the event_type, or do it in the callback?
+        //   If we do it in the callback, we end up just using the cached/global subscription instead of creating a second
+        return _sync_subscribe({ type: "subscribe_events" }, (evt: StateChangedEvent) => {
+            if (evt.event_type == "state_changed" && match(evt)) {
+                f(evt.data.new_state, evt.data.old_state, evt.data.entity_id);
+            }
+        })
+    });
 
     /**
      * Create a Home Assistant Webhook with the given ID. Will be available at http(s)://<Your HA URL>/api/webhook/<ID>.
@@ -168,7 +222,9 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
 
         get states() { return _plugin().state },
 
-        subscribe,
+        subscribe_message,
+        subscribe_events,
+        subscribe_state,
         webhook,
 
         mqtt: {
