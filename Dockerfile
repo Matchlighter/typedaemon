@@ -100,6 +100,7 @@ RUN chmod +x /usr/bin/td \
     && chmod +x ./startup.sh
 
 ENV S6_KEEP_ENV 1
+ENV TYPEDAEMON_MODULE /opt/typedaemon/node_modules/typedaemon
 ENV TYPEDAEMON_ENV production
 ENV TYPEDAEMON_CONFIG /config
 

@@ -1,0 +1,4 @@
+#!/command/with-contenv sh
+
+# Copy/update td shim
+cat "$TYPEDAEMON_MODULE/skel/bin/td" > "$TYPEDAEMON_CONFIG/bin/td"
