@@ -59,6 +59,19 @@ export function callback_or_decorator<const P extends any[], F extends (...param
     }) as any
 }
 
+export function int_callback_or_decorator<F extends (...params: any[]) => any, R>(func: (f: F) => R): COD2ReturnSignatureDirect<any, F, R> {
+    return ((...args) => {
+        if (args.length == 1) {
+            return func(args[0]);
+        } else {
+            notePluginAnnotation(args[1], (self) => {
+                const inst_method: Function = self[args[1].name];
+                func(inst_method.bind(self));
+            })
+        }
+    }) as any
+}
+
 type COD2ReturnSignatureBase<P extends any[], F extends (...params: any[]) => any, R> = {
     (...params: P): {
         (callback: F): R

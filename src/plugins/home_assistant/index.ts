@@ -24,7 +24,6 @@ import { sync_to_observable } from '@matchlighter/common_library/sync_observable
 
 import { mqtt } from '..';
 import { DeepReadonly } from '../../common/util';
-import { HomeAssistantPluginConfig, PluginType } from '../../hypervisor/config_plugin';
 import { HyperWrapper } from '../../hypervisor/managed_apps';
 import { get_plugin } from '../../runtime/hooks';
 import { ResumablePromise, SerializedResumable } from "../../runtime/resumable";
@@ -64,7 +63,7 @@ class SubCountingConnection extends Connection {
     async subscribeMessage<Result>(callback: (result: Result) => void, subscribeMessage: MessageBase, options?: { resubscribe?: boolean; }): Promise<() => Promise<void>> {
         const hash_key = objectHash(subscribeMessage);
 
-        // TODO Support resubscribe: false
+        // TODO Support resubscribe: false? Use case?
 
         let counter = this.subscription_counts[hash_key];
         if (!counter) {
@@ -108,7 +107,14 @@ const createConnection: typeof _createConnection = async (...args) => {
     return conn;
 }
 
-export class HomeAssistantPlugin extends Plugin<PluginType['home_assistant']> {
+export interface HomeAssistantPluginConfig {
+    type: "home_assistant";
+    url: string;
+    access_token: string;
+    mqtt_plugin?: string;
+}
+
+export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     readonly api: HomeAssistantApi = homeAssistantApi({ pluginId: this[HyperWrapper].id });
 
     async initialize() {

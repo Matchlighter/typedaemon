@@ -243,6 +243,12 @@ export class Hypervisor {
                 cfg.daemon.watch = { app_configs: false, app_source: false, config: false }
             }
 
+            if (cfg.plugins["http"] === undefined) {
+                cfg.plugins["http"] = {
+                    type: "http",
+                }
+            }
+
             // Normalize plugin configs
             for (let [ak, raw_cfg] of Object.entries(cfg.plugins)) {
                 const plcfg = PluginConfigMerger.mergeConfigs(defaultPluginConfig, {
