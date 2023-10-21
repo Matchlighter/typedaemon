@@ -3,7 +3,7 @@ import { Constructor } from "type-fest";
 
 import { LifecycleHelper } from "../common/lifecycle_helper";
 import { ApplicationInstance } from "../hypervisor/application_instance";
-import { PluginType } from "../hypervisor/config_plugin";
+import { BasePluginConfig } from "../hypervisor/config_plugin";
 import { current } from "../hypervisor/current";
 import { BaseInstanceClient, HyperWrapper } from "../hypervisor/managed_apps";
 import { PluginInstance } from "../hypervisor/plugin_instance";
@@ -65,7 +65,7 @@ export abstract class Plugin<C = any> extends BaseInstanceClient<PluginInstance>
     abstract configuration_updated(new_config: C, old_config: C);
 
     get config() {
-        return this[HyperWrapper].options as any as PluginType['base'] & C;
+        return this[HyperWrapper].options as any as BasePluginConfig & C;
     }
 
     protected addCleanup(cleaner: Parameters<LifecycleHelper['append']>[0]) {

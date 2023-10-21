@@ -2,7 +2,6 @@
 import * as mqtt from "mqtt";
 
 import { ApplicationInstance } from "../../hypervisor/application_instance";
-import { MQTTPluginConfig, PluginType } from "../../hypervisor/config_plugin";
 import { BaseInstance, HyperWrapper } from "../../hypervisor/managed_apps";
 import { Plugin } from "../base";
 import { SUPERVISOR_API } from "../supervisor";
@@ -11,7 +10,16 @@ import './mqtt_patches';
 
 type ExtMqttClient = mqtt.MqttClient & { shutdown: () => Promise<any> };
 
-export class MqttPlugin extends Plugin<PluginType['mqtt']> {
+export interface MQTTPluginConfig {
+    type: "mqtt";
+    system_topic?: string | false;
+    url?: string;
+    host?: string;
+    username?: string;
+    password?: string;
+}
+
+export class MqttPlugin extends Plugin<MQTTPluginConfig> {
     readonly api = mqttApi({ pluginId: this[HyperWrapper].id });
 
     private applicationConnections = new Map<BaseInstance<any>, ExtMqttClient>()
