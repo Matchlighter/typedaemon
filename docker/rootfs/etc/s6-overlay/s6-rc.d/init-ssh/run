@@ -17,11 +17,13 @@ if [ ! -f "$SSH_HOST_RSA_KEY" ]; then
     ssh-keygen -t rsa -f "${SSH_HOST_RSA_KEY}" -N ""
 fi
 cp "${SSH_HOST_RSA_KEY}" "/etc/ssh/ssh_host_rsa_key"
+cp "${SSH_HOST_RSA_KEY}.pub" "/etc/ssh/ssh_host_rsa_key.pub"
 
 if [ ! -f "$SSH_HOST_ED25519_KEY" ]; then
     ssh-keygen -t ed25519 -f "${SSH_HOST_ED25519_KEY}" -N ""
 fi
 cp "${SSH_HOST_ED25519_KEY}" "/etc/ssh/ssh_host_ed25519_key"
+cp "${SSH_HOST_ED25519_KEY}.pub" "/etc/ssh/ssh_host_ed25519_key.pub"
 
 
 # username=$(bashio::config 'ssh.username')
