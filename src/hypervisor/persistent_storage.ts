@@ -1,3 +1,4 @@
+import path = require("path");
 import { FileHandle, open, rename, writeFile } from "fs/promises";
 
 import { AsyncLock } from "../common/async_lock";
@@ -186,5 +187,39 @@ export class PersistentStorage {
         }
         this.cancelWriteTimer();
         await this.filehandle?.close();
+    }
+}
+
+export class SharedStorages {
+    constructor(readonly root_directory: string) {
+
+    }
+
+    private _primary: PersistentStorage;
+    get primary() { return this._primary }
+
+    private loaded_storages: Record<string, PersistentStorage> = {};
+
+    async initialize() {
+        this._primary = await this.load("default");
+    }
+
+    async load(name: string) {
+        let storage = this.loaded_storages[name];
+        if (!storage) {
+            storage = this.loaded_storages[name] = new PersistentStorage(path.resolve(this.root_directory, `${name}.jkv`));
+            await storage.load();
+        }
+        return storage;
+    }
+
+    async dispose() {
+        for (let [k, storage] of Object.entries(this.loaded_storages)) {
+            try {
+                await storage.dispose();
+            } catch (ex) {
+                console.error(`Failed to save storage "${k}": `, ex);
+            }
+        }
     }
 }

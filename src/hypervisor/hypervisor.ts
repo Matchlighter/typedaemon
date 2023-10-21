@@ -18,11 +18,12 @@ import { ApplicationInstance } from "./application_instance"
 import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config"
 import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app"
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin"
+import { CrossCallStore } from "./cross_call"
+import { current } from "./current"
 import { ExtendedLoger, LogLevel, createDomainLogger } from "./logging"
 import { AppNamespace } from "./managed_apps"
+import { SharedStorages } from "./persistent_storage"
 import { PluginInstance } from "./plugin_instance"
-import { current } from "./current"
-import { CrossCallStore } from "./cross_call"
 
 type ConfigWatchHandler<T> = (newConfig: T, oldConfig: T) => void;
 
@@ -86,6 +87,7 @@ export class Hypervisor {
         })
     }
 
+    sharedStorages: SharedStorages;
     crossCallStore: CrossCallStore;
 
     async start() {
@@ -154,6 +156,11 @@ export class Hypervisor {
 
         if (this.state != 'running') return;
 
+        const shared_storage_dir = path.join(this.operations_directory, "shared_storage");
+        await fs.promises.mkdir(shared_storage_dir, { recursive: true });
+        this.sharedStorages = new SharedStorages(shared_storage_dir);
+        await this.sharedStorages.initialize();
+
         this.crossCallStore = new CrossCallStore(this);
         await this.crossCallStore.load();
 
@@ -172,6 +179,8 @@ export class Hypervisor {
         await this.appInstances.shutdown();
 
         await this.crossCallStore.dispose();
+
+        await this.sharedStorages.dispose();
 
         // Shutdown plugins
         this.logMessage("info", "Stopping plugins");

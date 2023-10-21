@@ -5,7 +5,7 @@ import type { ClassAccessorDecorator } from "@matchlighter/common_library/decora
 import { optional_config_decorator } from "@matchlighter/common_library/decorators/utils";
 
 import { HyperWrapper } from "../../hypervisor/managed_apps";
-import { PersistentEntryOptions } from "../../hypervisor/persistent_storage";
+import { PersistentEntryOptions, PersistentStorage } from "../../hypervisor/persistent_storage";
 import { Application } from "../application";
 import { current } from "../../hypervisor/current";
 
@@ -36,8 +36,23 @@ export const persistent = optional_config_decorator([{}], (options?: Partial<Per
     }
 })
 
+const create_api = (storage: PersistentStorage) => {
+    return {
+        set(key: string, value: any, options?: Partial<PersistentEntryOptions>) {
+            return storage.setValue(key, value, { min_time_to_disk: 1, max_time_to_disk: 3, ...options });
+        },
+        get(key: string) {
+            return storage.getValue(key);
+        },
+        delete(key: string, options?: Partial<PersistentEntryOptions>) {
+            return storage.setValue(key, undefined, { min_time_to_disk: 1, max_time_to_disk: 3, ...options });
+        },
+    }
+}
+
 export const persistence = {
     property: persistent,
+
     set(key: string, value: any, options?: Partial<PersistentEntryOptions>) {
         const ps = current.application.persistedStorage;
         return ps.setValue(key, value, { min_time_to_disk: 1, max_time_to_disk: 3, ...options });
@@ -50,4 +65,15 @@ export const persistence = {
         const ps = current.application.persistedStorage;
         return ps.setValue(key, undefined, { min_time_to_disk: 1, max_time_to_disk: 3, ...options });
     },
+
+    get shared() {
+        const storage = current.hypervisor.sharedStorages.primary;
+        return create_api(storage);
+    },
+
+    async load_namespace(key: string = "default") {
+        const storage = await current.hypervisor.sharedStorages.load(key);
+        // TODO Allow closing shared namespaces?
+        return create_api(storage);
+    }
 }
