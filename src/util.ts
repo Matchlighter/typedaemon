@@ -1,4 +1,4 @@
-import { notePluginAnnotation } from "../../plugins/base";
+import { notePluginAnnotation } from "./plugins/base";
 
 export type CODReturnSignature<P extends any[], F extends (...params: any[]) => any> = {
     (callback: F, ...params: P): ReturnType<F>

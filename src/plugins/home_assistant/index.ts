@@ -25,9 +25,8 @@ import { sync_to_observable } from '@matchlighter/common_library/sync_observable
 import { mqtt } from '..';
 import { DeepReadonly } from '../../common/util';
 import { HyperWrapper } from '../../hypervisor/managed_apps';
-import { get_plugin } from '../../runtime/hooks';
 import { ResumablePromise, SerializedResumable } from "../../runtime/resumable";
-import { Plugin, handle_client_error } from '../base';
+import { Plugin, get_plugin, handle_client_error } from '../base';
 import { MqttPlugin } from '../mqtt';
 import { HomeAssistantApi, homeAssistantApi } from './api';
 

@@ -12,5 +12,3 @@ export const PLUGIN_TYPES = {
 export { api as ha } from "./home_assistant/api"
 export { api as mqtt } from "./mqtt/api"
 export { api as http } from "./http/api"
-
-export { sleep } from "./builtin/sleep"

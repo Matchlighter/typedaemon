@@ -6,7 +6,7 @@ import "@matchlighter/common_library/decorators/20223fills";
 import { HomeAssistantPlugin } from ".";
 import { escapeRegExp } from "../../common/util";
 import { current } from "../../hypervisor/current";
-import { callback_or_decorator2 } from "../../runtime/hooks/util";
+import { callback_or_decorator2 } from "../../util";
 import { assert_application_context, bind_callback_env, makeApiExport, notePluginAnnotation, pluginGetterFactory } from "../base";
 import { _entitySubApi } from "./api_entities";
 import { TDDevice } from "./entity_api";

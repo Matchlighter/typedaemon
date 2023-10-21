@@ -8,7 +8,6 @@ import { current } from "../hypervisor/current";
 import { BaseInstanceClient, HyperWrapper } from "../hypervisor/managed_apps";
 import { PluginInstance } from "../hypervisor/plugin_instance";
 import { Application } from "../runtime/application";
-import { get_plugin } from "../runtime/hooks";
 
 function isDecContext(thing): thing is DecoratorContext {
     return typeof thing == "object" && typeof thing.kind == 'string' && thing.addInitializer
@@ -17,6 +16,13 @@ function isDecContext(thing): thing is DecoratorContext {
 export type Annotable = Application;
 
 const PluginAnnotationsSymbol = Symbol("PluginAnnotations")
+
+/**
+ * Retrieve the plugin instance for the given Plugin id
+ */
+export const get_plugin = <T>(identifier: string): T => {
+    return current.hypervisor.getPlugin(identifier)?.instance as any;
+}
 
 export function pluginGetterFactory<T extends Plugin>(pid: string | T, default_id: string) {
     if (pid instanceof Plugin) return () => pid;
