@@ -1,4 +1,5 @@
-import { ResumablePromise } from "../../runtime/resumable";
+
+import { ResumablePromise } from "./resumable";
 
 class SleeperPromise extends ResumablePromise<number>{
     constructor(readonly sleep_until: number) {

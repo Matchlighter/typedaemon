@@ -5,7 +5,7 @@ import path = require('path');
 import { HttpPlugin } from ".";
 import { ApplicationInstance } from '../../hypervisor/application_instance';
 import { current } from "../../hypervisor/current";
-import { int_callback_or_decorator } from '../../runtime/hooks/util';
+import { int_callback_or_decorator } from '../../util';
 import { assert_application_context, bind_callback_env, getOrCreateLocalData, makeApiExport, pluginGetterFactory } from "../base";
 
 export type RequestHandler = express.RequestHandler;

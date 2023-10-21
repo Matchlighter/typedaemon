@@ -4,10 +4,10 @@ import { observable } from "mobx";
 import type { ClassAccessorDecorator } from "@matchlighter/common_library/decorators/20223fills";
 import { optional_config_decorator } from "@matchlighter/common_library/decorators/utils";
 
-import { HyperWrapper } from "../../hypervisor/managed_apps";
-import { PersistentEntryOptions, PersistentStorage } from "../../hypervisor/persistent_storage";
-import { Application } from "../application";
-import { current } from "../../hypervisor/current";
+import { HyperWrapper } from "./../hypervisor/managed_apps";
+import { PersistentEntryOptions, PersistentStorage } from "./../hypervisor/persistent_storage";
+import { Application } from "./application";
+import { current } from "./../hypervisor/current";
 
 // TODO Autoclean @persistent entries
 

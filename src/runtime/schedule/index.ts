@@ -6,14 +6,14 @@ import * as SunCalc from "suncalc";
 import moment = require("moment-timezone");
 
 import { current } from "../../hypervisor/current";
-import { callback_or_decorator2 } from "./util";
+import { callback_or_decorator2 } from "../../util";
 
-import { get_plugin } from ".";
 import { sleep } from "../..";
-import { bind_callback_env } from "../../plugins/base";
-import { sleep_until } from "../../plugins/builtin/sleep";
+import { bind_callback_env, get_plugin } from "../../plugins/base";
 import { HomeAssistantPlugin } from "../../plugins/home_assistant";
 import { ResumableCallbackPromise } from "../resumable/resumable_method";
+import { sleep_until } from "../sleep";
+
 import grammar_cmp from "./schedule_grammar";
 
 const grammar = ne.Grammar.fromCompiled(grammar_cmp)
