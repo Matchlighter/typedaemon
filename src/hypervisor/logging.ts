@@ -187,7 +187,7 @@ export function createDomainLogger(opts: LoggerOptions) {
 
     logger.logMessage = (level, message, meta?: any) => {
         message = message.map(b => {
-            if (b instanceof Error) {
+            if (b instanceof Error || b.stack) {
                 const cleanTrace = cleanAndMapStacktrace(b);
                 return cleanTrace?.join('\n') || b.message;
             };
