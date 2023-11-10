@@ -1,12 +1,13 @@
 
 import express = require('express')
 import path = require('path');
+import { Socket } from 'net';
 
 import { HttpPlugin } from ".";
 import { ApplicationInstance } from '../../hypervisor/application_instance';
 import { current } from "../../hypervisor/current";
 import { int_callback_or_decorator } from '../../util';
-import { assert_application_context, bind_callback_env, getOrCreateLocalData, makeApiExport, pluginGetterFactory } from "../base";
+import { assert_application_context, bind_callback_env, getOrCreateLocalData, handle_client_error, makeApiExport, pluginGetterFactory } from "../base";
 
 export type RequestHandler = express.RequestHandler;
 
@@ -19,11 +20,32 @@ export class AppHttpStore {
     readonly router = express.Router({ });
 
     handle_request: RequestHandler = (req, resp, next) => {
-        return this.router(req, resp, next);
+        console.debug(`[HTTP] ${req.method.toUpperCase()}: ${req.originalUrl}`);
+        this.trackSocket(req.socket);
+        this.app.invoke(() => {
+            try {
+                this.router(req, resp, next);
+            } catch (ex) {
+                handle_client_error(ex);
+                throw ex;
+            }
+        })
+    }
+
+    private openSockets = new Set<Socket>();
+
+    protected trackSocket(sock: Socket) {
+        this.openSockets.add(sock);
+        sock.once("close", () => {
+            this.openSockets.delete(sock);
+        })
     }
 
     private async cleanup() {
         this.plugin.unregisterAppStore(this);
+        for (let sock of this.openSockets) {
+            sock.destroy();
+        }
     }
 }
 
@@ -71,6 +93,7 @@ export function httpApi(options: { pluginId: string }) {
 
         // As Client
         fetch,
+        // TODO Re-export axios?
 
         // As Server
         handle: request_api,
