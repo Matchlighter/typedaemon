@@ -102,16 +102,45 @@ export async function createApplicationVM(app: ApplicationInstance) {
 
     const opModulesPath = path.join(app.shared_operating_directory, "node_modules");
 
+    const nativeTimers = new Set<any>();
+    const nativeIntervals = new Set<any>();
+    app.cleanups.append(() => {
+        for (let t of nativeTimers) {
+            clearTimeout(t);
+        }
+        for (let t of nativeIntervals) {
+            clearInterval(t);
+        }
+    })
+
     const vm = new VM.NodeVM({
         sourceExtensions: EXTENSIONS,
 
-        // TODO Disable/fix core scheduling and events (eg setTimeout)
-        //   Provide a proxy to access similar features
         sandbox: {
-            setTimeout: null,
-            setInterval: null,
-            clearInterval: null,
-            clearTimeout: null,
+            setTimeout: (...args) => {
+                const timer = setTimeout((...rargs) => {
+                    nativeTimers.delete(timer);
+                    args[0](...rargs);
+                }, args[1])
+                nativeTimers.add(timer);
+                return timer;
+            },
+            clearTimeout: (id) => {
+                clearTimeout(id);
+                nativeTimers.delete(id);
+            },
+            setInterval: (...args) => {
+                const timer = setInterval((...rargs) => {
+                    nativeIntervals.delete(timer);
+                    args[0](...rargs);
+                }, args[1])
+                nativeIntervals.add(timer);
+                return timer;
+            },
+            clearInterval: (id) => {
+                clearInterval(id);
+                nativeIntervals.delete(id);
+            },
             console: consoleMethods,
             IS_TYPEDAEMON_VM: true,
         },
