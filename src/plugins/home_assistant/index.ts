@@ -72,6 +72,8 @@ class SubCountingConnection extends Connection {
                 unsubscribe: null,
             }
 
+            console.info("New HA Subscription:", subscribeMessage);
+
             const unsubscribe = await super.subscribeMessage((...args) => {
                 for (let h of counter.callbacks) {
                     try {
@@ -93,6 +95,7 @@ class SubCountingConnection extends Connection {
         return async () => {
             counter.callbacks.delete(callback);
             if (counter.callbacks.size == 0) {
+                console.info("Closing HA Subscription:", subscribeMessage);
                 delete this.subscription_counts[hash_key];
                 await counter.unsubscribe();
             }
@@ -200,13 +203,32 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
                 throw ex;
             }
         }
+
+        let lastEvent;
         this.pingInterval = setInterval(() => {
+            if (!lastEvent || lastEvent < Date.now() - 30000) {
+                this[HyperWrapper].logMessage("warn", `No events received for 30s!`)
+            }
             if (this._ha_api.connected) this._ha_api.ping();
         }, 30000)
+
+        this._ha_api.subscribeMessage(() => {
+            lastEvent = Date.now();
+        }, { type: "subscribe_events" })
 
         // Synchronize states
         await this.resyncStatesNow();
         this._ha_api.addEventListener("ready", () => this.resyncStatesNow());
+
+        this._ha_api.addEventListener("ready", () => {
+            this[HyperWrapper].logMessage("info", `HA Websocket Ready`)
+        })
+        this._ha_api.addEventListener("disconnected", () => {
+            this[HyperWrapper].logMessage("warn", `HA Websocket Disconnected`)
+        })
+        this._ha_api.addEventListener("reconnect-error", () => {
+            this[HyperWrapper].logMessage("warn", `HA Websocket Reconnect Error`)
+        })
 
         // Listen for events
         this._ha_api.subscribeEvents((ev: HassEvent) => {
