@@ -20,7 +20,7 @@ import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_ap
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin"
 import { CrossCallStore } from "./cross_call"
 import { current } from "./current"
-import { ExtendedLoger, LogLevel, createDomainLogger } from "./logging"
+import { ExtendedLoger, LogLevel, createDomainLogger, setFallbackLogger } from "./logging"
 import { AppNamespace } from "./managed_apps"
 import { SharedStorages } from "./persistent_storage"
 import { PluginInstance } from "./plugin_instance"
@@ -84,7 +84,13 @@ export class Hypervisor {
             level: cfg.system,
             domain: chalk.cyan`Hypervisor`,
             file: path.resolve(this.working_directory, cfg.system_file),
-        })
+        });
+        setFallbackLogger(
+            createDomainLogger({
+                domain: chalk.yellow("???"),
+                file: path.resolve(this.working_directory, cfg.system_file),
+            })
+        );
     }
 
     sharedStorages: SharedStorages;
