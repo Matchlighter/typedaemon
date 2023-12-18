@@ -229,7 +229,11 @@ export function logSystemMessage(level: LogLevel, ...rest: any[]) {
     logger.logMessage(level, rest);
 }
 
-const UKNOWN_LOGGER = createDomainLogger({ domain: chalk.yellow("???") });
+let UKNOWN_LOGGER = createDomainLogger({ domain: chalk.yellow("???") });
+export function setFallbackLogger(logger: ExtendedLoger) {
+    UKNOWN_LOGGER = logger;
+}
+
 export function redirectConsole() {
     for (let cm of CONSOLE_METHODS) {
         console[cm] = (m, ...rest) => {
