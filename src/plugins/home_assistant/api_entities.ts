@@ -6,14 +6,15 @@ import { optional_config_decorator } from "@matchlighter/common_library/decorato
 
 import { HomeAssistantPlugin } from ".";
 import { funcOrNew } from "../../common/alternative_calls";
+import { chainedDecorators, dec_once } from "../../common/decorators";
 import { current } from "../../hypervisor/current";
 import { Annotable, assert_application_context, client_call_safe, getOrCreateLocalData, notePluginAnnotation } from "../base";
-import { ButtonOptions, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity, resolveEntityId } from "./entity_api";
+import { ButtonOptions, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity } from "./entity_api";
 import { domain_entities } from "./entity_api/domains";
 import { EntityClass, EntityClassConstructor, EntityClassOptions, EntityClassType } from "./entity_api/domains/base";
 import type { TDButton } from "./entity_api/domains/button";
-import { EntityStore } from "./entity_api/store";
 import { TDScene } from "./entity_api/domains/scene";
+import { EntityStore } from "./entity_api/store";
 
 export interface EntityRegistrationOptions {
     /** If `true`, entity will be added to the auto-clean registry - if it's not registered again on the next app start up, it will be removed from HA */
@@ -138,19 +139,14 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         options: EntityClassOptions<E> & { id?: string },
         init_callback: RWInitCallback<E>,
     ) {
-        return ((access, context: DecoratorContext) => {
+        return chainedDecorators([dec_once(observable), (access, context: DecoratorContext) => {
             // TODO Allow values to be objects and interpret as state & attrs (probably implement in getState() and getExtraAttributes() overrides)
-
-            const obsvd = (observable as any)(access, context);
-
             _linkFieldEntityClass(ecls, options, context, (self, ent) => {
-                ent.getState = () => (obsvd.get as Function).call(self);
-                const updateVal = (v) => (obsvd.set as Function).call(self, v);
+                ent.getState = () => (access.get as Function).call(self);
+                const updateVal = (v) => (access.set as Function).call(self, v);
                 init_callback(self, ent, updateVal);
             })
-
-            return obsvd;
-        }) as ClassAccessorDecorator<Annotable, any>
+        }]);
     }
 
     /** API Factory for creating R/W entities with either `new` or decorator syntax */
