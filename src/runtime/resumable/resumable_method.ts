@@ -37,7 +37,7 @@ ResumablePromise.defineClass<Executor<any>>({
     type: "@resumable",
     resumer: (data, { require }) => {
         const scope = data.scope;
-        const dep = data.depends_on[0] ? require(data.depends_on[0]) : null;
+        const dep = require(data.pending_promise);
 
         const owner = resumable.lookup_owner(scope.owner);
         const executor: Executor<any> = owner[scope.method][UNSTARTED_EXEC].call(owner, ...scope.parameters);
@@ -128,10 +128,10 @@ class Executor<T> extends ResumablePromise<T> {
 
     readonly tryEntries: any[];
 
-    serialize() {
+    serialize(context: SerializeContext) {
         return {
             type: "@resumable",
-            depends_on: [this.pending_promise],
+            pending_promise: context.ref(this.pending_promise),
             scope: {
                 owner: this.scope.owner[RESUMABLE_CONTEXT_ID],
                 method: this.scope.method,

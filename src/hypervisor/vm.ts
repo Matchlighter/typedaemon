@@ -142,6 +142,7 @@ export async function createApplicationVM(app: ApplicationInstance) {
                 nativeIntervals.delete(id);
             },
             console: consoleMethods,
+            Symbol: Symbol,
             IS_TYPEDAEMON_VM: true,
         },
 
