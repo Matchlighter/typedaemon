@@ -1,8 +1,8 @@
 
-import { ExtensiblePromise } from "@matchlighter/common_library/promises"
+import { ExtensiblePromise } from "@matchlighter/common_library/promises";
+import { ResumableStore } from ".";
 import { deep_pojso } from "../../common/util";
 import { current } from "../../hypervisor/current";
-import { ResumableStore } from ".";
 
 export class Suspend extends Error {
     constructor(...args) {
@@ -86,6 +86,8 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
         const failed_promises: FailedResume[] = []
 
         const load = (key: string) => {
+            if (!key) return null;
+
             let loaded = loaded_promises[key];
 
             if (!loaded) {
@@ -172,6 +174,7 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
 
             const context: SerializeContext = {
                 ref: (rp) => {
+                    if (!rp) return null;
                     if (!(rp instanceof ResumablePromise)) {
                         // Non-resumable promises shouldn't reach this point. If they do, that means
                         //   `can_suspend` logic is missing them
@@ -187,7 +190,9 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
             if (obj instanceof ResumablePromise) {
                 const sdata = obj.serialize(context);
                 srepr.type = sdata.type;
-                Object.assign(srepr, sdata)
+                delete sdata.type;
+                srepr.data = sdata;
+                // Object.assign(srepr, sdata)
 
                 for (let aw of obj.awaited_by()) {
                     discover(aw);
@@ -415,17 +420,19 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
         }
 
         if (desired_pause != this.suspended) {
-            this._suspended = desired_pause;
-            if (this.suspended) {
-                this.do_suspend();
-            } else {
-                this.do_unsuspend();
-            }
-
-            // Re-assess to the right
-            for (let awaitee of this.awaiting_for()) {
-                if (awaitee instanceof ResumablePromise) awaitee.compute_paused();
-            }
+            this._store.computeBatcher.perform(() => {
+                this._suspended = desired_pause;
+                if (this.suspended) {
+                    this.do_suspend();
+                } else {
+                    this.do_unsuspend();
+                }
+    
+                // Re-assess to the right
+                for (let awaitee of this.awaiting_for()) {
+                    if (awaitee instanceof ResumablePromise) awaitee.compute_paused();
+                }
+            })
         }
     }
 

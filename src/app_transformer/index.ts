@@ -18,7 +18,7 @@ export const APP_BABEL_CONFIG: babel.TransformOptions = {
     ],
     plugins: [
         ['babel-plugin-macros', {}],
-        ["@babel/plugin-proposal-decorators", { version: "2022-03" }],
+        ["@babel/plugin-proposal-decorators", { version: "2023-05" }],
         [attachableMacrosPlugin, {
             macros: [
                 { package: TDPACKAGE, import: "resumable", macro: resumableMacro },

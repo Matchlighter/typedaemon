@@ -1,8 +1,8 @@
 import fs = require('fs');
 
+import { Batcher } from '../../common/batched';
 import { fileExists, timeoutPromise } from "../../common/util";
-import { current } from "../../hypervisor/current";
-import { ExtendedLoger, LogAMessage, LogLevel } from "../../hypervisor/logging";
+import { ExtendedLoger, LogLevel } from "../../hypervisor/logging";
 import { ResumableOwnerLookup, resumable } from "./resumable_method";
 import { FailedResume, ResumablePromise, Suspend } from "./resumable_promise";
 
@@ -62,6 +62,10 @@ export class ResumableStore {
 
     protected tracked_tasks = new Map<ResumablePromise, TrackerEntry>();
 
+    readonly computeBatcher = new Batcher(() => {
+        this.checkAllSuspended();
+    })
+
     track(promise: ResumablePromise<any>) {
         if (this._state == "suspended") throw new Error("ResumableStore is suspended and not accepting new promises");
 
@@ -78,20 +82,30 @@ export class ResumableStore {
             true
         ).finally(() => {
             this.tracked_tasks.delete(promise);
-            if (this._state == 'shutdown_requested') {
-                for (let task of this.tracked_tasks.values()) {
-                    if (!task.resumable.suspended) return;
-                }
-
-                // All promises suspendable!
-                this.onNonSuspendableClear();
-            }
+            this.checkAllSuspended();
         })
 
         this.tracked_tasks.set(promise, {
             resumable: promise,
             tracking_callbacks: track_promise,
         })
+    }
+
+    private checkAllSuspended() {
+        if (this._state == 'active') return;
+
+        if (this.onNonSuspendableClear) {
+            let all_suspended = true;
+            for (let task of this.tracked_tasks.values()) {
+                if (!task.resumable.suspended) {
+                    all_suspended = false;
+                    break;
+                }
+            }
+            if (all_suspended) {
+                this.onNonSuspendableClear?.();
+            }
+        }
     }
 
     protected logMessage(level: LogLevel, ...rest) {
@@ -113,9 +127,11 @@ export class ResumableStore {
 
         const track_states = [...this.tracked_tasks.values()];
 
-        for (let rp of track_states) {
-            rp.resumable.compute_paused();
-        }
+        this.computeBatcher.perform(() => {
+            for (let rp of track_states) {
+                rp.resumable.compute_paused();
+            }
+        })
 
         // Wait for pending non-suspendable promises to resolve
         const flushPromise = new Promise((accept) => {
@@ -135,11 +151,18 @@ export class ResumableStore {
 
         // Force suspend unsuspended Resumables
         for (let state of track_states) {
-            if (!state.resumable.suspended) state.resumable.force_suspend();
+            if (!state.resumable.suspended) {
+                state.resumable.force_suspend();
+            }
         }
 
-        await timeoutPromise(5000, Promise.allSettled(track_states.map(s => s.tracking_callbacks)), () => {
+        await timeoutPromise(5000, flushPromise, () => {
             this.logMessage("warn", "Resumable - Some Resumables still would not suspend.")
+            for (let state of track_states) {
+                if (!state.resumable.suspended) {
+                    console.log("NOT SUSPENDED:", state.resumable)
+                }
+            }
         });
 
         /* Edge Case: Deferred awaiting
@@ -161,7 +184,9 @@ export class ResumableStore {
     }
 
     private *allForSerializing() {
-        yield* this.suspendedResumables;
+        for (let task of this.tracked_tasks.values()) {
+            yield task.resumable;
+        }
         yield* this.failedLoads;
     }
 }

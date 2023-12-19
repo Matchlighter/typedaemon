@@ -2,6 +2,9 @@
 import { getInheritedHiddenProp } from "@matchlighter/common_library/object"
 import { Decorator } from "@matchlighter/common_library/decorators/20223fills"
 
+// @ts-ignore
+Symbol.metadata ??= Symbol("Symbol.metadata");
+
 export function dec_once<T extends Decorator>(dec: T, loud = false): T {
     return ((access, context: ClassMemberDecoratorContext) => {
         if (isDecoratedWith(context, dec)) {

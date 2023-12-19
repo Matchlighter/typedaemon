@@ -239,15 +239,10 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             "APPLICATION": this._instance,
         })
 
-        // We want this to run _after_ the userspace app has completely shutdown
-        this.cleanups.append(async () => {
-            this.logMessage("info", "Suspending Resumables")
-            await this.resumableStore.save();
-        });
-
         this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
 
         try {
+            // TODO Timeout or cancel during restart
             await this.invoke(() => this.instance.initialize?.());
         } catch (ex) {
             this.invoke(() => {
@@ -261,6 +256,12 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             await flushPluginAnnotations(this.instance);
             await this.resumableStore.load();
         })
+
+        // We want this to run before the userspace app has completely shutdown
+        this.cleanups.append(async () => {
+            this.logMessage("info", "Suspending Resumables")
+            await this.resumableStore.save();
+        });
 
         this.transitionState('started');
 
@@ -327,6 +328,10 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         if (this._vm) return this._vm;
         const vm = await createApplicationVM(this);
         return this._vm = vm;
+    }
+
+    get unsafe_vm() {
+        return this._vm;
     }
 }
 

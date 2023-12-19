@@ -1,4 +1,5 @@
 
+import { current } from "../hypervisor/current";
 import { ResumablePromise } from "./resumable";
 
 class SleeperPromise extends ResumablePromise<number>{
@@ -8,6 +9,7 @@ class SleeperPromise extends ResumablePromise<number>{
     }
 
     private timer;
+    private application = current.application;
 
     static {
         ResumablePromise.defineClass<SleeperPromise>({
@@ -19,14 +21,15 @@ class SleeperPromise extends ResumablePromise<number>{
     }
 
     protected do_suspend(): void {
-        if (this.timer) clearTimeout(this.timer);
+        this.clearTimeout();
     }
 
     protected do_unsuspend(): void {
         const sleep_until = this.sleep_until;
         const sleep_time = sleep_until - Date.now();
+        const _setTimeout: typeof setTimeout = this.application.unsafe_vm.sandbox.setTimeout;
         if (sleep_time > 0) {
-            this.timer = setTimeout(() => {
+            this.timer = _setTimeout(() => {
                 this._resolve(Date.now() - sleep_until);
             }, sleep_time)
         } else {
@@ -34,8 +37,15 @@ class SleeperPromise extends ResumablePromise<number>{
         }
     }
 
+    private clearTimeout() {
+        if (this.timer){
+            const _clearTimeout: typeof clearTimeout = this.application.unsafe_vm.sandbox.clearTimeout;
+            _clearTimeout(this.timer);
+        }
+    }
+
     cancel() {
-        if (this.timer) clearTimeout(this.timer);
+        this.clearTimeout();
         this._reject("CANCELLED");
     }
 
