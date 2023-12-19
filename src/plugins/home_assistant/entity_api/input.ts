@@ -126,7 +126,7 @@ class InputEntity<T> extends TDEntity<T> {
         // {"id":57,"type":"result","success":true,"result":{"area_id":null,"config_entry_id":null,"device_id":null,"disabled_by":null,"entity_category":null,"entity_id":"input_text.test2","has_entity_name":false,"hidden_by":null,"icon":null,"id":"8bef30db208442ea9ae0c5c3041a7bd7","name":null,"original_name":"test2","platform":"input_text","translation_key":null,"unique_id":"test2","aliases":[],"capabilities":null,"device_class":null,"options":{},"original_device_class":null,"original_icon":null}}
         // const existing = await pl.request("config/entity_registry/get", { entity_id });
 
-        const { existing: assertExisting, id: _id, optimistic, ...pass } = this.options;
+        const { existing: assertExisting, id: _id, domain: _domain, optimistic, ...pass } = this.options;
 
         for (let [k, v] of Object.entries(pass as any)) {
             if (v instanceof Date) pass[k as any] = v.toISOString();
