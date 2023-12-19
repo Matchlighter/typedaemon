@@ -21,6 +21,8 @@ export interface TextOptions extends EntityOptionsCommon, EntityOptionsCommonW {
 export class TDText extends EntityClass<string, {}, TextOptions> {
     static domain = "text";
 
+    static { this._defaultAutocleaner(); }
+
     protected discovery_data() {
         const dd = super.discovery_data();
         Object.assign(dd, {

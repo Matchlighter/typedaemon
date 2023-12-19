@@ -9,6 +9,8 @@ export interface SelectOptions extends EntityOptionsCommon, EntityOptionsCommonW
 export class TDSelect extends EntityClass<string, {}, SelectOptions> {
     static domain = "text";
 
+    static { this._defaultAutocleaner(); }
+
     protected discovery_data() {
         const dd = super.discovery_data();
         Object.assign(dd, {

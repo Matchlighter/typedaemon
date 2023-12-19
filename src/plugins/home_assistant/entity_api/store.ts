@@ -3,6 +3,7 @@ import type { HomeAssistantPlugin } from "..";
 import { ApplicationInstance } from "../../../hypervisor/application_instance";
 import { logMessage } from "../../../hypervisor/logging";
 import { MqttPlugin } from "../../mqtt";
+import { autocleanEntities } from "./auto_cleaning";
 
 export class EntityStore {
     constructor(readonly plugin: HomeAssistantPlugin, readonly application: ApplicationInstance) {
@@ -11,13 +12,14 @@ export class EntityStore {
         application.cleanups.append(() => this.cleanup());
 
         if (application.state == 'starting') {
-            application.addLifeCycleHook("started", () => {
-                // TODO Mark registered items and look for persisted entries that need to be destroyed.
+            // Compare registered Entitites vs previously registered Entitites. Cleanup any that are no longer declared.
+            application.addLifeCycleHook("started", async () => {
+                await autocleanEntities(this);
             })
         }
     }
 
-    private tracked_entities = new Set<TDEntity<any>>();
+    tracked_entities = new Set<TDEntity<any>>();
 
     private mqttPlugin: MqttPlugin;
 

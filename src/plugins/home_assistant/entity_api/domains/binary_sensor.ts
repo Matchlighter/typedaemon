@@ -29,6 +29,8 @@ export interface BinarySensorOptions extends EntityOptionsCommon {
 export class TDBinarySensor extends EntityClass<boolean, {}, BinarySensorOptions> {
     static domain = "binary_sensor";
 
+    static { this._defaultAutocleaner(); }
+
     protected discovery_data() {
         const dd = super.discovery_data();
         Object.assign(dd, {

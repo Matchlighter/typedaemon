@@ -169,6 +169,9 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
     /**
      * Create a Home Assistant Webhook with the given ID. Will be available at http(s)://<Your HA URL>/api/webhook/<ID>.
      * 
+     * HA considers Webhooks to be "owned" by the conection that creates them. This means you won't be able to receive the same Webhook in multiple places at once.
+     * TypeDaemon caches subscriptions, so you currently can use the same Webhook in multiple apps in the same TD instance, but such may not be advised.
+     * 
      * Requires https://github.com/zachowj/hass-node-red/tree/main
      */
     function webhook<T>(id: string, options?: { allowed_methods?: WebhookMethods[], name?: string }) {
@@ -265,4 +268,5 @@ homeAssistantApi.defaultPluginId = "home_assistant";
 
 export type HomeAssistantApi = ReturnType<typeof homeAssistantApi>;
 
+// TODO Re-Export types
 export const api = makeApiExport(homeAssistantApi)

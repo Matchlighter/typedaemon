@@ -16,6 +16,8 @@ export interface EventOptions extends EntityOptionsCommon {
 export class TDEvent extends EntityClass<boolean, {}, EventOptions> {
     static domain = "event"; // TODO Not sure if Events work via Discovery
 
+    static { this._defaultAutocleaner(); }
+
     protected discovery_data() {
         const dd = super.discovery_data();
         Object.assign(dd, {

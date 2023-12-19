@@ -1,10 +1,10 @@
 import { observable, runInAction } from "mobx";
 
 import type { HomeAssistantPlugin } from "..";
-import { current } from "../../../hypervisor/current";
 import { client_call_safe } from "../../base";
 import { plgmobx } from "../../mobx";
-import { EntityOptions, TDEntity, resolveEntityId } from "./base";
+import { setAutocleaner } from "./auto_cleaning";
+import { EntityOptions, TDEntity } from "./base";
 import { EntityStore } from "./store";
 
 export interface InputOptions<T> extends EntityOptions {
@@ -35,6 +35,22 @@ class InputEntity<T> extends TDEntity<T> {
     constructor(readonly id: string, readonly options: InputOptions<T>) {
         super();
     }
+
+    static _defaultAutocleaner() {
+        setAutocleaner(this, {
+            key: `td_input-${(this as any).domain}`,
+            make_entry: (entity) => {
+                return { id: entity['_uuid'], domain: entity.domain }
+            },
+            destroy_entity: async (state, store: EntityStore) => {
+                const tempEntity = new this(state.id, { domain: state.domain });
+                tempEntity._bound_store = store;
+                return await tempEntity._destroy();
+            },
+        })
+    }
+
+    static { this._defaultAutocleaner(); }
 
     get uuid() {
         return `${this.domain}.${this.id}`
@@ -152,6 +168,8 @@ export interface ButtonOptions extends EntityOptions {
 class InputButton extends InputEntity<never> {
     static domain = "input_button";
 
+    static { this._defaultAutocleaner(); }
+
     constructor(id: string, options: ButtonOptions) {
         super(id, options);
     }
@@ -177,9 +195,12 @@ export interface SelectOptions<T extends string> extends EntityOptions {
 class InputSelect<const T extends string> extends InputEntity<T> {
     static domain = "input_select";
 
+    static { this._defaultAutocleaner(); }
+
     constructor(id: string, options: SelectOptions<T>) {
         super(id, options);
     }
 }
 
-export { InputEntity, InputButton, InputSelect };
+export { InputButton, InputEntity, InputSelect };
+

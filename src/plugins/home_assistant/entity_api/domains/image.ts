@@ -22,6 +22,8 @@ export interface ImageOptions extends EntityOptionsCommon {
 export class TDImage extends EntityClass<string, {}, ImageOptions> {
     static domain = "image";
 
+    static { this._defaultAutocleaner(); }
+
     protected discovery_data() {
         const dd = super.discovery_data();
         // @ts-ignore

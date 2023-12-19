@@ -14,6 +14,8 @@ export interface DeviceTriggerOptions extends EntityOptionsCommon, EntityOptions
 export class TDDeviceTrigger extends EntityClass<boolean, {}, DeviceTriggerOptions> {
     static domain = "device_automation";
 
+    static { this._defaultAutocleaner(); }
+
     // TODO Could we have a single topic per app and use payload: param? Would there be ay point?
 
     protected discovery_data() {

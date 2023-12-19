@@ -1,7 +1,9 @@
 
 import { ha } from "../..";
 import { plgmobx } from "../../mobx";
+import { setAutocleaner } from "./auto_cleaning";
 import { TDDevice, TDEntity } from "./base";
+import { EntityStore } from "./store";
 
 // Will need to give some thought to unique_ids.
 //   Likely use `<application unique_id (configurable) || application id>_<unique_id (configurable) || lowercase(undercore(name))>`
@@ -37,6 +39,25 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
     }
 
     protected readonly options?: Readonly<TDAbstractEntityOptions>;
+
+    static _defaultAutocleaner() {
+        setAutocleaner(this, {
+            key: `td_abstract_entity-${(this as any).domain}`,
+            make_entry: (entity) => {
+                return { id: entity['_uuid'], domain: entity.domain }
+            },
+            destroy_entity: async (state, store: EntityStore) => {
+                // @ts-ignore
+                const tempEntity = new this(state.id, { domain: state.domain });
+                tempEntity._bound_store = store;
+                return await tempEntity._destroy();
+            },
+        })
+    }
+
+    static {
+        this._defaultAutocleaner();
+    }
 
     private readonly _uuid: string;
     private _abs_uuid: string;
