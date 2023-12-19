@@ -16,8 +16,30 @@ export interface PersistentEntryOptions {
     max_time_to_disk: number;
 }
 
-interface PendingWrite {
+interface SpliceAction {
+    action: "ASPLC";
+    key: string;
+    values?: any[];
+    position: number;
+    delete?: number;
+}
+
+interface ObjectAction {
+    action: "OSET";
+    key: string;
+    subkey: string;
+    value: any;
+}
+
+interface SetAction {
+    action: "SET";
     original_value: any;
+}
+
+type AnyAction = ObjectAction | SpliceAction | SetAction;
+
+interface QueuedAction {
+    action: AnyAction;
     not_before: number;
     not_after: number;
 }
@@ -36,7 +58,7 @@ export class PersistentStorage {
     private file_lock = new AsyncLock({})
 
     private kvstore: Record<string, any> = {};
-    private pending_writes: Record<string, PendingWrite> = {};
+    private pending_actions: Record<string, QueuedAction[]> = {}
 
     get keys() { return Object.keys(this.kvstore) }
 
@@ -51,34 +73,94 @@ export class PersistentStorage {
     setValue<T>(key: string, value: T, options: PersistentEntryOptions) {
         if (this._disposed) throw new Error("Attempt to set a PersistentStorage key after disposal!");
 
-        const pw: PendingWrite = this.pending_writes[key] || {
-            original_value: this.kvstore[key],
-            not_after: null,
-            not_before: null,
+        // Short-circuit if the previous SET is being reverted
+        const kactions = this.pending_actions[key];
+        if (kactions && kactions.length == 1 && kactions[0].action?.action == "SET" && kactions[0].action.original_value === value) {
+            delete this.pending_actions[key];
+            this.kvstore[key] = value;
+            return;
         }
-        const dtn = Date.now();
-        pw.not_before = dtn + options.min_time_to_disk * 1000;
-        pw.not_after = dtn + options.max_time_to_disk * 1000;
 
-        this.pending_writes[key] = pw;
         this.kvstore[key] = value;
-        this.scheduleWriteTask([pw]);
+
+        // Clear previous actions - we're overwriting them
+        this.pending_actions[key] = [];
+
+        this.pushAction(key, options, {
+            action: "SET",
+            original_value: this.kvstore[key],
+        })
+    }
+
+    objectSet(key: string, subkey: string, value: any, options: PersistentEntryOptions) {
+        this.pushAndExecAction(key, options, {
+            action: "OSET",
+            key,
+            subkey,
+            value,
+        });
+    }
+
+    arrayPush(key: string, value: any, options: PersistentEntryOptions, position?) {
+        this.pushAndExecAction(key, options, {
+            action: "ASPLC",
+            key,
+            position,
+            values: [value],
+        });
+    }
+
+    arrayPop(key: string, options: PersistentEntryOptions, position?) {
+        this.pushAndExecAction(key, options, {
+            action: "ASPLC",
+            key,
+            position,
+            delete: 1,
+        });
     }
 
     async load() {
         if (!await fileExists(this.file_path)) return;
 
+        let last_error: Error;
+
         await read_lines(this.file_path, {}, (line) => {
+            if (last_error) throw last_error;
+
             const [cmd, data] = split_once(line, " ");
-            const pdata = JSON.parse(data);
-            if (cmd == "DEL") {
-                for (let k of pdata) delete this.kvstore[k];
-            } else if (cmd == "MRG") {
-                Object.assign(this.kvstore, pdata);
-            } else if (cmd == "SET") {
-                this.kvstore = pdata;
+            try {
+                const pdata = JSON.parse(data);
+                this.execCmd(cmd, pdata);
+            } catch (ex) {
+                // Ignore an error if it's the last line
+                last_error = ex;
+                // TODO Behavior?
+                //   Throw and abort starting the application? (Safest data-wise)
+                //   Log and ignore? (Resiliant, but possible data loss)
             }
         })
+    }
+
+    private execCmd(cmd: string, pdata: any) {
+        if (cmd == "DEL") {
+            for (let k of pdata) delete this.kvstore[k];
+        } else if (cmd == "MRG") {
+            Object.assign(this.kvstore, pdata);
+        } else if (cmd == "SET") {
+            this.kvstore = pdata;
+        } else if (cmd == "ASPLC") {
+            const arr: any[] = this.kvstore[pdata.key] ??= [];
+            let idx = pdata.position ?? -1;
+            if (idx < 0) idx = arr.length - idx + 1;
+            arr.splice(idx, pdata.delete ?? 0, ...pdata.values);
+        } else if (cmd == "OSET") {
+            const obj: any = this.kvstore[pdata.key] ??= {};
+            if (pdata.value === undefined) {
+                delete obj[pdata.subkey];
+            } else {
+                obj[pdata.subkey] = pdata.value;
+            }
+        }
     }
 
     private filehandle: FileHandle;
@@ -88,22 +170,31 @@ export class PersistentStorage {
                 this.cancelWriteTimer();
 
                 const dtn = Date.now();
-                const future_writes: Record<string, PendingWrite> = {};
-                let flush_writes: Record<string, PendingWrite> = {};
+
+                const future_actions: Record<string, QueuedAction[]> = {};
+                let flush_actions: Record<string, QueuedAction[]> = {};
 
                 if (force) {
-                    flush_writes = this.pending_writes;
+                    flush_actions = this.pending_actions;
                 } else {
-                    // Iterate pending writes. Move any w/ past not_before to a new set
-                    for (let [k, v] of Object.entries(this.pending_writes)) {
-                        if (v.not_before < dtn) {
-                            flush_writes[k] = v;
-                        } else {
-                            future_writes[k] = v;
+                    // Iterate pending actions. Move any w/ past not_before to a new set
+                    for (let [k, actions] of Object.entries(this.pending_actions)) {
+                        let group_futures: QueuedAction[] = [];
+                        for (let v of actions) {
+                            if (v.not_before < dtn && group_futures.length == 0) {
+                                (flush_actions[k] ||= []).push(v);
+                            } else if (v.not_after <= dtn) {
+                                // If a newer action _needs_ to be written, ignore any previous not_before values and write
+                                (flush_actions[k] ||= []).push(...group_futures, v);
+                                group_futures = [];
+                            } else {
+                                group_futures.push(v);
+                            }
                         }
+                        future_actions[k] = group_futures;
                     }
                 }
-                this.pending_writes = future_writes;
+                this.pending_actions = future_actions;
 
                 // Write items
                 if (!this.filehandle) {
@@ -113,20 +204,32 @@ export class PersistentStorage {
                 let changed = false;
                 const delkeys = [];
                 const changes = {};
-                for (let [k, v] of Object.entries(flush_writes)) {
-                    const cv = this.kvstore[k];
-                    if (v.original_value === cv) continue;
-                    if (cv == null) {
-                        delkeys.push(k);
-                    } else {
-                        changed = true;
-                        changes[k] = cv;
+                const remaining_actions: AnyAction[] = [];
+                for (let [k, actions] of Object.entries(flush_actions)) {
+                    for (let v of actions) {
+                        const action = v.action;
+                        if (action.action == "SET") {
+                            const cv = this.kvstore[k];
+                            if (cv == null) {
+                                delkeys.push(k);
+                            } else {
+                                changed = true;
+                                changes[k] = cv;
+                            }
+                        } else {
+                            remaining_actions.push(action);
+                        }
                     }
                 }
 
                 if (delkeys.length) await this.filehandle.write(`DEL ${JSON.stringify(delkeys)}\n`);
                 if (changed) await this.filehandle.write(`MRG ${JSON.stringify(changes)}\n`);
-                if (delkeys.length || changed) {
+
+                for (let action of remaining_actions) {
+                    await this.filehandle.write(`${action.action} ${JSON.stringify(action)}\n`);
+                }
+
+                if (delkeys.length || changed || remaining_actions.length) {
                     await this.filehandle.sync();
                 }
             } finally {
@@ -151,8 +254,8 @@ export class PersistentStorage {
 
     private nextWriteTime: number;
     private nextWriteTimer
-    protected scheduleWriteTask(subset?: PendingWrite[]) {
-        subset ||= Object.values(this.pending_writes);
+    protected scheduleWriteTask(subset?: QueuedAction[]) {
+        subset ||= this.allPendingActions();
 
         let nt = Math.min(...subset.map(pw => pw.not_after));
         nt = Math.max(nt, Date.now() + 10);
@@ -168,6 +271,33 @@ export class PersistentStorage {
                 this.flushToDisk(false);
             }, Date.now() - this.nextWriteTime)
         }
+    }
+
+    private allPendingActions() {
+        const allactions = [];
+        for (let [k, actions] of Object.entries(this.pending_actions)) {
+            for (let v of actions) {
+                allactions.push(v);
+            }
+        }
+        return allactions;
+    }
+
+    private pushAction(key: string, options: PersistentEntryOptions, action: AnyAction) {
+        const dtn = Date.now();
+        const qaction: QueuedAction = {
+            action,
+            not_before: dtn + options.min_time_to_disk * 1000,
+            not_after: dtn + options.max_time_to_disk * 1000,
+        }
+        const actions = this.pending_actions[key] ||= [];
+        actions.push(qaction);
+        this.scheduleWriteTask([qaction]);
+    }
+
+    private pushAndExecAction(key: string, options: PersistentEntryOptions, action: AnyAction) {
+        this.execCmd(action.action, action);
+        this.pushAction(key, options, action);
     }
 
     private cancelWriteTimer() {
