@@ -11,6 +11,8 @@ export interface ButtonOptions extends EntityOptionsCommon, EntityOptionsCommonW
 export class TDButton extends EntityClass<boolean, {}, ButtonOptions> {
     static domain = "button";
 
+    static { this._defaultAutocleaner(); }
+
     on_pressed: () => void;
 
     protected discovery_data() {

@@ -6,6 +6,8 @@ export interface CustomEntityOptions extends EntityOptionsCommon {
 }
 
 export class TDCustomEntity<T> extends EntityClass<T, {}, CustomEntityOptions> {
+    static { this._defaultAutocleaner(); }
+
     protected discovery_data() {
         const dd = super.discovery_data();
 

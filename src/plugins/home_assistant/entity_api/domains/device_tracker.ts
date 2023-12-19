@@ -24,6 +24,8 @@ export interface DeviceTrackerOptions extends EntityOptionsCommon {
 export class TDDeviceTracker extends EntityClass<"home" | "not_home" | "by_gps", {}, DeviceTrackerOptions> {
     static domain = "device_tracker";
 
+    static { this._defaultAutocleaner(); }
+
     // TODO Support GPS Attrs
     // {
     //     "latitude": 32.87336,

@@ -33,6 +33,8 @@ export interface SensorOptions extends EntityOptionsCommon {
 export class TDSensor extends EntityClass<number, {}, SensorOptions> {
     static domain = "sensor";
 
+    static { this._defaultAutocleaner(); }
+
     protected discovery_data() {
         const dd = super.discovery_data();
         Object.assign(dd, {

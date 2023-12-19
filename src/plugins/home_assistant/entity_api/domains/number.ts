@@ -26,6 +26,8 @@ export interface NumberOptions extends EntityOptionsCommon, EntityOptionsCommonW
 export class TDNumber extends EntityClass<number, {}, NumberOptions> {
     static domain = "number";
 
+    static { this._defaultAutocleaner(); }
+
     protected discovery_data() {
         const dd = super.discovery_data();
         Object.assign(dd, {

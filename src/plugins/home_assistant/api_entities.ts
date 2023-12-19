@@ -10,10 +10,11 @@ import { chainedDecorators, dec_once } from "../../common/decorators";
 import { current } from "../../hypervisor/current";
 import { Annotable, assert_application_context, client_call_safe, getOrCreateLocalData, notePluginAnnotation } from "../base";
 import { ButtonOptions, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity } from "./entity_api";
+import { trackAutocleanEntity } from "./entity_api/auto_cleaning";
 import { domain_entities } from "./entity_api/domains";
 import { EntityClass, EntityClassConstructor, EntityClassOptions, EntityClassType } from "./entity_api/domains/base";
 import type { TDButton } from "./entity_api/domains/button";
-import { TDScene } from "./entity_api/domains/scene";
+import type { TDScene } from "./entity_api/domains/scene";
 import { EntityStore } from "./entity_api/store";
 
 export interface EntityRegistrationOptions {
@@ -21,7 +22,20 @@ export interface EntityRegistrationOptions {
     auto_clean?: boolean,
 }
 
-type EntDecoratorOptions<O extends {}> = O & { id?: string }
+function separateRegistrationOptions<O extends {}>(opts: O & EntityRegistrationOptions) {
+    const entity_options = opts;
+    const registration_options = {};
+    for (let k of ['auto_clean'] satisfies (keyof EntityRegistrationOptions)[]) {
+        if (k in entity_options) {
+            registration_options[k] = entity_options[k];
+            delete entity_options[k];
+        }
+    }
+    return {
+        registration_options: registration_options as EntityRegistrationOptions,
+        entity_options: entity_options as O,
+    }
+}
 
 export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     const _entity_store = () => {
@@ -32,22 +46,26 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     // ========= Shared Entity Helpers ========= //
     /** Register the entity */
     async function registerEntity(entity: TDEntity<any>, options?: EntityRegistrationOptions) {
-        await _entity_store().registerEntity(entity);
+        const store = _entity_store();
+        await store.registerEntity(entity);
 
         if (options?.auto_clean) {
-            // TODO
-            // Entries will need to track plugin type, plugin id, and any plugin/entry specific info
+            trackAutocleanEntity(store, entity);
         }
     }
 
     /** Register the Entity and (if created via decorator) add it to the auto-remove registry */
-    async function registerEntityFromDecorator(entity: TDEntity<any>) {
-        return await registerEntity(entity, { auto_clean: current.application.state == 'starting' })
+    async function registerEntityFromDecorator(entity: TDEntity<any>, options?: EntityRegistrationOptions) {
+        return await registerEntity(entity, {
+            auto_clean: current.application.state == 'starting',
+            ...options,
+        })
     }
 
     function _linkFieldEntityBase<T extends TDEntity<any>>(
         construct: () => T,
         context: DecoratorContext,
+        roptions: EntityRegistrationOptions,
         init_callback?: (self, ent: T) => void,
     ) {
         const ents = new WeakMap<any, T>();
@@ -65,7 +83,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
             init_callback?.(self, ent);
             ents.set(self, ent);
 
-            await registerEntityFromDecorator(ent);
+            await registerEntityFromDecorator(ent, roptions);
         }
 
         notePluginAnnotation(context, init_linked);
@@ -78,16 +96,18 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
     function _linkFieldEntityClass<E extends EntityClass<any, any>>(
         ecls: EntityClassConstructor<E>,
-        options: EntityClassOptions<E> & { id?: string },
+        options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string },
         context: DecoratorContext,
         init_callback: (self, ent: E) => void,
     ) {
+        const { entity_options, registration_options } = separateRegistrationOptions(options);
         return _linkFieldEntityBase(
             () => {
-                const { id, ...rest } = options;
+                const { id, ...rest } = entity_options;
                 return new ecls(id || String(context.name), rest as any);
             },
             context,
+            registration_options,
             init_callback,
         )
     }
@@ -95,7 +115,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
     // ========= Read-Only Entity Helpers ========= //
 
-    function _stateOnlyDecorator<E extends EntityClass<any, any>>(ecls: EntityClassConstructor<E>, options: EntityClassOptions<E> & { id?: string }) {
+    function _stateOnlyDecorator<E extends EntityClass<any, any>>(ecls: EntityClassConstructor<E>, options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string }) {
         return ((access, context: DecoratorContext) => {
             // TODO Allow values to be objects and interpret as state & attrs (probably implement in getState() and getExtraAttributes() overrides)
 
@@ -124,7 +144,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     /** API Factory for creating RO entities with either `new` or decorator syntax */
     function stateOnlyApi<E extends EntityClass<any, any>>(entCls: EntityClassConstructor<E>) {
         return funcOrNew(
-            (options: EntityClassOptions<E> & { id?: string }) => _stateOnlyDecorator(entCls, options),
+            (options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string }) => _stateOnlyDecorator(entCls, options),
             entCls,
         )
     }
@@ -136,7 +156,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
     function _basicRWDecorator<E extends EntityClass<any, any>>(
         ecls: EntityClassConstructor<E>,
-        options: EntityClassOptions<E> & { id?: string },
+        options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string },
         init_callback: RWInitCallback<E>,
     ) {
         return chainedDecorators([dec_once(observable), (access, context: DecoratorContext) => {
@@ -152,7 +172,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     /** API Factory for creating R/W entities with either `new` or decorator syntax */
     function basicRWApi<E extends EntityClass<any, any>>(entCls: EntityClassConstructor<E>, autoinit_callback: RWInitCallback<E>) {
         return funcOrNew(
-            (options: EntityClassOptions<E> & { id?: string }) => _basicRWDecorator(entCls, options, autoinit_callback),
+            (options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string }) => _basicRWDecorator(entCls, options, autoinit_callback),
             entCls,
         )
     }
@@ -161,7 +181,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     // ========= Misc Entity Helpers ========= //
 
     /** Create a `button` entity and trigger the decorated method when pressed */
-    const _buttonDecorator = (options: EntityClassOptions<TDButton> & { id?: string }): ClassMethodDecorator => {
+    const _buttonDecorator = (options: EntityClassOptions<TDButton> & EntityRegistrationOptions & { id?: string }): ClassMethodDecorator => {
         return (func, context) => {
             _linkFieldEntityClass(domain_entities.button, options, context, (self, btn: TDButton) => {
                 // Listen to button press
@@ -174,7 +194,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     }
 
     /** Create a `scene` entity and trigger the decorated method when triggered */
-    const _sceneDecorator = (options: EntityClassOptions<TDScene> & { id?: string }): ClassMethodDecorator => {
+    const _sceneDecorator = (options: EntityClassOptions<TDScene> & EntityRegistrationOptions & { id?: string }): ClassMethodDecorator => {
         return (func, context) => {
             _linkFieldEntityClass(domain_entities.scene, options, context, (self, scene: TDScene) => {
                 // Listen to button press
@@ -191,9 +211,12 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
     function _inputDecorator<O extends {} = {}>(domain: string, options: InputOptions<any> & O) {
         return ((access, context) => {
+            const { entity_options, registration_options } = separateRegistrationOptions(options);
+
             const { get_linked } = _linkFieldEntityBase(
-                () => new InputEntity(options.id || String(context.name), { domain, ...options }),
-                context
+                () => new InputEntity(entity_options.id || String(context.name), { domain, ...entity_options }),
+                context,
+                registration_options,
             )
 
             return {
@@ -214,7 +237,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         }
 
         return funcOrNew(
-            (options: O) => _inputDecorator(domain, options),
+            (options: O & EntityRegistrationOptions) => _inputDecorator(domain, options),
             TIEnt as typeof InputEntity<V>,
         )
     }
@@ -222,11 +245,13 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     type Iso8601String = string;
 
     /** Create an `input_button` helper and trigger the decorated method when pressed */
-    const _inputButtonDecorator = (options: ButtonOptions): ClassMethodDecorator => {
+    const _inputButtonDecorator = (options: ButtonOptions & EntityRegistrationOptions): ClassMethodDecorator => {
+        const { entity_options, registration_options } = separateRegistrationOptions(options);
+
         return (func, context) => {
             notePluginAnnotation(context, async (self) => {
-                const ent = new InputButton(options.id || String(context.name), { ...options });
-                await registerEntityFromDecorator(ent);
+                const ent = new InputButton(entity_options.id || String(context.name), { ...entity_options });
+                await registerEntityFromDecorator(ent, registration_options);
 
                 // Listen to button press
                 ent.on_pressed = () => client_call_safe(() => self[context.name]());
@@ -254,7 +279,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
         /** Create a `device_tracker` entity and update it whenever the decorated getter/accessor is updated */
         device_tracker: stateOnlyApi(domain_entities.device_tracker),
-        
+
         /** Create a `image` entity and update it whenever the decorated getter/accessor is updated */
         image: stateOnlyApi(domain_entities.image),
 
