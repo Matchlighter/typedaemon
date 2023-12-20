@@ -1,4 +1,5 @@
 
+import { action } from "mobx";
 import { ha } from "../..";
 import { plgmobx } from "../../mobx";
 import { setAutocleaner } from "./auto_cleaning";
@@ -115,7 +116,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         this.markUnavailable();
     }
 
-    protected async handle_command(payload: any) {
+    handle_command(payload: any) {
         // TODO Map services
         // TODO
     }
@@ -174,9 +175,9 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         await this.reconfigure();
 
         // Listen for Commands
-        this._disposers.append(mqtt.subscribe(this.mqtt_command_topic, (topic, payload) => {
+        this._disposers.append(mqtt.subscribe(this.mqtt_command_topic, action((topic, payload) => {
             this.handle_command(payload);
-        }))
+        })))
 
         // Post availability
         await this.markAvailable();

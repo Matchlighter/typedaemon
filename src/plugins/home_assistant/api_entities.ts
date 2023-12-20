@@ -294,23 +294,24 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
         /** Create a `switch` entity and update it whenever the decorated getter/accessor is updated */
         switch: basicRWApi(domain_entities.switch, (app, entity, set) => {
-            entity.on("turn_on", () => set(true));
-            entity.on("turn_off", () => set(false));
+            entity.handle_command = (v) => {
+                set(v == "ON");
+            }
         }),
 
         /** Create a `select` entity and update it whenever the decorated getter/accessor is updated */
         select: basicRWApi(domain_entities.select, (app, entity, set) => {
-            // TODO
+            entity.handle_command = set;
         }),
 
         /** Create a `number` entity and update it whenever the decorated getter/accessor is updated */
         number: basicRWApi(domain_entities.number, (app, entity, set) => {
-            // TODO
+            entity.handle_command = set;
         }),
 
         /** Create a `text` entity and update it whenever the decorated getter/accessor is updated */
         text: basicRWApi(domain_entities.text, (app, entity, set) => {
-            // TODO
+            entity.handle_command = set;
         }),
 
         // TODO climate, light, cover

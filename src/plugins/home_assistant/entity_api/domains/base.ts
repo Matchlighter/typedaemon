@@ -23,7 +23,7 @@ export class EntityClass<T, S extends Record<string, any[]>, O = {}> extends TDA
 
     }
 
-    protected async handle_command(payload: any) {
+    handle_command(payload: any) {
         // TODO
         console.log(payload)
     }

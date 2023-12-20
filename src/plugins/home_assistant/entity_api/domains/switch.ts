@@ -55,8 +55,8 @@ export class TDSwitch extends EntityClass<boolean, SwitchServices, SwitchOptions
         return state;
     }
 
-    protected async handle_command(payload: any) {
-        // if (payload == "ON") // TODO
-        // if (payload == "OFF") // TODO
+    handle_command(payload: any) {
+        if (payload == "ON") this.state = true;
+        if (payload == "OFF") this.state = false;
     }
 }

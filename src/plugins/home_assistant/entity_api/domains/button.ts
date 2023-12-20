@@ -25,7 +25,7 @@ export class TDButton extends EntityClass<boolean, {}, ButtonOptions> {
         return dd;
     }
 
-    protected async handle_command(payload: any) {
-        // if (payload == "PRESS") // TODO
+    handle_command(payload: any) {
+        if (payload == "PRESS") this.on_pressed?.();
     }
 }

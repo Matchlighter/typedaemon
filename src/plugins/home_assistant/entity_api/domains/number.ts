@@ -43,7 +43,8 @@ export class TDNumber extends EntityClass<number, {}, NumberOptions> {
         return dd;
     }
 
-    protected async handle_command(payload: any) {
-        // TODO
+    handle_command(payload: any) {
+        if (typeof payload == "string") payload = parseFloat(payload);
+        this.state = payload;
     }
 }
