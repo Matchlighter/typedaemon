@@ -62,7 +62,7 @@ export class TDLight extends EntityClass<boolean, {}, LightOptions> {
         return dd;
     }
 
-    protected async handle_command(payload: any) {
+    handle_command(payload: any) {
         // TODO
     }
 }

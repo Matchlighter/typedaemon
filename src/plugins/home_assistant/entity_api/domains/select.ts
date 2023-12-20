@@ -21,7 +21,7 @@ export class TDSelect extends EntityClass<string, {}, SelectOptions> {
         return dd;
     }
 
-    protected async handle_command(payload: any) {
-        // TODO
+    handle_command(payload: any) {
+        this.state = payload;
     }
 }

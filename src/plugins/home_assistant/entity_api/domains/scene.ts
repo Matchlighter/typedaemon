@@ -11,7 +11,7 @@ export class TDScene extends EntityClass<boolean, {}, SceneOptions> {
 
     on_pressed: () => void;
 
-    protected async handle_command(payload: any) {
-        // if (payload == "ON") // TODO
+    handle_command(payload: any) {
+        if (payload == "ON") this.on_pressed?.();
     }
 }

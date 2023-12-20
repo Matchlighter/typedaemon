@@ -37,7 +37,7 @@ export class TDText extends EntityClass<string, {}, TextOptions> {
         return dd;
     }
 
-    protected async handle_command(payload: any) {
-        // TODO
+    handle_command(payload: any) {
+        this.state = payload;
     }
 }
