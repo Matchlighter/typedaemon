@@ -16,23 +16,26 @@ import { Application } from "./application";
  * Mark a property as persistent - it's value will be saved to disk and restored when the app starts
  */
 export const persistent = optional_config_decorator([{}], (options?: Partial<PersistentEntryOptions> & { id?: string }): ClassAccessorDecorator<Application, any> => {
-    return chainedDecorators([dec_once(observable), (access, context) => {
-        const key = options.id || `@persistent-${String(context.name)}`;
-        return {
-            init(value) {
-                const hva = this[HyperWrapper];
-                if (hva.persistedStorage.hasKey(key)) {
-                    value = hva.persistedStorage.getValue(key);
-                }
-                return value;
-            },
-            set(value) {
-                const hva = this[HyperWrapper];
-                access.set.call(this, value);
-                hva.persistedStorage.setValue(key, value, { max_time_to_disk: 3, min_time_to_disk: 1, ...options })
-            },
-        }
-    }])
+    return chainedDecorators([
+        dec_once(observable),
+        dec_once({ loud: true, key: "@persistence.property" }, (access, context) => {
+            const key = options.id || `@persistent-${String(context.name)}`;
+            return {
+                init(value) {
+                    const hva = this[HyperWrapper];
+                    if (hva.persistedStorage.hasKey(key)) {
+                        value = hva.persistedStorage.getValue(key);
+                    }
+                    return value;
+                },
+                set(value) {
+                    const hva = this[HyperWrapper];
+                    access.set.call(this, value);
+                    hva.persistedStorage.setValue(key, value, { max_time_to_disk: 3, min_time_to_disk: 1, ...options })
+                },
+            }
+        })
+    ])
 })
 
 const create_api = (storage: PersistentStorage) => {

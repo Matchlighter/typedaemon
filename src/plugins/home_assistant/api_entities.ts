@@ -8,6 +8,7 @@ import { HomeAssistantPlugin } from ".";
 import { funcOrNew } from "../../common/alternative_calls";
 import { chainedDecorators, dec_once } from "../../common/decorators";
 import { current } from "../../hypervisor/current";
+import { persistent } from "../../runtime/persistence";
 import { Annotable, assert_application_context, client_call_safe, getOrCreateLocalData, notePluginAnnotation } from "../base";
 import { ButtonOptions, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity } from "./entity_api";
 import { trackAutocleanEntity } from "./entity_api/auto_cleaning";
@@ -156,23 +157,28 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
     function _basicRWDecorator<E extends EntityClass<any, any>>(
         ecls: EntityClassConstructor<E>,
-        options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string },
+        _options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string, persist_state?: boolean },
         init_callback: RWInitCallback<E>,
     ) {
-        return chainedDecorators([dec_once(observable), (access, context: DecoratorContext) => {
-            // TODO Allow values to be objects and interpret as state & attrs (probably implement in getState() and getExtraAttributes() overrides)
-            _linkFieldEntityClass(ecls, options, context, (self, ent) => {
-                ent.getState = () => (access.get as Function).call(self);
-                const updateVal = (v) => (access.set as Function).call(self, v);
-                init_callback(self, ent, updateVal);
-            })
-        }]);
+        const { persist_state, ...options } = _options
+        return chainedDecorators([
+            dec_once(observable),
+            persist_state ? persistent : null,
+            dec_once({ loud: true, key: "@ha.entity" }, (access, context: DecoratorContext) => {
+                // TODO Allow values to be objects and interpret as state & attrs (probably implement in getState() and getExtraAttributes() overrides)
+                _linkFieldEntityClass(ecls, options as any, context, (self, ent) => {
+                    ent.getState = () => (access.get as Function).call(self);
+                    const updateVal = (v) => (access.set as Function).call(self, v);
+                    init_callback(self, ent, updateVal);
+                })
+            }),
+        ]);
     }
 
     /** API Factory for creating R/W entities with either `new` or decorator syntax */
     function basicRWApi<E extends EntityClass<any, any>>(entCls: EntityClassConstructor<E>, autoinit_callback: RWInitCallback<E>) {
         return funcOrNew(
-            (options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string }) => _basicRWDecorator(entCls, options, autoinit_callback),
+            (options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string, persist_state?: boolean }) => _basicRWDecorator(entCls, options, autoinit_callback),
             entCls,
         )
     }
