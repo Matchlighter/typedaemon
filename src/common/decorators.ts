@@ -5,13 +5,30 @@ import { Decorator } from "@matchlighter/common_library/decorators/20223fills"
 // @ts-ignore
 Symbol.metadata ??= Symbol("Symbol.metadata");
 
-export function dec_once<T extends Decorator>(dec: T, loud = false): T {
+interface DecOnceOpts {
+    loud?: boolean;
+    key?: any;
+}
+
+export function dec_once<T extends Decorator>(dec: T): T
+export function dec_once<T extends Decorator>(opts: DecOnceOpts, dec: T): T
+export function dec_once<T extends Decorator>(a, b?): T {
+    if (typeof a == "function") {
+        b = a;
+        a = {};
+    }
+
+    let dec: Decorator = b;
+    let opts: DecOnceOpts = { key: dec, loud: false, ...(a ?? {}) }
+
+    const { key, loud } = opts;
+
     return ((access, context: ClassMemberDecoratorContext) => {
-        if (isDecoratedWith(context, dec)) {
-            if (loud) throw new Error(`'${String(context.name)}' is already decorated with '${String(dec)}'`)
+        if (isDecoratedWith(context, key)) {
+            if (loud) throw new Error(`'${String(context.name)}' is already decorated with '${String(key)}'`)
             return
         };
-        markDecoratedWith(context, dec);
+        markDecoratedWith(context, key);
         return dec(access, context as any);
     }) as any;
 }
@@ -20,9 +37,10 @@ function _chainDecorators<T extends Decorator>(access: Parameters<T>[0], context
     const inits = [];
     let current = access;
     for (let dec of decorators) {
+        if (!dec) continue;
         current = {
             ...current,
-            ...dec(current, context as any),
+            ...(dec(current, context as any) ?? {}),
         }
         inits.push(current.init);
         delete current.init;
