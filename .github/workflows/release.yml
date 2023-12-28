@@ -104,7 +104,7 @@ jobs:
               owner: "matchlighter",
               repo: "typedaemon-hassio",
               workflow_id: "bump-version.yml",
-              ref: "main",
+              ref: "master",
               inputs: {
                 version: "${{ github.event.release.tag_name }}",
                 content: ${{ toJSON(github.event.release.body) }}
