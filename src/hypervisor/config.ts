@@ -74,7 +74,7 @@ export const defaultConfig: Configuration = {
         application: "info",
         // applications_file: "{app}.log",
         system: "warn",
-        system_file: "./logs/typedaemon.log",
+        // system_file: "./logs/%DATE%.log",
     },
     plugins: {},
     apps: {},

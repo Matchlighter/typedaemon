@@ -51,14 +51,17 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
     resumableStore: ResumableStore;
     persistedStorage: PersistentStorage;
 
-    protected loggerOptions(): InstanceLogConfig {
+    protected loggerFile() {
         const lopts = this.options.logging;
         let file = lopts?.file;
-
-        file ||= path.join(this.operating_directory, "application.log");
-
+        file ||= path.join(this.operating_directory, "logs/", "%DATE%.log");
         file = path.resolve(this.hypervisor.working_directory, file);
+        return file;
+    }
 
+    protected loggerOptions(): InstanceLogConfig {
+        const lopts = this.options.logging;
+        const file = this.loggerFile();
         return {
             tag: chalk.blue`Application: ${this.id}`,
             manager: { file: file, level: lopts?.system_level },
@@ -155,6 +158,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
         await fs.promises.mkdir(this.operating_directory, { recursive: true });
         await fs.promises.mkdir(this.shared_operating_directory, { recursive: true });
+        await fs.promises.mkdir(path.dirname(this.loggerFile()), { recursive: true });
 
         this.markFileDependency(this.entrypoint);
 

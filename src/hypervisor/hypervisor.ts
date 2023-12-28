@@ -80,15 +80,18 @@ export class Hypervisor {
     }
 
     private updateLogConfiguration(cfg: Configuration['logging']) {
+        let sys_file = cfg.system_file;
+        sys_file ||= path.join(this.operations_directory, "logs", "%DATE%.log");
+
         this._logger = createDomainLogger({
             level: cfg.system,
             domain: chalk.cyan`Hypervisor`,
-            file: path.resolve(this.working_directory, cfg.system_file),
+            file: path.resolve(this.working_directory, sys_file),
         });
         setFallbackLogger(
             createDomainLogger({
                 domain: chalk.yellow("???"),
-                file: path.resolve(this.working_directory, cfg.system_file),
+                file: path.resolve(this.working_directory, sys_file),
             })
         );
     }
@@ -292,7 +295,6 @@ export class Hypervisor {
                     },
                     logging: {
                         file: cfg.logging.applications_file?.replaceAll("{app}", ak),
-                        _thin_app_file: cfg.logging.system_file,
                         level: cfg.logging.application,
                         system_level: cfg.logging.system,
                     }
