@@ -1,6 +1,7 @@
 #!/command/with-contenv sh
 
 # Copy/update binaries
+mkdir -p "$TYPEDAEMON_CONFIG/.typedaemon/bin"
 cp -r -t "$TYPEDAEMON_CONFIG/.typedaemon/bin" "$TYPEDAEMON_MODULE"/skel/bin/*
 
 rm "$TYPEDAEMON_CONFIG/td"
