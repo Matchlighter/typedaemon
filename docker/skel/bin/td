@@ -29,18 +29,20 @@ conn_params="$(find_config_file .typedaemon/connection_params)"
 source "$conn_params"
 
 if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
+  local_bin="$(find_config_path -d .typedaemon/bin)"
+
   config_dir="$(dirname $conn_params)"
   root_dir="$(dirname $config_dir)"
   key_file="$(mktemp)"
   socket="$(find_config_path -S .typedaemon/ssh_sock)"
   proxy_cmd=""
 
-  if [ -x "$(command -v nc)" ]; then
-    proxy_cmd="nc -U $socket"
-  elif [ -x "$(command -v socat)" ]; then
+  if [ -x "$(command -v socat)" ]; then
     proxy_cmd="socat - UNIX-CLIENT:$socket"
+  # elif [ -x "$(command -v nc)" ]; then
+  #   proxy_cmd="nc -U $socket"
   else
-    socat_dist="$(find_config_file "./typedaemon/bin/socat")"
+    socat_dist="$local_bin/socat"
     if [ -x "$socat_dist" ]; then
       proxy_cmd="$socat_dist - UNIX-CLIENT:$socket"
     else
@@ -54,7 +56,9 @@ if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
   cat "$(find_config_file .typedaemon/connection_key)" > "$key_file"
   chmod 700 "$key_file"
 
-  mapped_path="$(realpath --relative-to="$root_dir" "$PWD")"
+  mapped_path="$($local_bin/mappath.py "$root_dir" "$PWD")"
+
+  ssh-keygen -f "${HOME}/.ssh/known_hosts" -R "td" > /dev/null 2> /dev/null
 
   if [ "$1" = "shell" ]; then
     exec "ssh" -t -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "$SHELL" -l'
