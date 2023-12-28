@@ -1,7 +1,7 @@
 #!/command/with-contenv sh
 
-# Copy/update td shim
-cat "$TYPEDAEMON_MODULE/skel/bin/td" > "$TYPEDAEMON_CONFIG/bin/td"
+# Copy/update binaries
+cp -r -t "$TYPEDAEMON_CONFIG/bin" "$TYPEDAEMON_MODULE"/skel/bin/*
 
 # Pass some env vars to shells
 echo "" > /root/.bashrc

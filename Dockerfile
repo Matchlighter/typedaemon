@@ -1,3 +1,13 @@
+# ======= Static Binaries ======= #
+FROM alpine:latest AS static_bin
+
+RUN apk --update add build-base bash automake git curl linux-headers
+
+RUN mkdir /build
+ADD docker/static_bin /build
+
+RUN /build/build_socat.sh
+
 # ======= TD Package Builder ======= #
 FROM node:18 AS builder
 
@@ -102,6 +112,7 @@ RUN mkdir /var/run/sshd
 WORKDIR /opt/typedaemon
 
 COPY --from=builder /opt/typedaemon .
+COPY --from=static_bin /output node_modules/typedaemon/skel/bin
 
 COPY ./docker/td /usr/bin/td
 COPY ./docker/startup.sh ./startup.sh

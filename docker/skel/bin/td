@@ -1,42 +1,38 @@
 #!/bin/bash
 
-findconfig() {
-  if [ -f "$1" ]; then
-    printf '%s\n' "${PWD%/}/$1"
+find_config_path() {
+  if [ $1 "$2" ]; then
+    printf '%s\n' "${PWD%/}/$2"
   elif [ "$PWD" = / ]; then
     false
   else
     # a subshell so that we don't affect the caller's $PWD
-    (cd .. && findconfig "$1")
+    (cd .. && find_config_path $1 "$2")
   fi
 }
 
-findsocket() {
-  if [ -S "$1" ]; then
-    printf '%s\n' "${PWD%/}/$1"
-  elif [ "$PWD" = / ]; then
-    false
-  else
-    # a subshell so that we don't affect the caller's $PWD
-    (cd .. && findsocket "$1")
-  fi
+find_config_file() {
+  find_config_path -f "$1"
 }
 
+# TODO Supply a statically-linked socat in .typedaemon/bin
 function findexec() {
     if [ -x "$(command -v $1)" ]; then
         echo "$(which "$1")"
     else
-        echo "$(findconfig "./typedaemon/bin/$1")"
+        echo "$(find_config_file "./typedaemon/bin/$1")"
     fi
 }
 
-conn_params="$(findconfig .typedaemon/connection_params)"
+conn_params="$(find_config_file .typedaemon/connection_params)"
 
 source "$conn_params"
 
 if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
+  config_dir="$(dirname $conn_params)"
+  root_dir="$(dirname $config_dir)"
   key_file="$(mktemp)"
-  socket="$(findsocket .typedaemon/ssh_sock)"
+  socket="$(find_config_path -S .typedaemon/ssh_sock)"
   proxy_cmd=""
 
   if [ -x "$(command -v nc)" ]; then
@@ -44,22 +40,32 @@ if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
   elif [ -x "$(command -v socat)" ]; then
     proxy_cmd="socat - UNIX-CLIENT:$socket"
   else
-    echo "socat or netcat must be installed"
-    exit 1
+    socat_dist="$(find_config_file "./typedaemon/bin/socat")"
+    if [ -x "$socat_dist" ]; then
+      proxy_cmd="$socat_dist - UNIX-CLIENT:$socket"
+    else
+      echo "socat or netcat must be installed"
+      exit 1
+    fi
   fi
 
   # SSH has a lot of bloat for this use case. I wanted to find something simpler, but nothing I could find "just worked" as well at runtime
 
-  cat "$(findconfig .typedaemon/connection_key)" > "$key_file"
+  cat "$(find_config_file .typedaemon/connection_key)" > "$key_file"
   chmod 700 "$key_file"
 
+  mapped_path="$(realpath --relative-to="$root_dir" "$PWD")"
+
   if [ "$1" = "shell" ]; then
-    exec "ssh" -t -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td 'cd '$(pwd)'; exec "$SHELL" -l'
+    exec "ssh" -t -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "$SHELL" -l'
+  elif [ "$1" = "run" ]; then
+    >&2 echo "TypeDaemon is configured to run in Docker and cannot be started with 'td run'"
+    exit 1
   elif [ "$1" = "exec" ]; then
     shift
-    exec "ssh" -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td 'cd '$(pwd)'; exec' "$@"
+    exec "ssh" -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec' "$@"
   else
-    exec "ssh" -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td 'cd '$(pwd)'; exec "td"' "$@"
+    exec "ssh" -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "td"' "$@"
   fi
 elif [ "$TD_CONNECTION_MODE" = "DOCKER" ]; then
   exec docker run --rm -it -v $PWD:/config typedaemon td "$@"
