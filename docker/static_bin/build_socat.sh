@@ -51,7 +51,7 @@ function build_openssl() {
     cd openssl-${OPENSSL_VERSION}
 
     # Configure
-    CC='/usr/bin/gcc -static' ./Configure no-shared no-async linux-x86_64
+    CC='/usr/bin/gcc -static' ./Configure no-shared no-async linux-$(uname -m)
 
     # Build
     make -j4
@@ -81,7 +81,7 @@ function build_socat() {
 function doit() {
     build_ncurses
     build_readline
-    build_openssl
+    # build_openssl
     build_socat
 
     mkdir -p /output/
