@@ -8,36 +8,20 @@ on:
     types: [published]
   # schedule:
   #   - cron: "0 2 * * *"
+  push:
+    branches:
+      - master
+    #   - 'releases/**'
+    # tags:
+    #   - v*
+
+# Release -> build and push beta/stable
+# Push to master -> build and push 'edge'
 
 permissions:
   contents: read
 
 jobs:
-  init:
-    name: Initialize build
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Get tag
-        id: tag
-        # yamllint disable rule:line-length
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" = "release" ]]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-          else
-            TAG=$(cat package.json | sed -n -E "s/\s*\"version\":\s*\"(.+)\",$/\1/p")
-            today="$(date --utc '+%Y%m%d')"
-            TAG="${TAG}-${today}"
-            BRANCH=${GITHUB_REF#refs/heads/}
-            if [[ "$BRANCH" != "dev" ]]; then
-              TAG="${TAG}-${BRANCH}"
-            fi
-          fi
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-        # yamllint enable rule:line-length
-
   deploy-docker:
     name: Build and publish Typedaemon # ${{ matrix.image.title}}
     if: github.repository == 'matchlighter/typedaemon'
@@ -46,7 +30,6 @@ jobs:
       packages: write
     runs-on: ubuntu-latest
     # continue-on-error: ${{ matrix.image.title == 'lint' }}
-    needs: [init]
     strategy:
       fail-fast: false
       # matrix:
@@ -87,8 +70,7 @@ jobs:
       - name: Generate short tags
         id: tags
         run: |
-          script/generate_tags.py \
-            --tag "${{ needs.init.outputs.tag }}"
+          script/generate_tags.py
         # --suffix "${{ matrix.image.suffix }}"
 
       - name: Build and push
@@ -106,25 +88,25 @@ jobs:
           tags: ${{ steps.tags.outputs.tags }}
             # BASEIMGTYPE=${{ matrix.image.baseimg }}
           build-args: |
-            BUILD_VERSION=${{ needs.init.outputs.tag }}
+            BUILD_VERSION=${{ steps.tags.outputs.version }}
 
-  # deploy-ha-addon-repo:
-  #   if: github.repository == 'matchlighter/typedaemon' && github.event_name == 'release'
-  #   runs-on: ubuntu-latest
-  #   needs: [deploy-docker]
-  #   steps:
-  #     - name: Trigger Workflow
-  #       uses: actions/github-script@v6
-  #       with:
-  #         github-token: ${{ secrets.DEPLOY_HA_ADDON_REPO_TOKEN }}
-  #         script: |
-  #           github.rest.actions.createWorkflowDispatch({
-  #             owner: "matchlighter",
-  #             repo: "typedaemon-hassio",
-  #             workflow_id: "bump-version.yml",
-  #             ref: "main",
-  #             inputs: {
-  #               version: "${{ github.event.release.tag_name }}",
-  #               content: ${{ toJSON(github.event.release.body) }}
-  #             }
-  #           })
+  deploy-ha-addon-repo:
+    if: github.repository == 'matchlighter/typedaemon' && github.event_name == 'release'
+    runs-on: ubuntu-latest
+    needs: [deploy-docker]
+    steps:
+      - name: Trigger Workflow
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.DEPLOY_HA_ADDON_REPO_TOKEN }}
+          script: |
+            github.rest.actions.createWorkflowDispatch({
+              owner: "matchlighter",
+              repo: "typedaemon-hassio",
+              workflow_id: "bump-version.yml",
+              ref: "main",
+              inputs: {
+                version: "${{ github.event.release.tag_name }}",
+                content: ${{ toJSON(github.event.release.body) }}
+              }
+            })

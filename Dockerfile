@@ -1,7 +1,7 @@
 # ======= Static Binaries ======= #
 FROM alpine:latest AS static_bin
 
-RUN apk --update add build-base bash automake git curl linux-headers
+RUN apk --update add build-base bash automake git curl linux-headers openssl-dev
 
 RUN mkdir /build
 ADD docker/static_bin /build

@@ -2,6 +2,7 @@
 import re
 import os
 import argparse
+import datetime
 import json
 
 CHANNEL_DEV = "dev"
@@ -9,12 +10,6 @@ CHANNEL_BETA = "beta"
 CHANNEL_RELEASE = "release"
 
 parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--tag",
-    type=str,
-    required=True,
-    help="The main docker tag to push to. If a version number also adds latest and/or beta tag",
-)
 parser.add_argument(
     "--suffix",
     type=str,
@@ -26,21 +21,35 @@ parser.add_argument(
 def main():
     args = parser.parse_args()
 
-    # detect channel from tag
-    match = re.match(r"^(\d+\.\d+)(?:\.\d+)?(b\d+)?$", args.tag)
+    channel = CHANNEL_DEV
+    version = ""
     major_minor_version = None
-    if match is None:
-        channel = CHANNEL_DEV
-    elif match.group(2) is None:
-        major_minor_version = match.group(1)
-        channel = CHANNEL_RELEASE
-    else:
-        channel = CHANNEL_BETA
+    tags_to_push = []
+    if os.environ.get("GITHUB_EVENT_NAME", None) == "release":
+        version = os.environ.get("GITHUB_REF").replace("refs/tags/", "")
+        tags_to_push.append(version)
 
-    tags_to_push = [args.tag]
-    if channel == CHANNEL_DEV:
-        tags_to_push.append("dev")
-    elif channel == CHANNEL_BETA:
+        # detect channel from tag
+        match = re.match(r"^(\d+\.\d+)(?:\.\d+)?(b\d+)?$", version)
+        major_minor_version = None
+        if match is None:
+            channel = CHANNEL_DEV
+        elif match.group(2) is None:
+            major_minor_version = match.group(1)
+            channel = CHANNEL_RELEASE
+        else:
+            channel = CHANNEL_BETA
+    else:
+        branch = os.environ.get("GITHUB_REF", "arbitrary").replace("refs/heads/", "")
+        sha = os.environ.get("GITHUB_SHA", "")
+        datecode = datetime.datetime.now().isoformat()
+        version = f"{branch}-{sha}-{datecode}"
+        if branch == "master":
+            tags_to_push.append("edge")
+        else:
+            tags_to_push.append(f"branch-{branch}")
+
+    if channel == CHANNEL_BETA:
         tags_to_push.append("beta")
     elif channel == CHANNEL_RELEASE:
         # Additionally push to beta
@@ -54,6 +63,7 @@ def main():
     suffix = f"-{args.suffix}" if args.suffix else ""
 
     with open(os.environ["GITHUB_OUTPUT"], "w") as f:
+        print(f"version={version}", file=f)
         print(f"channel={channel}", file=f)
         print(f"image=matchlighter/typedaemon{suffix}", file=f)
         full_tags = []
