@@ -1,7 +1,11 @@
 #!/command/with-contenv sh
 
 # Copy/update binaries
-cp -r -t "$TYPEDAEMON_CONFIG/bin" "$TYPEDAEMON_MODULE"/skel/bin/*
+cp -r -t "$TYPEDAEMON_CONFIG/.typedaemon/bin" "$TYPEDAEMON_MODULE"/skel/bin/*
+
+rm "$TYPEDAEMON_CONFIG/td"
+ln -s "./.typedaemon/bin/td" "$TYPEDAEMON_CONFIG/td"
+chmod +x "$TYPEDAEMON_CONFIG/td"
 
 # Pass some env vars to shells
 echo "" > /root/.bashrc
