@@ -1,15 +1,17 @@
 
+import * as path from "path";
 import { TupleToUnion } from "type-fest";
+import { inspect } from 'util';
 import chalk = require("chalk");
 import winston = require("winston");
 import moment = require("moment-timezone");
-import { inspect } from 'util'
 
-import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weakmap"
+require('winston-daily-rotate-file');
 
-import { current } from "./current";
-import { patch, pojso } from "../common/util";
+
 import { mapStackTrace } from "../app_transformer/source_maps";
+import { pojso } from "../common/util";
+import { current } from "./current";
 
 export const CONSOLE_METHODS = ['debug', 'info', 'warn', 'error', 'dir'] as const;
 export type ConsoleMethod = TupleToUnion<typeof CONSOLE_METHODS>
@@ -110,24 +112,6 @@ export interface ExtendedLoger extends winston.Logger {
     logMessage: (level: LogLevel, message: any[], meta?: any) => void;
 }
 
-const FILE_TRANSPORTS = new InvertedWeakMap<string, winston.transports.FileTransportInstance>();
-function getFileTransport(file: string) {
-    if (!FILE_TRANSPORTS.has(file)) {
-        FILE_TRANSPORTS.set(file, new winston.transports.File({
-            filename: file,
-            maxFiles: 1,
-            maxsize: 1024 * 256,
-            format: fmt.combine(
-                timed_formatter,
-                fmt.uncolorize({}),
-            ),
-        }))
-    }
-    return FILE_TRANSPORTS.get(file)
-}
-
-let c = 0
-
 export function createDomainLogger(opts: LoggerOptions) {
     const transports: winston.transport[] = [
         new winston.transports.Console({
@@ -136,20 +120,23 @@ export function createDomainLogger(opts: LoggerOptions) {
     ]
 
     if (opts.file) {
-        // transports.push(getFileTransport(opts.file))
+        let filename = opts.file;
+        if (!filename.includes("%DATE%")) {
+            const hasExt = filename.match(/\.\w+$/);
+            if (!filename.endsWith('/')) filename += ".";
+            filename += "%DATE%"
+            if (!hasExt) filename += ".log";
+        }
+
         transports.push(...[
-            // new winston.transports.File({
-            //     filename: 'error.log',
-            //     level: 'error',
-            //     format: fmt.combine(
-            //         timed_formatter,
-            //         fmt.uncolorize({}),
-            //     ),
-            // }),
-            new winston.transports.File({
-                filename: opts.file,
-                maxFiles: 1,
-                maxsize: 1024 * 256,
+            // @ts-ignore
+            new winston.transports.DailyRotateFile({
+                filename,
+                auditFile: path.join(path.dirname(filename), ".log_audit.json"),
+                datePattern: 'YYYY-MM-DD',
+                // zippedArchive: true,
+                maxSize: '1m',
+                maxFiles: '14',
                 format: fmt.combine(
                     timed_formatter,
                     fmt.uncolorize({}),

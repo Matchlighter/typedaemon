@@ -23,7 +23,6 @@ export interface AppConfiguration {
 
     logging?: {
         file?: string;
-        _thin_app_file?: string;
         level?: LogLevel;
         system_level?: LogLevel;
     }
