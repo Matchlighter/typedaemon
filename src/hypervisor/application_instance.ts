@@ -82,13 +82,13 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             return "sandbox";
         }
 
-        // In fact, any files in the appications directory should run in the Sandbox
+        // In fact, any files in the applications directory should run in the Sandbox
         if (file.includes(path.resolve(this.hypervisor.working_directory, 'applications'))) {
             return "sandbox";
         }
 
         // Any Lite-App Environments should run in the Sandbox
-        if (file.includes(path.resolve(this.hypervisor.operations_directory, "app_environments"))) {
+        if (file.includes(path.resolve(this.shared_operating_directory))) {
             return "sandbox";
         }
 
@@ -268,6 +268,8 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         });
 
         this.transitionState('started');
+
+        await this.hypervisor.crossCallStore.handleAppStart(this);
 
         await this.fireLifecycleHooks("started");
     }
