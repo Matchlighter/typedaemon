@@ -21,13 +21,15 @@ interface CrossAppCall {
     status: "pending" | "started" | "returning";
 }
 
-export class UnknownCrossCallError extends Error {}
-export class CrossCallError extends Error {}
+export class UnknownCrossCallError extends Error { }
+export class CrossCallError extends Error { }
 
 export class CrossCallStore {
     constructor(readonly hypervisor: Hypervisor) {
         this.storage = new PersistentStorage(path.join(hypervisor.operations_directory, ".cross_calls.jkv"))
     }
+
+    private appTouchedCalls = new WeakMap<ApplicationInstance, WeakSet<CrossAppCall>>();
 
     private client_promises: Record<string, CrossCallPromise> = {};
     private readonly storage: PersistentStorage;
@@ -60,9 +62,34 @@ export class CrossCallStore {
     }
 
     async handleAppStart(app: ApplicationInstance) {
-        // TODO Start "pending" items where app is dest
-        // TODO Clean dead "started" where app is dest
-        // TODO Clean dead "returning" where app is source
+        const appuuid = app.uuid;
+        const touches = this.appTouches(app);
+
+        for (let uuid of this.storage.keys) {
+            const call = this.storage.getValue(uuid) as CrossAppCall;
+            if (!call) continue;
+            if (call.target_app == appuuid) {
+                if (call.status == "pending") {
+                    // Start "pending" items where app is dest
+                    this.hypervisor.logMessage("debug", `Pending CrossCall observed. Starting: ${JSON.stringify(call)}`);
+                    this.dispatchCallInDest(call, app);
+                } else if (call.status == "started") {
+                    // Clean dead (not awaiting anything) "started" where app is dest
+                    if (!touches.has(call)) {
+                        this.hypervisor.logMessage("debug", `Dropping dead CrossCall: ${JSON.stringify(call)}`);
+                        this.writeCall(call.uuid, undefined);
+                    }
+                }
+            } else if (call.source_app == appuuid) {
+                if (call.status == "returning") {
+                    // Clean dead (not awaited by anything) "returning" where app is source
+                    if (!touches.has(call)) {
+                        this.hypervisor.logMessage("debug", `Dropping dead CrossCall: ${JSON.stringify(call)}`);
+                        this.writeCall(call.uuid, undefined);
+                    }
+                }
+            }
+        }
     }
 
     _awaiterCompleted(call_uuid: string, status: "accept" | "reject", value) {
@@ -111,8 +138,21 @@ export class CrossCallStore {
         }
     }
 
+    private appTouches(by: ApplicationInstance) {
+        if (!this.appTouchedCalls.has(by)) {
+            this.appTouchedCalls.set(by, new WeakSet());
+        }
+        return this.appTouchedCalls.get(by);
+    }
+
+    _markCallTouched(by: ApplicationInstance, call_uuid: string) {
+        const call = this.storage.getValue<CrossAppCall>(call_uuid);
+        if (!call) return;
+        this.appTouches(by).add(call);
+    }
+
     private dispatchCallInDest(call: CrossAppCall, dest: ApplicationInstance) {
-        if (call.status == "pending") return;
+        if (call.status != "pending") return;
 
         call = { ...call };
         call.status = 'started';
@@ -120,14 +160,18 @@ export class CrossCallStore {
 
         dest.invoke(() => {
             try {
-                const iret = (dest.instance[call.method] as Function).call(dest.instance, ...call.parameters);
+                const mthd = dest.instance[call.method] as Function;
+                if (!mthd) {
+                    throw `No method '${call.method}'`;
+                }
+                const iret = mthd.call(dest.instance, ...call.parameters);
                 if (iret.then) {
                     new CrossCallWrapper(iret, call.uuid);
                 } else {
-                    this._awaiterCompleted(call.uuid, iret, null);
+                    this._awaiterCompleted(call.uuid, "accept", iret);
                 }
             } catch (ex) {
-                this._awaiterCompleted(call.uuid, null, ex);
+                this._awaiterCompleted(call.uuid, "reject", ex);
             }
         })
     }
@@ -171,6 +215,8 @@ class CrossCallWrapper extends ResumablePromise<any> {
             await_for.then(this._resolve, this._reject);
         }
 
+        current.hypervisor.crossCallStore._markCallTouched(current.application, call_uuid);
+
         this.then(
             (result) => current.hypervisor.crossCallStore._awaiterCompleted(this.call_uuid, "accept", result),
             (err) => current.hypervisor.crossCallStore._awaiterCompleted(this.call_uuid, "reject", err),
@@ -207,6 +253,9 @@ class CrossCallWrapper extends ResumablePromise<any> {
 class CrossCallPromise extends ResumablePromise<any> {
     constructor(readonly call_uuid: string) {
         super();
+
+        current.hypervisor.crossCallStore._markCallTouched(current.application, call_uuid);
+
         this.do_unsuspend();
     }
 

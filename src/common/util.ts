@@ -65,7 +65,8 @@ export function pojso(value: any) {
 
 export function deep_pojso(value: any) {
     const proto = Object.getPrototypeOf(value)
-    if (proto != null) return false;
+    if (typeof value == "function") return false;
+    if ((typeof value == "object" && !Array.isArray(value)) && proto != null) return false;
 
     for (let [k, v] of Object.entries(value)) {
         if (typeof v == 'object' && !deep_pojso(v)) return false;
