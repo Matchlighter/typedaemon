@@ -56,11 +56,10 @@ export class EntityStore {
     get mqtt_system_topic() { return this.mqttPlugin.td_system_topic }
     get mqtt_application_topic() { return this.mqttPlugin.getInstanceTopic(this.application) }
 
-    cleanup() {
+    async cleanup() {
         // May not really be needed - marking the entities as `unavailable` will already be handled by the app status topic. All (current) event subscriptions are app-scoped
         const all_ents = [...this.tracked_entities];
-        for (let ent of all_ents) {
-            ent.unlink();
-        }
+        const unlink_proms = all_ents.map(ent => ent.unlink());
+        await Promise.all(unlink_proms);
     }
 }
