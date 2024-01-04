@@ -1,7 +1,11 @@
-import { AbstractConstructor, Constructor } from "type-fest";
+import { AbstractConstructor } from "type-fest";
+
 import { TDEntity } from ".";
 import { HomeAssistantPlugin } from "..";
+import { DestroyerStore } from "../../../hypervisor/destroyer";
+import { logMessage } from "../../../hypervisor/logging";
 import { HyperWrapper } from "../../../hypervisor/managed_apps";
+import { homeAssistantApi } from "../api";
 import { EntityStore } from "./store";
 
 export interface AutoCleanEntry {
@@ -93,3 +97,10 @@ export const autocleanEntities = async (store: EntityStore) => {
     }
     application.persistedStorage.setValue(autocleanKey, keepEntriesByCUID, { min_time_to_disk: 0, max_time_to_disk: 10 });
 }
+
+export const HAEntititesDestroyer = DestroyerStore.defineDestroyerClass("HAEntities", async (app, { plugin_id }: { plugin_id: string }) => {
+    logMessage("info", "Cleaning HA Entities");
+    const api = homeAssistantApi({ pluginId: plugin_id });
+    const store = api._getEntityStore();
+    await autocleanEntities(store);
+})
