@@ -9,6 +9,6 @@ ln -s "./.typedaemon/bin/td" "$TYPEDAEMON_CONFIG/td"
 chmod +x "$TYPEDAEMON_CONFIG/td"
 
 # Pass some env vars to shells
-echo "" > /root/.bashrc
+echo "" >> /root/.bashrc
 echo "export TYPEDAEMON_MODULE=$TYPEDAEMON_MODULE" >> /root/.bashrc
 echo "export TYPEDAEMON_CONFIG=$TYPEDAEMON_CONFIG" >> /root/.bashrc

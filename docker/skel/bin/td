@@ -60,16 +60,22 @@ if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
 
   ssh-keygen -f "${HOME}/.ssh/known_hosts" -R "td" > /dev/null 2> /dev/null
 
+  if [ -t 0 ] ; then
+    dasht="-t"
+  fi
+
+  # ssh_base="ssh $dasht -q -o StrictHostKeyChecking=no -i $key_file -o ProxyCommand=\"$proxy_cmd\" root@td "'cd $TYPEDAEMON_CONFIG/'$mapped_path';'
+
   if [ "$1" = "shell" ]; then
-    exec "ssh" -t -q -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "$SHELL" -l'
+    exec "ssh" $dasht -q -o StrictHostKeyChecking=no -i $key_file -o ProxyCommand="$proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "$SHELL" -l'
   elif [ "$1" = "run" ]; then
     >&2 echo "TypeDaemon is configured to run in Docker and cannot be started with 'td run'"
     exit 1
   elif [ "$1" = "exec" ]; then
     shift
-    exec "ssh" -q -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec' "$@"
+    exec "ssh" $dasht -q -o StrictHostKeyChecking=no -i $key_file -o ProxyCommand="$proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec' "$@"
   else
-    exec "ssh" -q -o StrictHostKeyChecking=no -i $key_file -o "ProxyCommand $proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "td"' "$@"
+    exec "ssh" $dasht -q -o StrictHostKeyChecking=no -i $key_file -o ProxyCommand="$proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "td"' "$@"
   fi
 elif [ "$TD_CONNECTION_MODE" = "DOCKER" ]; then
   exec docker run --rm -it -v $PWD:/config typedaemon td "$@"
