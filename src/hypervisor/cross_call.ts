@@ -38,6 +38,7 @@ export class CrossCallStore {
         await this.storage.load();
     }
 
+    // TODO Add pending timeout support
     makeCrossAppCall(source: ApplicationInstance, dest: string, method: string, parameters: any[] = []) {
         const destApp = this.hypervisor.getApplication(dest);
 
@@ -71,12 +72,12 @@ export class CrossCallStore {
             if (call.target_app == appuuid) {
                 if (call.status == "pending") {
                     // Start "pending" items where app is dest
-                    this.hypervisor.logMessage("debug", `Pending CrossCall observed. Starting: ${JSON.stringify(call)}`);
+                    app.logMessage("debug", `Pending CrossCall observed. Starting: ${JSON.stringify(call)}`);
                     this.dispatchCallInDest(call, app);
                 } else if (call.status == "started") {
                     // Clean dead (not awaiting anything) "started" where app is dest
                     if (!touches.has(call)) {
-                        this.hypervisor.logMessage("debug", `Dropping dead CrossCall: ${JSON.stringify(call)}`);
+                        app.logMessage("debug", `Dropping dead (not awaiting) CrossCall: ${JSON.stringify(call)}`);
                         this.writeCall(call.uuid, undefined);
                     }
                 }
@@ -84,7 +85,7 @@ export class CrossCallStore {
                 if (call.status == "returning") {
                     // Clean dead (not awaited by anything) "returning" where app is source
                     if (!touches.has(call)) {
-                        this.hypervisor.logMessage("debug", `Dropping dead CrossCall: ${JSON.stringify(call)}`);
+                        app.logMessage("debug", `Dropping dead (not awaited) CrossCall: ${JSON.stringify(call)}`);
                         this.writeCall(call.uuid, undefined);
                     }
                 }

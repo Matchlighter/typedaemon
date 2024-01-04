@@ -55,6 +55,8 @@ export class PersistentStorage {
 
     }
 
+    protected hasBeenModified = false;
+
     private file_lock = new AsyncLock({})
 
     private kvstore: Record<string, any> = {};
@@ -71,8 +73,6 @@ export class PersistentStorage {
     }
 
     setValue<T>(key: string, value: T, options: PersistentEntryOptions) {
-        if (this._disposed) throw new Error("Attempt to set a PersistentStorage key after disposal!");
-
         // Short-circuit if the previous SET is being reverted
         const kactions = this.pending_actions[key];
         if (kactions && kactions.length == 1 && kactions[0].action?.action == "SET" && kactions[0].action.original_value === value) {
@@ -249,6 +249,8 @@ export class PersistentStorage {
             await this.filehandle?.close();
             this.filehandle = null;
             await rename(tmp_file, this.file_path);
+
+            this.hasBeenModified = false;
         });
     }
 
@@ -284,6 +286,9 @@ export class PersistentStorage {
     }
 
     private pushAction(key: string, options: PersistentEntryOptions, action: AnyAction) {
+        if (this._disposed) throw new Error("Attempt to modify PersistentStorage after disposal!");
+        this.hasBeenModified = true;
+
         const dtn = Date.now();
         const qaction: QueuedAction = {
             action,
@@ -309,11 +314,15 @@ export class PersistentStorage {
     private _disposed = false;
     async dispose() {
         this._disposed = true;
-        try {
-            await this.fullWriteToDisk();
-        } catch (ex) {
-            await this.flushToDisk(true);
-            throw ex;
+
+        // No need to write if absolutely no changes have occurred
+        if (this.hasBeenModified) {
+            try {
+                await this.fullWriteToDisk();
+            } catch (ex) {
+                await this.flushToDisk(true);
+                throw ex;
+            }
         }
         this.cancelWriteTimer();
         await this.filehandle?.close();
