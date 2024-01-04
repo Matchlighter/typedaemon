@@ -1,26 +1,26 @@
 
-import { NodeVM } from 'vm2';
+import { exists } from 'fs-extra';
+import { AsyncReturnType } from 'type-fest';
 import path = require('path');
 import chalk = require('chalk');
 import deepEqual = require('deep-eql');
 import fs = require('fs');
 import md5 = require('md5');
 import extract_comments = require('extract-comments');
-import { AsyncReturnType } from 'type-fest';
 
-import { debounce } from "@matchlighter/common_library/limit"
+import { debounce } from "@matchlighter/common_library/limit";
 
-import { AppConfiguration } from "./config_app";
-import { ResumableStore } from '../runtime/resumable';
-import { Application } from '../runtime/application';
-import { PersistentStorage } from './persistent_storage';
-import { createApplicationVM } from './vm';
 import { TYPEDAEMON_PATH, fileExists, trim, watchFile } from '../common/util';
+import { flushPluginAnnotations } from '../plugins/base';
+import { Application } from '../runtime/application';
+import { ResumableStore, resumable } from '../runtime/resumable';
+import { AppConfiguration } from "./config_app";
+import { DestroyerStore } from './destroyer';
 import { BaseInstance, InstanceLogConfig } from './managed_apps';
 import { RequireRestart, configChangeHandler } from './managed_config_events';
-import { flushPluginAnnotations } from '../plugins/base';
-import { resumable } from '../runtime/resumable';
 import { installDependencies } from './packages';
+import { PersistentStorage } from './persistent_storage';
+import { createApplicationVM } from './vm';
 
 export interface ApplicationMetadata {
     applicationClass?: typeof Application;
@@ -50,6 +50,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
     resumableStore: ResumableStore;
     persistedStorage: PersistentStorage;
+    destroyerStore: DestroyerStore;
 
     protected loggerFile() {
         const lopts = this.options.logging;
@@ -164,6 +165,9 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
         const moduleSource = (await fs.promises.readFile(this.entrypoint)).toString();
 
+        this.destroyerStore = new DestroyerStore(this);
+        this.cleanups.append(() => this.destroyerStore.dispose());
+
         this.logMessage("debug", `Parsing package dependencies`);
         const { dependencies } = parseAnnotations(moduleSource);
 
@@ -272,6 +276,19 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         await this.hypervisor.crossCallStore.handleAppStart(this);
 
         await this.fireLifecycleHooks("started");
+    }
+
+    /** Cleanup all traces of the application */
+    async destroy_all() {
+        // TODO We may want to redirect all logs from this method to the Hypervisor so that the deletion logs don't immediately get deleted
+        if (!this.destroyerStore) {
+            if (!await exists(this.operating_directory)) return;
+            this.destroyerStore = new DestroyerStore(this);
+            await this.destroyerStore.load();
+        }
+        await this.invoke(async () => {
+            await this.destroyerStore.destroyApplication();
+        })
     }
 
     private generateOpPackageJson({ dependencies }) {

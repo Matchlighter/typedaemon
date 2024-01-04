@@ -2,8 +2,9 @@ import { TDEntity } from ".";
 import type { HomeAssistantPlugin } from "..";
 import { ApplicationInstance } from "../../../hypervisor/application_instance";
 import { logMessage } from "../../../hypervisor/logging";
+import { HyperWrapper } from "../../../hypervisor/managed_apps";
 import { MqttPlugin } from "../../mqtt";
-import { autocleanEntities } from "./auto_cleaning";
+import { HAEntititesDestroyer, autocleanEntities } from "./auto_cleaning";
 
 export class EntityStore {
     constructor(readonly plugin: HomeAssistantPlugin, readonly application: ApplicationInstance) {
@@ -17,6 +18,10 @@ export class EntityStore {
                 await autocleanEntities(this);
             })
         }
+
+        application.destroyerStore.requireDestroyer(HAEntititesDestroyer, {
+            plugin_id: plugin[HyperWrapper].id,
+        });
     }
 
     tracked_entities = new Set<TDEntity<any>>();

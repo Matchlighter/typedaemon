@@ -26,7 +26,7 @@ type WebhookPayload<T = any> = {
 export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlugin }) {
     const _plugin = pluginGetterFactory<HomeAssistantPlugin>(options.pluginId, homeAssistantApi.defaultPluginId);
 
-    const { registerEntity, entities, input } = _entitySubApi(_plugin)
+    const { registerEntity, entities, input, _entity_store } = _entitySubApi(_plugin)
 
     // ========= Service Helpers ========= //
 
@@ -222,6 +222,8 @@ export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlug
          * You MUST handle disposal of any subscriptions or objects returned.
          */
         get _connection() { return _plugin()._ha_api },
+
+        _getEntityStore: _entity_store,
 
         get states() { return _plugin().state },
 
