@@ -1,9 +1,9 @@
 
-import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weakmap"
+import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weakmap";
 
-import { ResumablePromise, SerializeContext, SerializedResumable, Suspend } from "./resumable_promise";
-import { deep_pojso } from "../../common/util";
 import { AsyncLocalStorage } from "async_hooks";
+import { deep_pojso } from "../../common/util";
+import { ResumablePromise, SerializeContext } from "./resumable_promise";
 
 const Op = Object.prototype;
 const hasOwn = Op.hasOwnProperty;
@@ -129,8 +129,9 @@ class Executor<T> extends ResumablePromise<T> {
     readonly tryEntries: any[];
 
     serialize(context: SerializeContext) {
+        context.set_type("@resumable");
+        context.side_effects(true);
         return {
-            type: "@resumable",
             pending_promise: context.ref(this.pending_promise),
             scope: {
                 owner: this.scope.owner[RESUMABLE_CONTEXT_ID],
@@ -222,14 +223,14 @@ class Executor<T> extends ResumablePromise<T> {
                 // the .value of the Promise<{value,done}> result for the
                 // current iteration.
                 result.value = unwrapped;
-                this._resolve(result.value);
+                this.resolve(result.value);
             }, (error) => {
                 // If a rejected Promise was yielded, throw the rejection back
                 // into the async generator function so it can be handled there.
                 return this.invoke("throw", error);
             });
         } catch (ex) {
-            this._reject(ex);
+            this.reject(ex);
         }
     }
 
@@ -549,8 +550,8 @@ export class ResumableCallbackPromise extends ResumablePromise<any> {
     }
 
     serialize(ctx: SerializeContext) {
+        ctx.set_type('call_by_name');
         return {
-            type: 'call_by_name',
             method: this.method_name,
             lookup_context: this.lookup_context,
             await_for: ctx.ref(this.await_for),

@@ -1,7 +1,7 @@
 import path = require("path");
 import { randomUUID } from "crypto";
 
-import { deep_pojso } from "../common/util";
+import { serializable } from "../common/util";
 import { ResumablePromise } from "../runtime/resumable";
 import { SerializeContext } from "../runtime/resumable/resumable_promise";
 import { ApplicationInstance } from "./application_instance";
@@ -103,7 +103,7 @@ export class CrossCallStore {
         call = { ...call }
         if (status == "accept") {
             call.result = "accept";
-            if (!deep_pojso(value)) {
+            if (!serializable(value, [])) {
                 logMessage("error", `CrossAppCall to ${call.target_app}.${call.method}() return non-JSON-serialiable`, value);
                 call.result = "reject_error";
                 value = "Cross-App Call returns must be JSON serializable";
@@ -211,9 +211,9 @@ class CrossCallWrapper extends ResumablePromise<any> {
         super();
 
         if (await_for instanceof ResumablePromise) {
-            await_for.then(this._resolve, this._reject, this);
+            await_for.then(this.resolve.bind(this), this.reject.bind(this), this);
         } else {
-            await_for.then(this._resolve, this._reject);
+            await_for.then(this.resolve.bind(this), this.reject.bind(this));
         }
 
         current.hypervisor.crossCallStore._markCallTouched(current.application, call_uuid);
@@ -239,9 +239,9 @@ class CrossCallWrapper extends ResumablePromise<any> {
     }
 
     serialize(ctx: SerializeContext) {
+        ctx.set_type('cross-call-awaiter');
+        ctx.side_effects(true);
         return {
-            type: 'cross-call-awaiter',
-            sideeffect_free: false,
             call_uuid: this.call_uuid,
             await_for: ctx.ref(this.await_for),
         }
@@ -260,9 +260,6 @@ class CrossCallPromise extends ResumablePromise<any> {
         this.do_unsuspend();
     }
 
-    resolve = this._resolve;
-    reject = this._reject;
-
     static {
         ResumablePromise.defineClass<CrossCallPromise>({
             type: 'cross-call-awaitee',
@@ -270,6 +267,13 @@ class CrossCallPromise extends ResumablePromise<any> {
                 return new this(data.call_uuid);
             },
         })
+    }
+
+    resolve(arg: any): void {
+        return super.resolve(arg)
+    }
+    reject(arg: any): void {
+        return super.resolve(arg)
     }
 
     protected do_unsuspend() {
@@ -280,10 +284,10 @@ class CrossCallPromise extends ResumablePromise<any> {
         current.hypervisor.crossCallStore._setClientPromise(this.call_uuid, null);
     }
 
-    serialize() {
+    serialize(ctx: SerializeContext) {
+        ctx.set_type('cross-call-awaitee');
+        ctx.side_effects(false);
         return {
-            type: 'cross-call-awaitee',
-            sideeffect_free: false,
             call_uuid: this.call_uuid,
         }
     }

@@ -75,6 +75,45 @@ export function deep_pojso(value: any) {
     return true;
 }
 
+export function serializable(value: any, serializer_keys: (string | symbol | ((v: any) => boolean))[]) {
+    function has_key(obj: any) {
+        for (let k of serializer_keys) {
+            if (typeof k == "function") {
+                if (k(obj)) return true;
+            } else {
+                if (value[k]) return true;
+            }
+        }
+        return false;
+    }
+
+    if (Array.isArray(value)) {
+        for (let av of value) {
+            if (!serializable(av, serializer_keys)) return false;
+        }
+        return true;
+    }
+
+    if (typeof value == "object") {
+        const proto = Object.getPrototypeOf(value);
+        if (proto) {
+            return has_key(value);
+        } else {
+            for (let [k, v] of Object.entries(value)) {
+                if (!serializable(v, serializer_keys)) return false;
+            }
+            return true;
+        }
+    }
+
+    if (typeof value == "function") {
+        return has_key(value);
+    }
+
+    // Primitive
+    return true;
+}
+
 export class PromiseTimedout extends Error { }
 
 export function timeoutPromise<T>(timeout: number, promise: Promise<T>, timeoutAction?: () => void): Promise<T> {
@@ -241,5 +280,5 @@ export function read_lines(file: string, options: LineReaderOptions, iteratee: (
 
 export function split_once(str: string, splitter: string) {
     const i = str.indexOf(splitter);
-    return [str.slice(0,i), str.slice(i+1)];
+    return [str.slice(0, i), str.slice(i + 1)];
 }

@@ -25,7 +25,8 @@ import { sync_to_observable } from '@matchlighter/common_library/sync_observable
 import { mqtt } from '..';
 import { DeepReadonly } from '../../common/util';
 import { HyperWrapper } from '../../hypervisor/managed_apps';
-import { ResumablePromise, SerializedResumable } from "../../runtime/resumable";
+import { ResumablePromise } from "../../runtime/resumable";
+import { SerializeContext } from '../../runtime/resumable/resumable_promise';
 import { Plugin, get_plugin, handle_client_error } from '../base';
 import { MqttPlugin } from '../mqtt';
 import { HomeAssistantApi, homeAssistantApi } from './api';
@@ -292,10 +293,10 @@ class EventAwaiter extends ResumablePromise<any>{
         this.ha_untrack = this.hap['trackEventAwaiter'](this);
     }
 
-    serialize(): SerializedResumable {
+    serialize(ctx: SerializeContext) {
+        ctx.set_type('ha_event_waiter');
+        ctx.side_effects(false);
         return {
-            type: 'ha_event_waiter',
-            sideeffect_free: true,
             plugin: this.hap[HyperWrapper].id,
             schema: this.schema,
         }

@@ -1,33 +1,16 @@
 
 import { ExtensiblePromise } from "@matchlighter/common_library/promises";
 import { ResumableStore } from ".";
-import { deep_pojso } from "../../common/util";
+import { serializable } from "../../common/util";
 import { current } from "../../hypervisor/current";
-
-export class Suspend extends Error {
-    constructor(...args) {
-        super(...args)
-        this.suspended = new Promise(accept => {
-            this.ack = accept as any;
-        })
-    }
-
-    readonly suspended: Promise<never>;
-    ack: () => void;
-}
-
-export interface SerializedResumable {
-    type: string;
-    sideeffect_free?: boolean;
-    [key: string]: any;
-}
+import { logMessage } from "../../hypervisor/logging";
 
 export interface FullySerializedResumable {
     id: string;
     type: string;
-    depends_on?: string[];
-    data: any;
+    dependencies?: string[];
     sideeffect_free?: boolean;
+    data: any;
 }
 
 type PromiseReference = number;
@@ -38,6 +21,8 @@ interface ResumerContext {
 }
 export interface SerializeContext {
     ref: (rp: PromiseLike<any>) => PromiseReference;
+    set_type: (type: string) => void;
+    side_effects: (has: boolean) => void;
 }
 
 interface Resumer<T extends ResumablePromise, S = ReturnType<T['serialize']>> {
@@ -55,18 +40,7 @@ export interface CanSuspendContext {
     link: (prom: PromiseLike<any>) => void
 }
 
-export interface FailedResume {
-    // data: FullySerializedResumable;
-    error: Error;
-    depends_on: (ResumablePromise | FailedResume)[];
-    load_data: FullySerializedResumable;
-}
-
-type LoadedResumable = ResumablePromise | FailedResume;
-
 export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
-    static Suspended = Suspend;
-
     static all<const T extends readonly Promise<any>[]>(promises: T) {
         return ResumableAllPromise.create(promises as any) as ResumableAllPromise<T>;
     }
@@ -82,8 +56,7 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
 
     static resumePromises(data: FullySerializedResumable[]) {
         const by_id: Record<number, FullySerializedResumable> = {};
-        const loaded_promises: Record<string, LoadedResumable> = {};
-        const failed_promises: FailedResume[] = []
+        const loaded_promises: Record<string, ResumablePromise> = {};
 
         const load = (key: string) => {
             if (!key) return null;
@@ -99,27 +72,21 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
 
                 try {
                     loaded = classif.resumer(cdata, {
-                        require: (dep_index) => load(pdata.depends_on[dep_index]),
+                        require: (dep_index) => load(pdata.dependencies[dep_index]),
                         metadata: pdata,
                     });
                 } catch (ex) {
-                    loaded = {
-                        load_data: pdata,
-                        error: ex,
-                        depends_on: [],
-                    } satisfies FailedResume
-                    failed_promises.push(loaded);
+                    loaded = new FailedResume(
+                        ex,
+                        pdata,
+                        pdata.dependencies.map(dep => load(dep))
+                    );
                 }
 
                 loaded_promises[key] = loaded;
             }
 
-            if (loaded) {
-                if (loaded instanceof ResumablePromise) return loaded;
-                throw loaded.error;
-            }
-
-            return null;
+            return loaded;
         }
 
         for (let v of data) by_id[v.id] = v;
@@ -129,36 +96,14 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
             } catch (ex) { }
         }
 
-        // Map Failed-to-Load Resumables and have them track dependencies that were able to load.
-        for (let f of failed_promises) {
-            f.depends_on = (f.load_data.depends_on || []).map((dk, i) => {
-                const dep = loaded_promises[dk];
-                if (dep instanceof ResumablePromise) {
-                    dep.then(
-                        (result) => {
-                            f.depends_on[i] = new ResolvedPromise(result);
-                        },
-                        (err) => {
-                            f.depends_on[i] = new RejectedPromise(err);
-                        },
-                        true
-                    )
-                }
-                return dep || dk as any;
-            });
-        }
-
-        return {
-            loaded: loaded_promises,
-            failures: failed_promises,
-        }
+        return loaded_promises
     }
 
-    static serialize_all(promises: LoadedResumable[] | Generator<LoadedResumable>) {
+    static serialize_all(promises: ResumablePromise[] | Generator<ResumablePromise>) {
         // Discovery Phase
-        const promise_to_serialized = new Map<LoadedResumable, FullySerializedResumable>();
+        const promise_to_serialized = new Map<ResumablePromise, FullySerializedResumable>();
 
-        function discover(obj: LoadedResumable) {
+        function discover(obj: ResumablePromise) {
             if (!obj) return;
             if (promise_to_serialized.has(obj)) return;
 
@@ -167,46 +112,58 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
             const srepr: FullySerializedResumable = {
                 id,
                 type: null,
-                depends_on: [],
+                dependencies: [],
+                sideeffect_free: false,
                 data: {},
             };
             promise_to_serialized.set(obj, srepr as any);
 
             const context: SerializeContext = {
-                ref: (rp) => {
-                    if (!rp) return null;
-                    if (!(rp instanceof ResumablePromise)) {
+                ref: (prom) => {
+                    if (!prom) return null;
+                    if (!(prom instanceof ResumablePromise)) {
                         // Non-resumable promises shouldn't reach this point. If they do, that means
                         //   `can_suspend` logic is missing them
-                        throw new Error("Tried to serialize a non-resumable promise.")
+                        prom = new SettledPromise({ result: "reject_error", value: "Cannot suspend non-resumable Promise" });
                     }
+                    const rp = prom as ResumablePromise;
                     discover(rp);
                     const dep_entry = promise_to_serialized.get(rp);
-                    srepr.depends_on.push(dep_entry.id);
-                    return srepr.depends_on.length - 1;
+                    srepr.dependencies.push(dep_entry.id);
+                    return srepr.dependencies.length - 1;
                 },
+                side_effects: (has: boolean) => {
+                    srepr.sideeffect_free = !has;
+                },
+                set_type: (type: string) => {
+                    srepr.type = type;
+                }
             }
 
-            if (obj instanceof ResumablePromise) {
-                const sdata = obj.serialize(context);
-                srepr.type = sdata.type;
-                delete sdata.type;
-                srepr.data = sdata;
-                // Object.assign(srepr, sdata)
+            // If not suspended, convert to error SettledPromise
+            if (!obj.suspended || obj.force_suspended) {
+                obj = new SettledPromise({ result: "reject_error", value: "Promise would not suspend" });
+            }
 
-                for (let aw of obj.awaited_by()) {
-                    discover(aw);
-                }
-            } else {
-                const sdata = obj.load_data;
-                srepr.type = sdata.type;
-                srepr.data = sdata;
+            // Serialize settled promises as SettledPromise
+            if (obj.settled && !(obj instanceof SettledPromise)) {
+                obj = SettledPromise.for_resumable(obj);
+            }
 
-                sdata.depends_on = obj.depends_on.map(ldep => {
-                    discover(ldep);
-                    const dep_entry = promise_to_serialized.get(ldep);
-                    return dep_entry.id;
-                });
+            let sdata;
+            try {
+                sdata = obj.serialize(context);
+                JSON.stringify(sdata);
+            } catch (ex) {
+                logMessage("error", "Failed to serialize resumable", ex);
+
+                // If a serialization error occurs, store as error-type SettledPromise
+                sdata = new SettledPromise({ result: "reject_error", value: "Error serializing promise during suspension" }).serialize(context);
+            }
+            srepr.data = sdata;
+
+            for (let aw of obj.awaited_by()) {
+                discover(aw);
             }
         }
 
@@ -229,7 +186,7 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
             commit_ids.add(id);
 
             const info = serialized_by_id[id];
-            for (let depid of info.depends_on) {
+            for (let depid of info.dependencies) {
                 commit_item(depid);
             }
         }
@@ -285,6 +242,24 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
         }, resumable);
     }
 
+    private _promise_state: "accepted" | "rejected";
+    private _promise_result: any;
+    get settled() { return !!this._promise_state }
+    get promise_state() { return this._promise_state }
+    get promise_value() { return this._promise_result }
+
+    protected resolve(arg: T) {
+        this._promise_state = "accepted";
+        this._promise_result = arg;
+        return this._resolve(arg);
+    }
+
+    protected reject(reason: any) {
+        this._promise_state = "rejected";
+        this._promise_result = reason;
+        return this._reject(reason);
+    }
+
     protected awaited_by() {
         return this.resumable_awaiters;
     }
@@ -302,65 +277,6 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
 
     private _suspended = false;
     get suspended() { return this._suspended }
-
-    // All awaiters must be ResumablePromises and themselves be ready to suspend
-    /** @deprecated */
-    treeCanSuspend(resultCache?: Map<ResumablePromise, boolean>) {
-        const handledLinks = new Set<PromiseLike<any>>();
-        const pending_links: PromiseLike<any>[] = [this]
-        const ctx: CanSuspendContext = {
-            link(prom) {
-                if (!prom || handledLinks.has(prom)) return;
-                handledLinks.add(prom);
-                pending_links.push(prom);
-            }
-        }
-
-        while (pending_links.length > 0) {
-            const link = pending_links.shift();
-            if (link instanceof ResumablePromise) {
-                if (resultCache && resultCache.has(link)) {
-                    if (!resultCache.get(link)) return false;
-                } else {
-                    const can = link.can_suspend();
-                    if (resultCache) resultCache.set(link, can);
-                    if (!can) return false;
-                }
-            } else {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    protected search_tree(predicate: (p: PromiseLike<any>) => boolean) {
-        const handledLinks = new Set<PromiseLike<any>>();
-        const pending_links: PromiseLike<any>[] = [this]
-        const ctx: CanSuspendContext = {
-            link(prom) {
-                if (!prom || handledLinks.has(prom)) return;
-                handledLinks.add(prom);
-                pending_links.push(prom);
-            }
-        }
-
-        while (pending_links.length > 0) {
-            const link = pending_links.shift();
-            if (predicate(link)) return link;
-
-            if (link instanceof ResumablePromise) {
-                for (let p of link.awaited_by()) {
-                    ctx.link(p);
-                }
-                for (let p of link.awaiting_for()) {
-                    ctx.link(p);
-                }
-            }
-        }
-
-        return null;
-    }
 
     protected full_tree(history?: Set<PromiseLike<any>>) {
         history ||= new Set();
@@ -389,8 +305,12 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
     protected do_suspend() { }
     protected do_unsuspend() { }
 
+    private _force_suspended = false;
+    get force_suspended() { return this._force_suspended }
+
     force_suspend() {
         this._suspended = true;
+        this._force_suspended = true;
         this.do_suspend();
     }
 
@@ -403,19 +323,23 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
         if (this._store.state == "active") {
             desired_pause = false;
         } else {
-            if (this.has_non_resumable_awaiters) {
-                desired_pause = false;
-            }
-            for (let awaiter of this.awaited_by()) {
-                if (!awaiter.suspended) desired_pause = false;
-            }
-            for (let awaitee of this.awaiting_for()) {
-                if (!(awaitee instanceof ResumablePromise)) {
+            if (this.settled) {
+                desired_pause = SettledPromise.can_suspend(this);
+            } else {
+                if (this.has_non_resumable_awaiters) {
                     desired_pause = false;
                 }
-            }
-            if (!this.can_suspend()) {
-                desired_pause = false;
+                for (let awaiter of this.awaited_by()) {
+                    if (!awaiter.suspended) desired_pause = false;
+                }
+                for (let awaitee of this.awaiting_for()) {
+                    if (!(awaitee instanceof ResumablePromise)) {
+                        desired_pause = false;
+                    }
+                }
+                if (!this.can_suspend()) {
+                    desired_pause = false;
+                }
             }
         }
 
@@ -427,7 +351,7 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
                 } else {
                     this.do_unsuspend();
                 }
-    
+
                 // Re-assess to the right
                 for (let awaitee of this.awaiting_for()) {
                     if (awaitee instanceof ResumablePromise) awaitee.compute_paused();
@@ -436,112 +360,63 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
         }
     }
 
-    // protected _suspended;
-    // async suspend() {
-    //     if (this._suspended) return;
-    //     this._suspended = true;
-
-    //     const spend = new Suspend();
-    //     this._reject(spend);
-    //     await spend.suspended;
-    // }
-    // get suspended() { return this._suspended; }
-
-    abstract serialize(ctx: SerializeContext): SerializedResumable;
-}
-
-interface MultiPromiseState {
-    type: "promise" | "accepted" | "rejected";
-    value: any;
+    abstract serialize(ctx: SerializeContext): any;
 }
 
 export class ResumableAllPromise<const T extends readonly PromiseLike<any>[]> extends ResumablePromise<T> {
-    constructor(protected entries: MultiPromiseState[]) {
+    constructor(protected entries: PromiseLike<any>[]) {
         super();
         this.followPromises();
     }
 
     static create(promises: any[]) {
-        return new this(promises.map(p => ({ type: p.then ? "promise" : "accepted", value: p })))
+        return new this(promises.map(p => {
+            if (p.then) {
+                return p;
+            } else {
+                return new SettledPromise({ result: 'accept', value: p });
+            }
+        }))
     }
 
     static {
         ResumablePromise.defineClass<ResumableAllPromise<any>>({
             type: 'all',
             resumer: (data, { require }) => {
-                const entries = data.entries.map((e) => {
-                    if (e.type == "promise") e.value = require(e.value);
-                    return e;
-                })
+                const entries = data.entries.map((e) => require(e));
                 return new this(entries);
             },
         })
     }
 
-    private pending_promises = new Set<PromiseLike<any>>();
-
     protected followPromises() {
         const entries = this.entries;
-        for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i];
+        trackPromiseList(entries, (setlled) => {
+            if (setlled.promise_state != 'accepted') this.reject(setlled.promise_value);
 
-            if (entry.type == 'promise') {
-                const prom = entry.value as Promise<any>;
-                this.pending_promises.add(prom);
-
-                const thenArgs: any[] = [
-                    (result) => {
-                        this.entries[i] = { type: "accepted", value: result }
-                        this.pending_promises.delete(prom);
-
-                        if (this.pending_promises.size == 0) {
-                            this.resolve_from_entries();
-                        } else {
-                            this.compute_paused();
-                        }
-                    },
-                    (err) => {
-                        this._reject(err);
-                    },
-                ]
-                if (prom instanceof ResumablePromise) {
-                    thenArgs.push(this);
-                }
-                prom.then(...thenArgs);
+            if (allSettled(entries)) {
+                this.resolve_from_entries();
+            } else {
+                this.compute_paused();
             }
-        }
+        })
     }
 
     protected resolve_from_entries() {
-        this._resolve(this.entries.map(e => e.value) as any);
+        this.resolve(this.entries.map(fp => {
+            return (fp as SettledPromise<any>).promise_value;
+        }) as any);
     }
 
     protected awaiting_for() {
-        return this.pending_promises;
-    }
-
-    protected can_suspend() {
-        if (!super.can_suspend()) return false;
-        for (let e of this.entries) {
-            if (e.type != "promise" && !deep_pojso(e.value)) return false;
-        }
-        return true;
-    }
-
-    force_suspend(): void {
-        // TODO _reject with a Suspended error
-        // this._reject(new Susp)
+        return this.entries;
     }
 
     serialize(ctx: SerializeContext) {
+        ctx.set_type('all');
+        ctx.side_effects(false);
         return {
-            type: 'all',
-            entries: this.entries.map(e => {
-                e = { ...e };
-                if (e.type == "promise") e.value = ctx.ref(e.value);
-                return e;
-            }),
-            sideeffect_free: true,
+            entries: this.entries.map(e => ctx.ref(e)),
         }
     }
 }
@@ -550,161 +425,196 @@ type PromiseList = readonly PromiseLike<any>[]
 type MappedPromiseSettledReult<T extends PromiseList> = { [K in keyof T]: PromiseSettledResult<T[K]> };
 
 export class ResumableAllSettledPromise<const T extends PromiseList> extends ResumablePromise<MappedPromiseSettledReult<T>> {
-    constructor(protected entries: MultiPromiseState[]) {
+    constructor(protected entries: PromiseLike<any>[]) {
         super();
         this.followPromises();
     }
 
     static create(promises: any[]) {
-        return new this(promises.map(p => ({ type: p.then ? "promise" : "accepted", value: p })))
+        return new this(promises.map(p => {
+            if (p.then) {
+                return p;
+            } else {
+                return new SettledPromise({ result: 'accept', value: p });
+            }
+        }))
     }
 
     static {
         ResumablePromise.defineClass<ResumableAllSettledPromise<any>>({
             type: 'all_settled',
             resumer: (data, { require }) => {
-                const entries = data.entries.map((e) => {
-                    if (e.type == "promise") e.value = require(e.value);
-                    return e;
-                })
+                const entries = data.entries.map((e) => require(e));
                 return new this(entries);
             },
         })
     }
 
-    private pending_promises = new Set<PromiseLike<any>>();
-
     protected followPromises() {
         const entries = this.entries;
-        for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i];
-
-            if (entry.type == 'promise') {
-                const prom = entry.value as Promise<any>;
-                this.pending_promises.add(prom);
-
-                const oneSettled = (descriptor: MultiPromiseState) => {
-                    this.entries[i] = descriptor;
-                    this.pending_promises.delete(prom);
-                    if (this.pending_promises.size == 0) {
-                        this.resolve_from_entries();
-                    } else {
-                        this.compute_paused();
-                    }
-                }
-
-                const thenArgs: any[] = [
-                    (value) => oneSettled({ type: "accepted", value }),
-                    (reason) => oneSettled({ type: "rejected", value: reason }),
-                ]
-
-                if (prom instanceof ResumablePromise) {
-                    thenArgs.push(this);
-                }
-
-                prom.then(...thenArgs);
+        trackPromiseList(entries, (settled) => {
+            if (allSettled(entries)) {
+                this.resolve_from_entries();
+            } else {
+                this.compute_paused();
             }
-        }
+        });
     }
 
     protected resolve_from_entries() {
-        this._resolve(this.entries.map((e): PromiseSettledResult<any>  => {
-            if (e.type == "accepted") return { status: "fulfilled", value: e.value }
-            if (e.type == "rejected") return { status: "rejected", reason: e.value }
+        this.resolve(this.entries.map(p => {
+            const fp = p as ResumablePromise<any>;
+            if (fp.promise_state == 'accepted') return { status: "fulfilled", value: fp.promise_value };
+            if (fp.promise_state == 'rejected') return { status: "rejected", reason: fp.promise_value };
         }) as any);
     }
 
     protected awaiting_for() {
-        return this.pending_promises;
-    }
-
-    protected can_suspend() {
-        if (!super.can_suspend()) return false;
-        for (let e of this.entries) {
-            if (e.type != "promise" && !deep_pojso(e.value)) return false;
-        }
-        return true;
-    }
-
-    force_suspend(): void {
-        super.force_suspend();
-        for (let e of this.entries) {
-            if (e.type == "promise" && !(e.value instanceof ResumablePromise)) {
-                e.type = "rejected";
-                e.value = "Didn't Suspend" // TODO Make a Serializable Error
-            }
-        }
+        return this.entries;
     }
 
     serialize(ctx: SerializeContext) {
+        ctx.set_type('all_settled');
+        ctx.side_effects(false);
         return {
-            type: 'all_settled',
-            entries: this.entries.map(e => {
-                e = { ...e };
-                if (e.type == "promise") e.value = ctx.ref(e.value);
-                return e;
-            }),
-            sideeffect_free: true,
+            entries: this.entries.map(e => ctx.ref(e)),
         }
     }
 }
 
-export class ResolvedPromise<T> extends ResumablePromise<T> {
-    constructor(readonly result: T) {
+export class FailedResume extends ResumablePromise<any> {
+    constructor(
+        readonly error: Error,
+        protected readonly serialized: FullySerializedResumable,
+        protected readonly loaded_dependencies: ResumablePromise[],
+    ) {
         super();
-        this._resolve(result);
+
+        // Track promises, swapping them for SettledPromise when they settle
+        trackPromiseList(loaded_dependencies, null, {
+            always_swap: true,
+        });
+    }
+
+    serialize(ctx: SerializeContext) {
+        ctx.set_type(this.serialized.type);
+        ctx.side_effects(!this.serialized.sideeffect_free);
+        for (let p of this.loaded_dependencies) {
+            ctx.ref(p);
+        }
+        return this.serialized.data;
+    }
+}
+
+interface SerializedSettledPromise {
+    value: any;
+    result: 'accept' | 'reject_raw' | 'reject_error';
+}
+
+export class SettledPromise<T> extends ResumablePromise<T> {
+    constructor(readonly state: SerializedSettledPromise) {
+        super();
+        // Silence unhandled reject errors
+        this.then(() => { }, () => { }, true);
+        this.settle();
     }
 
     static {
-        ResumablePromise.defineClass<ResolvedPromise<any>>({
-            type: 'resolved',
+        ResumablePromise.defineClass<SettledPromise<any>>({
+            type: 'settled',
             resumer: (data, { require }) => {
-                return new this(data.value);
+                return new this(data.state);
             },
         })
     }
 
-    protected can_suspend() {
-        if (!super.can_suspend()) return false;
-        if (!deep_pojso(this.result)) return false;
-        return true;
+    static can_suspend(resumable: ResumablePromise) {
+        if (resumable.promise_state == "rejected" && resumable.promise_value instanceof Error) {
+            return true
+        } else {
+            return serializable(resumable.promise_value, []);
+        }
     }
 
-    serialize() {
+    static for_resumable(resumable: ResumablePromise) {
+        if (!resumable.settled) return resumable;
+        if (resumable.promise_state == "accepted") {
+            return new SettledPromise({ result: "accept", value: resumable.promise_value });
+        } else if (resumable.promise_value instanceof Error) {
+            return new SettledPromise({ result: "reject_error", value: resumable.promise_value.message });
+        } else {
+            return new SettledPromise({ result: "reject_raw", value: resumable.promise_value });
+        }
+    }
+
+    protected settle() {
+        const state = this.state;
+        if (state.result == "accept") {
+            this.resolve(state.value);
+        } else if (state.result == "reject_error") {
+            this.reject(new Error(state.value));
+        } else {
+            this.reject(state.value);
+        }
+    }
+
+    protected can_suspend() {
+        if (!super.can_suspend()) return false;
+        return SettledPromise.can_suspend(this);
+    }
+
+    serialize(ctx: SerializeContext) {
+        ctx.set_type('settled');
+        ctx.side_effects(false);
         return {
-            type: 'resolved',
-            value: this.result,
-            sideeffect_free: true,
+            state: this.state,
         }
     }
 }
 
-export class RejectedPromise<T> extends ResumablePromise<T> {
-    constructor(readonly result: T) {
-        super();
-        this._reject(result);
-    }
-
-    static {
-        ResumablePromise.defineClass<RejectedPromise<any>>({
-            type: 'rejected',
-            resumer: (data, { require }) => {
-                return new this(data.value);
-            },
-        })
-    }
-
-    protected can_suspend() {
-        if (!super.can_suspend()) return false;
-        if (!deep_pojso(this.result)) return false;
-        return true;
-    }
-
-    serialize() {
-        return {
-            type: 'rejected',
-            value: this.result,
-            sideeffect_free: true,
+function allSettled(promises: PromiseLike<any>[]) {
+    for (let p of promises) {
+        if (p instanceof ResumablePromise) {
+            if (!p.settled) return false;
+        } else {
+            return false;
         }
     }
+    return true;
+}
+
+function trackPromiseList(
+    promises: PromiseLike<any>[],
+    onSettle?: (settled: ResumablePromise<any>, listIndex: number) => void,
+    { always_swap = false }: { always_swap?: boolean } = {},
+) {
+    promises.forEach((dep, idx) => {
+        if (dep instanceof SettledPromise) return;
+
+        // We can save some cycles if we only convert native promises to SettledPromise (and only let serialize_all convert if needed)
+        const shouldConvert = always_swap || !(dep instanceof ResumablePromise);
+
+        const then_args: any[] = [
+            (result) => {
+                if (shouldConvert) {
+                    promises[idx] = new SettledPromise({ result: "accept", value: result });
+                }
+                onSettle?.(promises[idx] as any, idx);
+            },
+            (err) => {
+                if (shouldConvert) {
+                    if (err instanceof Error) {
+                        promises[idx] = new SettledPromise({ result: "reject_error", value: err.message });
+                    } else {
+                        promises[idx] = new SettledPromise({ result: "reject_raw", value: err });
+                    }
+                }
+                onSettle?.(promises[idx] as any, idx);
+            },
+        ]
+
+        if (dep instanceof ResumablePromise) then_args.push(true);
+
+        dep.then(...then_args);
+    })
 }
