@@ -4,7 +4,7 @@ import { Batcher } from '../../common/batched';
 import { fileExists, timeoutPromise } from "../../common/util";
 import { ExtendedLoger, LogLevel } from "../../hypervisor/logging";
 import { ResumableOwnerLookup, resumable } from "./resumable_method";
-import { FailedResume, ResumablePromise, Suspend } from "./resumable_promise";
+import { FailedResume, ResumablePromise, SettledPromise } from "./resumable_promise";
 
 interface TrackerEntry {
     resumable: ResumablePromise;
@@ -21,8 +21,6 @@ export class ResumableStore {
 
     }
 
-    private failedLoads: FailedResume[] = [];
-
     get store_file() {
         return this.opts.file;
     }
@@ -34,8 +32,8 @@ export class ResumableStore {
         const restore_json = await fs.promises.readFile(this.store_file);
         const restore_list = JSON.parse(restore_json.toString());
 
-        const { failures, loaded } = await this._loadWithLookups(restore_list);
-        this.failedLoads = failures;
+        const loaded = await this._loadWithLookups(restore_list);
+        const failures = Object.values(loaded).filter(p => p instanceof FailedResume) as FailedResume[];
         if (failures.length) {
             // TODO Add help link
             this.logMessage('error', `Failed to resume at least some resumables. Failed items will continue to be persisted and resumption will be re-attempted every time the app loads.`);
@@ -57,7 +55,6 @@ export class ResumableStore {
     private _state: 'active' | 'shutdown_requested' | 'suspending' | 'suspended' = 'active';
     get state() { return this._state }
 
-    private suspendedResumables = [];
     private onNonSuspendableClear: () => void;
 
     protected tracked_tasks = new Map<ResumablePromise, TrackerEntry>();
@@ -67,23 +64,16 @@ export class ResumableStore {
     })
 
     track(promise: ResumablePromise<any>) {
+        if (promise instanceof SettledPromise) return;
+
         if (this._state == "suspended") throw new Error("ResumableStore is suspended and not accepting new promises");
 
         if (this.tracked_tasks.has(promise)) return;
 
-        const track_promise = promise.catch(
-            (err) => {
-                if (err instanceof Suspend) {
-                    this.suspendedResumables.push(promise);
-                    err.ack();
-                }
-                throw err;
-            },
-            true
-        ).finally(() => {
+        const track_promise = promise.finally(() => {
             this.tracked_tasks.delete(promise);
             this.checkAllSuspended();
-        })
+        }, true);
 
         this.tracked_tasks.set(promise, {
             resumable: promise,
@@ -149,7 +139,7 @@ export class ResumableStore {
         this._state = 'suspending';
         this.logMessage("debug", "Resumable - suspending remaining resumables")
 
-        // Force suspend unsuspended Resumables
+        // Force cleanup unsuspended Resumables
         for (let state of track_states) {
             if (!state.resumable.suspended) {
                 state.resumable.force_suspend();
@@ -187,6 +177,5 @@ export class ResumableStore {
         for (let task of this.tracked_tasks.values()) {
             yield task.resumable;
         }
-        yield* this.failedLoads;
     }
 }

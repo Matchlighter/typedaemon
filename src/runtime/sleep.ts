@@ -1,6 +1,7 @@
 
 import { current } from "../hypervisor/current";
 import { ResumablePromise } from "./resumable";
+import { SerializeContext } from "./resumable/resumable_promise";
 
 class SleeperPromise extends ResumablePromise<number>{
     constructor(readonly sleep_until: number) {
@@ -30,10 +31,10 @@ class SleeperPromise extends ResumablePromise<number>{
         const _setTimeout: typeof setTimeout = this.application.unsafe_vm.sandbox.setTimeout;
         if (sleep_time > 0) {
             this.timer = _setTimeout(() => {
-                this._resolve(Date.now() - sleep_until);
+                this.resolve(Date.now() - sleep_until);
             }, sleep_time)
         } else {
-            this._resolve(Date.now() - sleep_until);
+            this.resolve(Date.now() - sleep_until);
         }
     }
 
@@ -46,13 +47,13 @@ class SleeperPromise extends ResumablePromise<number>{
 
     cancel() {
         this.clearTimeout();
-        this._reject("CANCELLED");
+        this.reject("CANCELLED");
     }
 
-    serialize() {
+    serialize(ctx: SerializeContext) {
+        ctx.set_type('sleep');
+        ctx.side_effects(false);
         return {
-            type: 'sleep',
-            sideeffect_free: true,
             sleep_until: this.sleep_until,
         }
     }
