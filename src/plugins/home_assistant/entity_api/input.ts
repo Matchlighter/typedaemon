@@ -182,7 +182,7 @@ class InputButton extends InputEntity<never> {
         await this.ensureExists(pl);
 
         // Listen to HA entity
-        plgmobx.reaction(this.application, () => pl.state[this.id]?.state, (state) => {
+        plgmobx.reaction(this.application, () => pl.state[this.uuid]?.state, (state) => {
             this.on_pressed();
         }, { fireImmediately: false })
     }
