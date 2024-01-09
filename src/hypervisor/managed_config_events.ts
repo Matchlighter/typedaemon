@@ -48,6 +48,7 @@ export function configChangeHandler<C>(instance: BaseInstance<C, CCHBaseInstance
         if (deepEqual(unhandled_ncfg, unhandled_ocfg)) return;
 
         try {
+            if (!instance.instance.configuration_updated) throw new RequireRestart();
             await instance.invoke(() => instance.instance.configuration_updated(ncfg, ocfg));
         } catch (ex) {
             if (ex instanceof RequireRestart) {

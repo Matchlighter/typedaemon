@@ -1,15 +1,14 @@
-import { IncomingMessage, RequestListener, Server, ServerResponse, createServer } from "http"
-import { Duplex } from "stream";
-import { Socket, ListenOptions, AddressInfo } from "net";
+import type { Express } from 'express';
+import { Server, createServer } from "http";
 
 // const express = require('express')
 import express = require('express')
-import type { Express } from 'express'
 
-import { Plugin } from "../base";
 import { promisify } from "util";
 import { TD_VERSION } from "../../common/util";
-import { AppHttpStore } from "./api";
+import { HyperWrapper } from "../../hypervisor/managed_apps";
+import { Plugin } from "../base";
+import { AppHttpStore, HttpApi, httpApi } from "./api";
 
 export interface HttpPluginConfig {
     type: "http";
@@ -17,6 +16,8 @@ export interface HttpPluginConfig {
 }
 
 export class HttpPlugin extends Plugin<HttpPluginConfig> {
+    readonly api: HttpApi = httpApi({ pluginId: this[HyperWrapper].id });
+
     private server: Server;
     private app: Express;
 
