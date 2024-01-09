@@ -16,7 +16,7 @@ export interface HttpPluginConfig {
 }
 
 export class HttpPlugin extends Plugin<HttpPluginConfig> {
-    readonly api: HttpApi = httpApi({ pluginId: this[HyperWrapper].id });
+    readonly api: HttpApi = httpApi(this);
 
     private server: Server;
     private app: Express;

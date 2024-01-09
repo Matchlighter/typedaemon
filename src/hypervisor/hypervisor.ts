@@ -4,6 +4,7 @@ import path = require("path")
 import deep_eql = require("deep-eql")
 import chalk = require("chalk")
 import moment = require("moment-timezone")
+import { AsyncLocalStorage } from "async_hooks"
 import { TypedEmitter } from "tiny-typed-emitter"
 
 import { MultiMap } from "@matchlighter/common_library/data/multimap"
@@ -25,6 +26,8 @@ import { ExtendedLoger, LogLevel, createDomainLogger, setFallbackLogger } from "
 import { AppNamespace } from "./managed_apps"
 import { SharedStorages } from "./persistent_storage"
 import { PluginInstance } from "./plugin_instance"
+
+export const CurrentHypervisor = new AsyncLocalStorage<Hypervisor>()
 
 type ConfigWatchHandler<T> = (newConfig: T, oldConfig: T) => void;
 
@@ -105,6 +108,12 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
     crossCallStore: CrossCallStore;
 
     async start() {
+        return await CurrentHypervisor.run(this, () => {
+            this._start();
+        })
+    }
+
+    async _start() {
         this.logMessage("lifecycle", "Starting");
 
         this.logMessage("info", "Loading Config");

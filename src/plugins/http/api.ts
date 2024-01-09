@@ -7,7 +7,7 @@ import { HttpPlugin } from ".";
 import { ApplicationInstance } from '../../hypervisor/application_instance';
 import { current } from "../../hypervisor/current";
 import { int_callback_or_decorator } from '../../util';
-import { assert_application_context, bind_callback_env, getOrCreateLocalData, handle_client_error, makeApiExport, pluginGetterFactory } from "../base";
+import { assert_application_context, bind_callback_env, getOrCreateLocalData, handle_client_error, makeApiExport } from "../base";
 
 export type RequestHandler = express.RequestHandler;
 
@@ -49,8 +49,8 @@ export class AppHttpStore {
     }
 }
 
-export function httpApi(options: { pluginId: string }) {
-    const _plugin = pluginGetterFactory<HttpPlugin>(options.pluginId, httpApi.defaultPluginId);
+export function httpApi(plugin_instace: HttpPlugin) {
+    const _plugin = () => plugin_instace;
 
     const _store = () => {
         assert_application_context();

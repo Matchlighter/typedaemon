@@ -16,12 +16,12 @@ export { sleep, sleep_until } from "./sleep";
 /**
  * Retrieve a handle to an application instance for the given Application id
  */
-export const get_app = <A>(identifier: string) => {
+export const get_app = <A = any>(identifier: string) => {
     return new ApplicationReference<A>(identifier);
 }
 
 /** Get the API for the specified plugin ID */
 export const get_plugin = <P>(identifier: string): P => {
     // @ts-ignore
-    return _get_plugin(identifier)?.api;
+    return _get_plugin(identifier)?.getAPI();
 }
