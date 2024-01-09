@@ -7,7 +7,7 @@ import { HomeAssistantPlugin } from ".";
 import { escapeRegExp } from "../../common/util";
 import { current } from "../../hypervisor/current";
 import { callback_or_decorator2 } from "../../util";
-import { assert_application_context, bind_callback_env, makeApiExport, notePluginAnnotation, pluginGetterFactory } from "../base";
+import { assert_application_context, bind_callback_env, makeApiExport, notePluginAnnotation } from "../base";
 import { _entitySubApi } from "./api_entities";
 import { TDDevice } from "./entity_api";
 
@@ -23,8 +23,8 @@ type WebhookPayload<T = any> = {
     params: Record<string, string>,
 }
 
-export function homeAssistantApi(options: { pluginId: string | HomeAssistantPlugin }) {
-    const _plugin = pluginGetterFactory<HomeAssistantPlugin>(options.pluginId, homeAssistantApi.defaultPluginId);
+export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
+    const _plugin = () => plugin_instace;
 
     const { registerEntity, entities, input, _entity_store } = _entitySubApi(_plugin)
 

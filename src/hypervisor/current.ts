@@ -1,4 +1,5 @@
 import { ApplicationInstance } from "./application_instance";
+import { CurrentHypervisor } from "./hypervisor";
 import { BaseInstance, CurrentInstanceStack } from "./managed_apps";
 import { PluginInstance } from "./plugin_instance";
 
@@ -15,7 +16,7 @@ export const current = {
         return current.stackItem(inst => inst instanceof PluginInstance) as PluginInstance;
     },
     get hypervisor() {
-        return current.instance?.hypervisor;
+        return current.instance?.hypervisor || CurrentHypervisor.getStore();
     },
     stackItem(filter: (inst: BaseInstance<any, any, any>) => boolean) {
         const stack = current.applicationStack || [];

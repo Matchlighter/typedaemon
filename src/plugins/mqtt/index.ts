@@ -20,7 +20,7 @@ export interface MQTTPluginConfig {
 }
 
 export class MqttPlugin extends Plugin<MQTTPluginConfig> {
-    readonly api = mqttApi({ pluginId: this[HyperWrapper].id });
+    readonly api = mqttApi(this);
 
     private applicationConnections = new Map<BaseInstance<any>, ExtMqttClient>()
 

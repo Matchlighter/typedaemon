@@ -24,20 +24,6 @@ export const get_plugin = <T>(identifier: string): T => {
     return current.hypervisor.getPlugin(identifier)?.instance as any;
 }
 
-export function pluginGetterFactory<T extends Plugin>(pid: string | T, default_id: string) {
-    if (pid instanceof Plugin) return () => pid;
-
-    if (pid == default_id) {
-        return () => {
-            const pl = get_plugin<T>(pid);
-            if (!pl) current.application.logMessage("warn", `Attempted to use default ${default_id} plugin, but it is not configured!`)
-            return pl;
-        }
-    }
-
-    return () => get_plugin<T>(pid);
-}
-
 /**
  * Add an annotation to the target application class (or Decorator Context).
  * The annotation will be called when the application is started.
@@ -74,13 +60,19 @@ export abstract class Plugin<C = any> extends BaseInstanceClient<PluginInstance>
         return this[HyperWrapper].options as any as BasePluginConfig & C;
     }
 
+    getAPI<T>(): T {
+        // TODO Make abstract
+        // @ts-ignore
+        return this.api;
+    }
+
     protected addCleanup(cleaner: Parameters<LifecycleHelper['append']>[0]) {
         this[HyperWrapper].cleanups.append(() => this[HyperWrapper].invoke(cleaner));
     }
 }
 
-export interface ApiFactory<API extends {}> {
-    (options: { pluginId: string, [k: string]: any }): API;
+export interface ApiFactory<P extends Plugin = any> {
+    (plugin_instace: P): any;
     defaultPluginId: string;
 }
 
@@ -112,15 +104,21 @@ export function client_call_safe<P extends any[]>(mthd: (...params: P) => any, .
     }
 }
 
-export function makeApiExport<API extends {}>(factory: ApiFactory<API>) {
-    const extended = {
-        /** Create an instance of the API if you're using multiple plugin instances or non-default plugin names */
-        withOptions: factory,
-        _apiFactory: factory,
-    }
-    const defaultApi = factory({ pluginId: factory.defaultPluginId });
-    Object.setPrototypeOf(extended, defaultApi);
-    return extended as typeof extended & typeof defaultApi;
+export type DefaultApiExport<F extends ApiFactory> = ReturnType<F> & {
+
+}
+
+export function makeApiExport<F extends ApiFactory<any>>(factory: F): DefaultApiExport<F> {
+    const base = {};
+    Object.preventExtensions(base);
+    return new Proxy(base, {
+        get(target, p, receiver) {
+            const pl = get_plugin<Plugin>(factory.defaultPluginId);
+            if (!pl) current.application.logMessage("warn", `Attempted to use default ${factory.defaultPluginId} plugin, but it is not configured!`)
+            const api = pl.getAPI() as any;
+            return Reflect.get(api, p, api);
+        }
+    }) as any;
 }
 
 type StoresByType<T = any> = Map<Constructor<T>, T>

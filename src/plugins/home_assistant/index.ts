@@ -11,8 +11,8 @@ import {
     HassServiceTarget,
     MessageBase,
     StateChangedEvent,
-    callService,
     createConnection as _createConnection,
+    callService,
     createLongLivedTokenAuth,
     getStates
 } from 'home-assistant-js-websocket';
@@ -118,7 +118,7 @@ export interface HomeAssistantPluginConfig {
 }
 
 export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
-    readonly api: HomeAssistantApi = homeAssistantApi({ pluginId: this[HyperWrapper].id });
+    readonly api: HomeAssistantApi = homeAssistantApi(this);
 
     async initialize() {
         await this.connect();
@@ -152,7 +152,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     mqttApi() {
         const pl = this.mqttPlugin();
         if (!pl) return null;
-        return mqtt._apiFactory({ pluginId: pl as any });
+        return pl.api;
     }
 
     // onConnected(callback: () => void)

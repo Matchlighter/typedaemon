@@ -5,8 +5,9 @@ import { HomeAssistantPlugin } from "..";
 import { DestroyerStore } from "../../../hypervisor/destroyer";
 import { logMessage } from "../../../hypervisor/logging";
 import { HyperWrapper } from "../../../hypervisor/managed_apps";
-import { homeAssistantApi } from "../api";
+import { HomeAssistantApi, homeAssistantApi } from "../api";
 import { EntityStore } from "./store";
+import { get_plugin } from "../../base";
 
 export interface AutoCleanEntry {
     uuid: string;
@@ -100,7 +101,7 @@ export const autocleanEntities = async (store: EntityStore) => {
 
 export const HAEntititesDestroyer = DestroyerStore.defineDestroyerClass("HAEntities", async (app, { plugin_id }: { plugin_id: string }) => {
     logMessage("info", "Cleaning HA Entities");
-    const api = homeAssistantApi({ pluginId: plugin_id });
-    const store = api._getEntityStore();
+    const pl = get_plugin<HomeAssistantPlugin>(plugin_id);
+    const store = pl.api._getEntityStore();
     await autocleanEntities(store);
 })

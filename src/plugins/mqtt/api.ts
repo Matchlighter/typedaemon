@@ -1,13 +1,13 @@
 
-import * as mqtt from "mqtt"
+import * as mqtt from "mqtt";
 import mqtt_match = require('mqtt-match')
 
+import { computed, observable } from "mobx";
 import { MqttPlugin } from ".";
 import { current } from "../../hypervisor/current";
-import { assert_application_context, bind_callback_env, client_call_safe, makeApiExport, notePluginAnnotation, pluginAnnotationDecorator, pluginGetterFactory } from "../base";
-import { computed, observable } from "mobx";
-import { plgmobx } from "../mobx";
 import { HyperWrapper } from "../../hypervisor/managed_apps";
+import { assert_application_context, bind_callback_env, client_call_safe, makeApiExport, notePluginAnnotation, pluginAnnotationDecorator } from "../base";
+import { plgmobx } from "../mobx";
 
 type Unsubscriber = () => void;
 type MqttMessageHandler<T = any> = (topic: string, payload: string) => any;
@@ -16,13 +16,13 @@ export interface SubscribeOptions extends mqtt.IClientSubscribeOptions {
     format?: 'json' | boolean;
 }
 
-export function mqttApi(options: { pluginId: string }) {
+export function mqttApi(plugin_instace: MqttPlugin) {
     // NB Each application has it's own connection to the broker.
     // Otherwise we'd either need to NEVER usubscribe anything, OR we'd need to implement subscription counting logic... that takes wildcards into account.
     // Since there's no shared state between apps, we can just discard the connection and not have to worry about creating individual cleanups
 
     // TODO Support "bound" APIs where current.application is always the same
-    const _plugin = pluginGetterFactory<MqttPlugin>(options.pluginId, mqttApi.defaultPluginId);
+    const _plugin = () => plugin_instace;
     const _connection = () => {
         assert_application_context();
         return _plugin().instanceConnection(current.application);
@@ -132,4 +132,4 @@ mqttApi.defaultPluginId = "mqtt"
 
 export type MqttApi = ReturnType<typeof mqttApi>;
 
-export const api = makeApiExport(mqttApi)
+export const api = makeApiExport(mqttApi);
