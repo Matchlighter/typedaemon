@@ -1,6 +1,9 @@
 import path = require("path");
 import { randomUUID } from "crypto";
 
+import { _isComputingDerivation, computed, createAtom, onBecomeUnobserved } from "mobx";
+import type { Atom, IComputedValue } from "mobx/dist/internal";
+
 import { serializable } from "../common/util";
 import { ResumablePromise } from "../runtime/resumable";
 import { SerializeContext } from "../runtime/resumable/resumable_promise";
@@ -19,38 +22,130 @@ interface CrossAppCall {
     value?: any;
     result?: 'accept' | 'reject_raw' | 'reject_error';
     status: "pending" | "started" | "returning";
+    awaited: boolean;
+    start_by?: number;
+}
+
+export interface CrosscallConfig {
+    pending_timeout?: number;
+    fire_and_forget?: boolean;
+}
+
+export interface CrossqueryConfig {
+    fallback?: "keep" | "throw" | "undefined" | (() => any);
+    // reloading?: "keep" | "fallback" | "undefined" | (() => any);
 }
 
 export class UnknownCrossCallError extends Error { }
 export class CrossCallError extends Error { }
+
+class AppScopedStore {
+    touchedCalls = new WeakSet<CrossAppCall>();
+    pendingPromises: Record<string, CrossCallPromise> = {};
+}
 
 export class CrossCallStore {
     constructor(readonly hypervisor: Hypervisor) {
         this.storage = new PersistentStorage(path.join(hypervisor.operations_directory, ".cross_calls.jkv"))
     }
 
-    private appTouchedCalls = new WeakMap<ApplicationInstance, WeakSet<CrossAppCall>>();
+    private _appData = new WeakMap<ApplicationInstance, AppScopedStore>();
 
-    private client_promises: Record<string, CrossCallPromise> = {};
     private readonly storage: PersistentStorage;
 
     async load() {
         await this.storage.load();
     }
 
-    // TODO Add pending timeout support
-    makeCrossAppCall(source: ApplicationInstance, dest: string, method: string, parameters: any[] = []) {
-        const destApp = this.hypervisor.getApplication(dest);
+    private app_state_atoms: Record<string, Atom> = {};
+    private query_observers: Record<string, IComputedValue<any>> = {};
+
+    crossQueryProperty(source: ApplicationInstance, dest: string | ApplicationInstance, property: string, config: CrossqueryConfig = {}) {
+        const destApp = dest instanceof ApplicationInstance ? dest : this.hypervisor.getApplication(dest);
+
+        if (!destApp) throw new Error(`Unknown application "${dest}"`);
+
+        const _fallback = () => {
+            if (config.fallback == "throw") {
+                throw new Error(`Application "${destApp.uuid}" is not running`)
+            } else if (config.fallback == "undefined") {
+                return undefined;
+            } else if (typeof config.fallback == "function") {
+                return config.fallback();
+            }
+        }
+
+        if (_isComputingDerivation()) {
+            // Get/create Atom that listens to App state
+            if (!this.app_state_atoms[destApp.uuid]) {
+                let dispose;
+                let hot = false;
+                const atom = this.app_state_atoms[destApp.uuid] = createAtom(`AppState-${destApp.uuid}`, () => {
+                    dispose = this.hypervisor.on("app_lifecycle", (app, levent) => {
+                        const nhot = levent == "started";
+                        if (nhot != hot) {
+                            hot = nhot;
+                            atom.reportChanged();
+                        }
+                    })
+                }, () => {
+                    delete this.app_state_atoms[destApp.uuid];
+                    dispose?.();
+                })
+            }
+            const atom = this.app_state_atoms[destApp.uuid];
+
+            // Get/create a computed that observes atom and dest[property]
+            const key = `${destApp.uuid}-${property}`;
+            if (!this.query_observers[key]) {
+                let lastValue;
+                this.query_observers[key] = computed(() => {
+                    atom.reportObserved();
+                    const cdestapp = this.hypervisor.getApplication(destApp.uuid);
+                    if (cdestapp.state != "started") {
+                        if (config.fallback == "keep") return lastValue;
+                        return _fallback();
+                    } else {
+                        lastValue = cdestapp.invoke(() => cdestapp.instance[property]);
+                        // TODO Assert POJSO
+                        return lastValue;
+                    }
+                }, {});
+
+                onBecomeUnobserved(this.query_observers[key], () => {
+                    delete this.query_observers[key];
+                })
+            }
+            const computed_value = this.query_observers[key];
+            return computed_value.get();
+        } else {
+            if (config.fallback == "keep") throw new Error("fallback: keep is only valid in @computeds");
+            if (destApp.state == 'started') {
+                // TODO Assert POJSO
+                return destApp.invoke(() => destApp.instance[property]);
+            } else {
+                return _fallback();
+            }
+        }
+    }
+
+    makeCrossAppCall(source: ApplicationInstance, dest: string | ApplicationInstance, method: string, parameters: any[] = [], config: CrosscallConfig = {}) {
+        const destApp = dest instanceof ApplicationInstance ? dest : this.hypervisor.getApplication(dest);
 
         if (!destApp) throw new Error(`Unknown application "${dest}"`);
 
         const cac: CrossAppCall = {
             uuid: randomUUID(),
             source_app: source.uuid,
-            target_app: dest,
+            target_app: destApp.uuid,
             method,
             parameters,
             status: "pending",
+            awaited: !config.fire_and_forget,
+        }
+
+        if (config.pending_timeout) {
+            cac.start_by = Date.now() + config.pending_timeout;
         }
 
         this.writeCall(cac);
@@ -64,7 +159,10 @@ export class CrossCallStore {
 
     async handleAppStart(app: ApplicationInstance) {
         const appuuid = app.uuid;
-        const touches = this.appTouches(app);
+        const appData = this.appData(app);
+        const touches = appData.touchedCalls;
+
+        // This is called _after_ Resumables have been loaded (so touchedCalls and pendingPromises have been rebuilt)
 
         for (let uuid of this.storage.keys) {
             const call = this.storage.getValue(uuid) as CrossAppCall;
@@ -72,8 +170,13 @@ export class CrossCallStore {
             if (call.target_app == appuuid) {
                 if (call.status == "pending") {
                     // Start "pending" items where app is dest
-                    app.logMessage("debug", `Pending CrossCall observed. Starting: ${JSON.stringify(call)}`);
-                    this.dispatchCallInDest(call, app);
+                    if (call.start_by && call.start_by < Date.now()) {
+                        app.logMessage("debug", `Expired Pending CrossCall observed. Returning: ${JSON.stringify(call)}`);
+                        this._awaiterCompleted(uuid, "reject", new Error(`Timedout while pending`));
+                    } else {
+                        app.logMessage("debug", `Pending CrossCall observed. Starting: ${JSON.stringify(call)}`);
+                        this.dispatchCallInDest(call, app);
+                    }
                 } else if (call.status == "started") {
                     // Clean dead (not awaiting anything) "started" where app is dest
                     if (!touches.has(call)) {
@@ -100,6 +203,12 @@ export class CrossCallStore {
             return
         }
 
+        // Fire-and-forget mode
+        if (!call.awaited) {
+            this.writeCall(call_uuid, undefined);
+            return;
+        }
+
         call = { ...call }
         if (status == "accept") {
             call.result = "accept";
@@ -120,36 +229,42 @@ export class CrossCallStore {
         call.value = value;
         call.status = "returning";
 
-        const prom = this.client_promises[call_uuid];
-        if (prom) {
-            this.dispatchCallResolution(call, prom);
-        } else {
-            this.writeCall(call);
+        const destApp = this.hypervisor.getApplication(call.source_app);
+        if (destApp && destApp.state == 'started') {
+            const adata = this.appData(destApp);
+            const prom = adata.pendingPromises[call_uuid];
+
+            if (prom) {
+                this.dispatchCallResolution(call, prom);
+                return;
+            }
         }
+
+        this.writeCall(call);
     }
 
-    _setClientPromise(call_uuid: string, prom: CrossCallPromise) {
+    _setClientPromise(app: ApplicationInstance, call_uuid: string, prom: CrossCallPromise) {
         const call = this.storage.getValue<CrossAppCall>(call_uuid);
         if (!call) {
             prom.reject(new UnknownCrossCallError());
         } else if (call.status == "returning") {
             this.dispatchCallResolution(call, prom);
         } else {
-            this.client_promises[call_uuid] = prom;
+            this.appData(app).pendingPromises[call_uuid] = prom;
         }
     }
 
-    private appTouches(by: ApplicationInstance) {
-        if (!this.appTouchedCalls.has(by)) {
-            this.appTouchedCalls.set(by, new WeakSet());
+    protected appData(by: ApplicationInstance) {
+        if (!this._appData.has(by)) {
+            this._appData.set(by, new AppScopedStore());
         }
-        return this.appTouchedCalls.get(by);
+        return this._appData.get(by);
     }
 
     _markCallTouched(by: ApplicationInstance, call_uuid: string) {
         const call = this.storage.getValue<CrossAppCall>(call_uuid);
         if (!call) return;
-        this.appTouches(by).add(call);
+        this.appData(by).touchedCalls.add(call);
     }
 
     private dispatchCallInDest(call: CrossAppCall, dest: ApplicationInstance) {
@@ -255,10 +370,13 @@ class CrossCallPromise extends ResumablePromise<any> {
     constructor(readonly call_uuid: string) {
         super();
 
+        this.application = current.application;
         current.hypervisor.crossCallStore._markCallTouched(current.application, call_uuid);
 
         this.do_unsuspend();
     }
+
+    readonly application: ApplicationInstance;
 
     static {
         ResumablePromise.defineClass<CrossCallPromise>({
@@ -277,11 +395,11 @@ class CrossCallPromise extends ResumablePromise<any> {
     }
 
     protected do_unsuspend() {
-        current.hypervisor.crossCallStore._setClientPromise(this.call_uuid, this);
+        current.hypervisor.crossCallStore._setClientPromise(this.application, this.call_uuid, this);
     }
 
     protected do_suspend() {
-        current.hypervisor.crossCallStore._setClientPromise(this.call_uuid, null);
+        current.hypervisor.crossCallStore._setClientPromise(this.application, this.call_uuid, null);
     }
 
     serialize(ctx: SerializeContext) {

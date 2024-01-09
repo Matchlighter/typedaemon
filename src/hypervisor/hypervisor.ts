@@ -4,6 +4,7 @@ import path = require("path")
 import deep_eql = require("deep-eql")
 import chalk = require("chalk")
 import moment = require("moment-timezone")
+import { TypedEmitter } from "tiny-typed-emitter"
 
 import { MultiMap } from "@matchlighter/common_library/data/multimap"
 import { deep_get } from "@matchlighter/common_library/deep/index"
@@ -14,7 +15,7 @@ import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile 
 import { saveGeneratedTsconfig } from "../common/generate_tsconfig"
 import { Plugin } from "../plugins/base"
 import { Application } from "../runtime/application"
-import { ApplicationInstance } from "./application_instance"
+import { AppLifecycle, ApplicationInstance } from "./application_instance"
 import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config"
 import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app"
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin"
@@ -29,13 +30,17 @@ type ConfigWatchHandler<T> = (newConfig: T, oldConfig: T) => void;
 
 const CONFIG_FILE_NAMES = /^typedaemon(_config)?\.(js|ts|json|ya?ml)$/;
 
-export class Hypervisor {
+export type HypervisorEvents = {
+    app_lifecycle: (app: ApplicationInstance, event: AppLifecycle) => void;
+}
+
+export class Hypervisor extends TypedEmitter<HypervisorEvents> {
     constructor(private options: {
         working_directory: string,
         configFile?: string,
         no_watching?: boolean,
     }) {
-
+        super();
     }
 
     private _state: "running" | "shutting_down" = "running";
@@ -174,6 +179,9 @@ export class Hypervisor {
         await this.crossCallStore.load();
 
         this.logMessage("info", "Starting Apps");
+        this.appInstances.on("instance_lifecycle", (instance, levent) => {
+            this.emit("app_lifecycle", instance, levent);
+        });
         await this.appInstances.sync(this.currentConfig.apps || {});
         this.watchConfigEntry("apps", () => this.appInstances.sync(this.currentConfig.apps));
     }
