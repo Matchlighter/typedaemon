@@ -1,24 +1,27 @@
 
 
-import { appProxy } from "./application";
-import { current } from "../hypervisor/current";
+import { get_plugin as _get_plugin } from "../plugins/base";
+import { ApplicationReference } from "./application";
 
-export { Application } from './application'
-export * as lifecycle from "./lifescycle"
-export * as schedule from './schedule'
-export { sleep, sleep_until } from "./sleep"
-export { persistence } from './persistence'
-export { resumable } from './resumable'
+export { Application } from './application';
+export type { ApplicationReference } from './application';
 
-export const get_internal_app = () => {
-    return current.application;
-}
+export { app_current as current } from './app_current';
+export * as lifecycle from "./lifescycle";
+export { persistence } from './persistence';
+export { resumable } from './resumable';
+export * as schedule from './schedule';
+export { sleep, sleep_until } from "./sleep";
 
 /**
- * Retrieve a Proxy to an application instance for the given Application id
+ * Retrieve a handle to an application instance for the given Application id
  */
-export const get_app = (identifier: string) => {
-    return appProxy(current.hypervisor, identifier);
+export const get_app = <A>(identifier: string) => {
+    return new ApplicationReference<A>(identifier);
 }
 
-export { get_plugin } from "../plugins/base"
+/** Get the API for the specified plugin ID */
+export const get_plugin = <P>(identifier: string): P => {
+    // @ts-ignore
+    return _get_plugin(identifier)?.api;
+}

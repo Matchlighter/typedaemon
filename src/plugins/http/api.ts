@@ -102,6 +102,6 @@ export function httpApi(options: { pluginId: string }) {
 }
 httpApi.defaultPluginId = "http"
 
-export type httpApi = ReturnType<typeof httpApi>;
+export type HttpApi = ReturnType<typeof httpApi>;
 
 export const api = makeApiExport(httpApi)
