@@ -1,16 +1,16 @@
 import chalk = require("chalk");
-import { ConditionalKeys, Merge } from "type-fest";
 import { AsyncLocalStorage } from "async_hooks";
 import { ListenerSignature, TypedEmitter } from "tiny-typed-emitter";
+import { ConditionalKeys, Merge } from "type-fest";
 
-import { upcaseFirstChar } from "@matchlighter/common_library/strings";
 import { debounce } from "@matchlighter/common_library/limit";
+import { upcaseFirstChar } from "@matchlighter/common_library/strings";
 
-import { timeoutPromise } from "../common/util";
-import { Hypervisor } from "./hypervisor";
-import { AppLifecycle } from "./application_instance";
-import { ConsoleMethod, ExtendedLoger, LogLevel, LoggerOptions, createDomainLogger } from "./logging";
 import { LifecycleHelper } from "../common/lifecycle_helper";
+import { timeoutPromise } from "../common/util";
+import { AppLifecycle } from "./application_instance";
+import { Hypervisor } from "./hypervisor";
+import { ExtendedLoger, LogLevel, createDomainLogger } from "./logging";
 
 interface LifecycleEvents {
     // started: () => void;
@@ -163,7 +163,13 @@ export interface InstanceConstructor<T extends BaseInstance<C, any>, C extends B
     new(context: InstanceContext, options: C): T;
 }
 
-export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A extends BaseInstanceClient<any> = BaseInstanceClient<any>, T extends BaseInstance<C> = BaseInstance<C>> {
+export type AppNamespaceEvents<T extends BaseInstance<any, any, any>> = {
+    instance_lifecycle: (instance: T, event: AppLifecycle) => void;
+}
+
+export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A extends BaseInstanceClient<any> = BaseInstanceClient<any>, T extends BaseInstance<C> = BaseInstance<C>>
+    extends TypedEmitter<AppNamespaceEvents<T>>
+{
     constructor(
         readonly hypervisor: Hypervisor,
         readonly name: string,
@@ -173,6 +179,7 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
             summarizeInstance?: (config: C) => string,
         },
     ) {
+        super();
         this.logMessage = this.hypervisor.logMessage.bind(this.hypervisor);
     }
 
@@ -218,6 +225,11 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
             hypervisor: this.hypervisor,
             namespace: this,
         }, options);
+
+        instance.on("lifecycle", (levent) => {
+            this.emit("instance_lifecycle", instance, levent);
+        })
+
         this.instances[id] = instance;
         return instance._start().catch((ex) => {
             this.logMessage("error", `${this.name} '${id}' failed while starting up: `, ex)
