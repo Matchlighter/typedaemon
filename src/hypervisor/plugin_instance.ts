@@ -2,8 +2,8 @@ import path = require("path");
 import chalk = require("chalk");
 import deepEqual = require("deep-eql");
 
-import { BaseInstance, InstanceLogConfig } from "../hypervisor/managed_apps";
 import { PluginConfiguration } from "../hypervisor/config_plugin";
+import { BaseInstance, InstanceLogConfig } from "../hypervisor/managed_apps";
 import { PLUGIN_TYPES } from "../plugins";
 import { Plugin } from "../plugins/base";
 import { configChangeHandler } from "./managed_config_events";

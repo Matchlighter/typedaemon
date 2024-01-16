@@ -3,11 +3,10 @@ import { AbstractConstructor } from "type-fest";
 import { TDEntity } from ".";
 import { HomeAssistantPlugin } from "..";
 import { DestroyerStore } from "../../../hypervisor/destroyer";
-import { logMessage } from "../../../hypervisor/logging";
+import { logMessage, logPluginClientMessage } from "../../../hypervisor/logging";
 import { HyperWrapper } from "../../../hypervisor/managed_apps";
-import { HomeAssistantApi, homeAssistantApi } from "../api";
-import { EntityStore } from "./store";
 import { get_plugin } from "../../base";
+import { EntityStore } from "./store";
 
 export interface AutoCleanEntry {
     uuid: string;
@@ -53,7 +52,7 @@ export const trackAutocleanEntity = (store: EntityStore, entity: TDEntity<any>) 
     const cleaner: Autocleaner = entity.constructor[SymbolAutocleaner];
     if (!cleaner) return;
 
-    console.debug(`Adding '${entity.uuid}' to autocleans`);
+    logPluginClientMessage(store.plugin, "debug", `Adding '${entity.uuid}' to autocleans`);
 
     const { application, plugin } = store;
 
@@ -87,12 +86,12 @@ export const autocleanEntities = async (store: EntityStore) => {
             keepEntriesByCUID[cuid] = ent;
         } else {
             try {
-                console.debug(`Autocleaning '${ent.uuid}'`);
+                logPluginClientMessage(plugin, "debug", `Autocleaning '${ent.uuid}'`);
                 const cleaner = getAutocleaner(ent.cleaner_key);
                 // TODO Should this hold up the thread, or occur totally asynchronously?
                 await cleaner.destroy_entity(ent.cleaner_opts, store);
             } catch (ex) {
-                application.logMessage("warn", `Failed to autoclean entity '${ent.uuid}':`, ex)
+                logPluginClientMessage(plugin, "warn", `Failed to autoclean entity '${ent.uuid}':`, ex)
             }
         }
     }

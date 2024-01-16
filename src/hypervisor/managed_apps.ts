@@ -10,7 +10,7 @@ import { LifecycleHelper } from "../common/lifecycle_helper";
 import { timeoutPromise } from "../common/util";
 import { AppLifecycle } from "./application_instance";
 import { Hypervisor } from "./hypervisor";
-import { ExtendedLoger, LogLevel, createDomainLogger } from "./logging";
+import { ExtendedLoger, LogLevel, LoggerOptions, createDomainLogger } from "./logging";
 
 interface LifecycleEvents {
     // started: () => void;
@@ -52,10 +52,15 @@ interface InstanceContext {
     namespace: AppNamespace;
 }
 
+interface LoggerTypeOptions extends LoggerOptions {
+    level: LogLevel;
+    file: string;
+}
+
 export interface InstanceLogConfig {
     tag: string;
-    user?: { level: LogLevel, file: string };
-    manager?: { level: LogLevel, file: string };
+    user?: LoggerTypeOptions;
+    manager?: LoggerTypeOptions;
 }
 
 export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseInstanceClient<any>, const L extends ListenerSignature<L> = any> extends TypedEmitter<Merge<L, LifecycleEvents>> {
@@ -104,15 +109,15 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
         this._logger = createDomainLogger({
             level: "warn",
             domain,
-            ...manager,
             ...rest,
+            ...manager,
         })
 
         this._userSpaceLogger = createDomainLogger({
             level: "debug",
             domain,
-            ...user,
             ...rest,
+            ...user,
         })
     }
 
@@ -142,7 +147,7 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
     private _state: AppLifecycle = "initializing";
     protected transitionState(nstate: AppLifecycle) {
         this._state = nstate;
-        this.logMessage("lifecycle", upcaseFirstChar(nstate))
+        this.logClientMessage("lifecycle", upcaseFirstChar(nstate))
         // @ts-ignore
         this.emit("lifecycle", nstate);
         // @ts-ignore

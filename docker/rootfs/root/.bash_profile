@@ -19,3 +19,5 @@ fi
 alias ll='ls -alF'
 alias la='ls -A'
 alias l='ls -CF'
+
+export PATH=/opt/typedaemon/node_modules/.bin/:$PATH

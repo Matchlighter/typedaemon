@@ -4,10 +4,10 @@ import fse = require("fs-extra")
 import path = require("path");
 import { CommandModule } from "yargs";
 
+import { saveGeneratedTsconfig } from "../common/generate_tsconfig";
+import { TD_DEVELOPER_MODE, TD_MODULES_PATH, TD_VERSION, __package_dir } from "../common/util";
 import { UtilityHypervisor } from "../hypervisor/hypervisor";
 import { InstallOpts, installDependencies } from "../hypervisor/packages";
-import { TD_DEVELOPER_MODE, TD_MODULES_PATH, TD_VERSION, __package_dir } from "../common/util";
-import { saveGeneratedTsconfig } from "../common/generate_tsconfig";
 
 const INSTALL_MODE: 'download' | 'copy' | 'link' = 'copy';
 
@@ -29,7 +29,6 @@ export async function syncDevEnv(wdir: string) {
         };
         const depOpts: InstallOpts = {
             dir: hv.operations_directory,
-            logger: (msg) => console.log('  ' + msg),
             lockfile: false,
         }
         await installDependencies(depOpts, deps);
