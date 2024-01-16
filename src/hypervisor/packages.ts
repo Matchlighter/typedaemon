@@ -1,16 +1,16 @@
 import fs = require("fs");
 import execa = require("execa");
 import path = require("path");
-import { __package_dir } from "../common/util";
+import { TD_MODULES_PATH } from "../common/util";
+import { LogLevel, logMessage } from "./logging";
 
 export interface InstallOpts {
     dir: string;
     lockfile?: boolean;
     devPackages?: boolean;
-    logger: (...args: any[]) => void;
 }
 
-export async function installDependencies({ dir, logger, ...opts }: InstallOpts, dependencies?) {
+export async function installDependencies({ dir, ...opts }: InstallOpts, dependencies?) {
     const flags: string[] = ["--non-interactive"];
 
     if (opts.lockfile === false) {
@@ -44,33 +44,44 @@ export async function installDependencies({ dir, logger, ...opts }: InstallOpts,
                 NODE_ENV: "development",
             }
         }),
-        logger,
+        {
+            ignored_patterns: [
+                "No license field",
+            ]
+        }
     )
 
-    // logger("Patching Packages")
+    logMessage("info", "Patching packages")
 
-    // await handle_subproc(
-    //     execa('patch-package', ['--patch-dir', path.join(__package_dir, 'patches')], {
-    //         cwd: dir,
-    //     }),
-    //     logger,
-    // )
+    await handle_subproc(
+        execa(path.join(TD_MODULES_PATH, '.bin', `patch-package`), [], {
+            cwd: dir,
+        }),
+        {
+            ignored_patterns: [
+                "No license field",
+                "No patch files found",
+            ]
+        }
+    )
 
     if (dependencies) {
         await fs.promises.unlink(pkgjsonFile);
     }
 }
 
-async function handle_subproc(proc: execa.ExecaChildProcess, logger: InstallOpts['logger']) {
-    proc.stdout.on('data', (data) => {
-        logger(data.toString().trim())
-    });
-    proc.stderr.on('data', (data) => {
-        logger(data.toString().trim())
-    });
-    // subprocess.stderr.on('data', (data) => {
-    //     host.logMessage("error", `yarn - ${data.toString().trim()}`)
-    // });
+async function handle_subproc(proc: execa.ExecaChildProcess, { ignored_patterns }: { ignored_patterns?: (string | RegExp)[] } = { ignored_patterns: [] }) {
+    const printer_factory = (level: LogLevel) => (data) => {
+        const lines = (data.toString() as string).trim().split("\n");
+        lineloop: for (let l of lines) {
+            for (let p of ignored_patterns) {
+                if (l.match(p)) continue lineloop;
+            }
+            logMessage(level, l);
+        }
+    }
+    proc.stdout.on('data', printer_factory("debug"));
+    proc.stderr.on('data', printer_factory("warn"));
     const { stdout, stderr, exitCode, failed } = await proc;
     if (failed || exitCode > 0) {
         throw new Error(`Failed to install dependencies with yarn`);

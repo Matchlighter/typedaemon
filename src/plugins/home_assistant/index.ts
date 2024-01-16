@@ -22,8 +22,8 @@ import objectHash = require('object-hash');
 
 import { sync_to_observable } from '@matchlighter/common_library/sync_observable';
 
-import { mqtt } from '..';
 import { DeepReadonly } from '../../common/util';
+import { logPluginClientMessage } from '../../hypervisor/logging';
 import { HyperWrapper } from '../../hypervisor/managed_apps';
 import { ResumablePromise } from "../../runtime/resumable";
 import { SerializeContext } from '../../runtime/resumable/resumable_promise';
@@ -73,7 +73,7 @@ class SubCountingConnection extends Connection {
                 unsubscribe: null,
             }
 
-            console.info("New HA Subscription:", subscribeMessage);
+            logPluginClientMessage(this, "debug", "New HA Subscription:", subscribeMessage);
 
             const unsubscribe = await super.subscribeMessage((...args) => {
                 for (let h of counter.callbacks) {
@@ -96,7 +96,7 @@ class SubCountingConnection extends Connection {
         return async () => {
             counter.callbacks.delete(callback);
             if (counter.callbacks.size == 0) {
-                console.info("Closing HA Subscription:", subscribeMessage);
+                logPluginClientMessage(this, "debug", "Closing HA Subscription:", subscribeMessage);
                 delete this.subscription_counts[hash_key];
                 await counter.unsubscribe();
             }
@@ -196,6 +196,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
             const ha = await createConnection({
                 auth: createLongLivedTokenAuth(url, access_token),
             })
+            ha[HyperWrapper] = this[HyperWrapper];
             this._ha_api = ha;
         } catch (ex) {
             if (HA_WS_ERRORS[ex]) {

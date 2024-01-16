@@ -1,7 +1,7 @@
 import { TDEntity } from ".";
 import type { HomeAssistantPlugin } from "..";
 import { ApplicationInstance } from "../../../hypervisor/application_instance";
-import { logMessage } from "../../../hypervisor/logging";
+import { logPluginClientMessage } from "../../../hypervisor/logging";
 import { HyperWrapper } from "../../../hypervisor/managed_apps";
 import { MqttPlugin } from "../../mqtt";
 import { HAEntititesDestroyer, autocleanEntities } from "./auto_cleaning";
@@ -34,7 +34,7 @@ export class EntityStore {
         }
 
         entity['_bound_store'] = this;
-        logMessage("debug", `Registering entity '${entity.uuid}'`)
+        logPluginClientMessage(this.plugin, "debug", `Registering entity '${entity.uuid}'`)
 
         entity['_disposers'].prepend(() => {
             this._untrackEntity(entity)

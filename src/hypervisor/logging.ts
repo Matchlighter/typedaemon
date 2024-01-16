@@ -12,6 +12,8 @@ require('winston-daily-rotate-file');
 import { mapStackTrace } from "../app_transformer/source_maps";
 import { pojso } from "../common/util";
 import { current } from "./current";
+import { PluginInstance } from "./plugin_instance";
+import { HyperWrapper } from "./managed_apps";
 
 export const CONSOLE_METHODS = ['debug', 'info', 'warn', 'error', 'dir'] as const;
 export type ConsoleMethod = TupleToUnion<typeof CONSOLE_METHODS>
@@ -31,8 +33,8 @@ const NUMERIC_LOG_LEVELS = {
 
 export const ORIGINAL_CONSOLE = { ...console };
 
-export function colorLogLevel(level: ConsoleMethod | string) {
-    const nlevel = level.toLowerCase();
+export function colorLogLevel(level: ConsoleMethod | string, clevel = level) {
+    const nlevel = clevel.toLowerCase();
     if (nlevel == "error") return chalk.red(level);
     if (nlevel == "warn") return chalk.yellow(level);
     if (nlevel == "info") return chalk.blue(level);
@@ -71,9 +73,11 @@ export function cleanAndMapStacktrace(err: Error) {
 const fmt = winston.format;
 
 function formatMessage(m: winston.Logform.TransformableInfo) {
-    let { level, message, label } = m;
-    level = level.toUpperCase();
-    return chalk`[${label}] - ${colorLogLevel(level)} - ${message}`;
+    let { level, message, label, level_prefix, label_format } = m;
+    label = (label_format as string || "[%MSG%]").replace('%MSG%', label);
+    let flevel = (level_prefix || '') + level;
+    flevel = flevel.toUpperCase();
+    return chalk`${label} - ${colorLogLevel(flevel, level)} - ${message}`;
 }
 
 const formatter = fmt.printf(formatMessage)
@@ -101,6 +105,8 @@ const filter = fmt((info) => {
 })
 
 export interface LoggerOptions {
+    level_prefix?: string;
+    label_format?: string;
     domain?: string;
     level?: LogLevel;
     file?: string;
@@ -155,7 +161,11 @@ export function createDomainLogger(opts: LoggerOptions) {
             fmt.label({ label: opts.domain || 'System' }),
             filter(),
         ),
-        defaultMeta: { service: 'user-service' },
+        defaultMeta: {
+            service: 'user-service',
+            level_prefix: opts.level_prefix,
+            label_format: opts.label_format,
+        },
         transports,
     }) as any as ExtendedLoger;
 
@@ -204,28 +214,42 @@ export function createDomainLogger(opts: LoggerOptions) {
 
 export type LogAMessage = typeof logMessage;
 
+export function logClientMessage(level: LogLevel, ...rest: any[]) {
+    const ctx = current.application;
+    const logger = ctx?.userSpaceLogger || UNKNOWN_LOGGER
+    logger.logMessage(level, rest);
+}
+
+export function logPluginClientMessage(plugin: any, level: LogLevel, ...rest: any[]) {
+    if (!(plugin instanceof PluginInstance)) plugin = plugin[HyperWrapper];
+
+    const ctx = current.application;
+    const logger = ctx?.logger || UNKNOWN_LOGGER
+    logger.logMessage(level, ["[" + chalk.blueBright`${plugin.id}` + "]", ...rest], {});
+}
+
 export function logMessage(level: LogLevel, ...rest: any[]) {
     const ctx = current.application || current.hypervisor;
-    const logger = ctx?.logger || UKNOWN_LOGGER
+    const logger = ctx?.logger || UNKNOWN_LOGGER
     logger.logMessage(level, rest);
 }
 
-export function logSystemMessage(level: LogLevel, ...rest: any[]) {
+export function logHVMessage(level: LogLevel, ...rest: any[]) {
     const ctx = current.hypervisor;
-    const logger = ctx?.logger || UKNOWN_LOGGER
+    const logger = ctx?.logger || UNKNOWN_LOGGER
     logger.logMessage(level, rest);
 }
 
-let UKNOWN_LOGGER = createDomainLogger({ domain: chalk.yellow("???") });
+export let UNKNOWN_LOGGER = createDomainLogger({ domain: chalk.yellow("???") });
 export function setFallbackLogger(logger: ExtendedLoger) {
-    UKNOWN_LOGGER = logger;
+    UNKNOWN_LOGGER = logger;
 }
 
 export function redirectConsole() {
     for (let cm of CONSOLE_METHODS) {
         console[cm] = (m, ...rest) => {
             const ctx = current.application || current.hypervisor;
-            const logger = ctx?.logger || UKNOWN_LOGGER
+            const logger = ctx?.logger || UNKNOWN_LOGGER
             try {
                 logger.logMessage(cm, [m, ...rest]);
             } catch (ex) {
@@ -233,4 +257,5 @@ export function redirectConsole() {
             }
         }
     }
+    console.log = (...rest) => console.info(...rest);
 }

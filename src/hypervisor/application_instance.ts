@@ -64,9 +64,17 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         const lopts = this.options.logging;
         const file = this.loggerFile();
         return {
-            tag: chalk.blue`Application: ${this.id}`,
-            manager: { file: file, level: lopts?.system_level },
-            user: { file: file, level: lopts?.level },
+            tag: chalk.blue`App: ${this.id}`,
+            manager: {
+                file: file,
+                level: lopts?.system_level,
+            },
+            user: {
+                file: file,
+                level: lopts?.level,
+                // domain: chalk.blue.italic`App: ${this.id}`,
+                label_format: "[[%MSG%]]"
+            },
         }
     }
 
@@ -195,12 +203,13 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
         // if (Object.keys(packageJson?.dependencies || {}).length > 0) {
         this.logMessage("info", `Installing packages`);
-        await installDependencies({
+        // TODO Skip if unchanged
+        //   - Add a file (eg .tdmeta) to the shared_operating_directory?
+        await this.invoke(() => installDependencies({
             dir: this.shared_operating_directory,
-            logger: (...args) => this.logMessage("debug", ...args),
             lockfile: this.isThickApp,
             devPackages: true,
-        });
+        }));
 
         // Abort if the app started shutting down
         if (this.state as AppLifecycle != "initializing") return;
@@ -342,8 +351,10 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
     }
 
     private async compileModule() {
-        const vm = await this.vm();
-        return vm.runFile(this.entrypoint);
+        return await this.invoke(async () => {
+            const vm = await this.vm();
+            return vm.runFile(this.entrypoint);
+        })
     }
 
     private _vm: AsyncReturnType<typeof createApplicationVM>;
