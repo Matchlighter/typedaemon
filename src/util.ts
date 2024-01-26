@@ -121,3 +121,9 @@ export function callback_or_decorator2<const P extends any[], F extends (...para
         }
     }) as any
 }
+
+export function internal_sleep(ms: number) {
+    return new Promise((resolve, reject) => {
+        setTimeout(resolve, ms);
+    })
+}
