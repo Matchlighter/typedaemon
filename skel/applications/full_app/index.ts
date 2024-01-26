@@ -1,7 +1,7 @@
 
 import type { HassEntity } from 'home-assistant-js-websocket'
 
-import { Application, get_app, ha, mqtt, persistence, resumable, schedule, sleep } from "@td"
+import { Application, get_app, ha, mqtt, persistence, resumable, schedule, sleep, lifecycle } from "@td"
 import * as mobx from 'mobx'
 
 // TypeDaemon uses MobX to make things automatically react when values change
@@ -13,7 +13,8 @@ export default class MyApp extends Application {
     accessor pvalue = 1;
 
     // Perform logic when the application starts
-    async initialize() {
+    @lifecycle.on_started
+    async handle_app_started() {
         // Publish something via MQTT. Objects will be automatically converted to JSON strings
         mqtt.publish("bob/boberts", { a: 1 })
 
@@ -28,6 +29,11 @@ export default class MyApp extends Application {
             console.log("Input 'test' changed:", ha.states['input_select.test'])
         });
     }
+
+    // Advanced: You can also/alternatively provide an initialize method.
+    // It is executed _before_ the application is considered started and _before_ TypeDaemon @annotations are fully applied, so
+    // you should be wary and understand that @annotations may not yet be fully setup.
+    async initialize() {}
 
     // Create a Button Helper in Home Assistant that will call the method when it is pressed
     @ha.button({ id: "td_button", name: "TD Button" })

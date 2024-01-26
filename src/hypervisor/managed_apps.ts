@@ -238,6 +238,9 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
         this.instances[id] = instance;
         return instance._start().catch((ex) => {
             this.logMessage("error", `${this.name} '${id}' failed while starting up: `, ex)
+            try {
+                instance.logClientMessage("error", `Failed while starting up: `, ex);
+            } catch {}
             // We're intnetionally forgoing immediate shutdown and cleanup - this allows the app's config watcher to remain active and restart the app
         });
     }
