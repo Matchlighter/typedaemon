@@ -13,7 +13,7 @@ export const on_started = callback_or_decorator2((func: () => void) => {
     }
 
     instance.addLifeCycleHook("started", func);
-})
+}, [])
 
 /**
  * Helper to run logic when an application is shutting down.
@@ -23,4 +23,4 @@ export const on_shutdown = callback_or_decorator2((func: () => void) => {
     instance.cleanups.append(() => {
         return instance.invoke(func);
     })
-})
+}, [])

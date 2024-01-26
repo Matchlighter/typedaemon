@@ -474,6 +474,12 @@ class Executor<T> extends ResumablePromise<T> {
     }
 }
 
+/**
+ * Mark a method as resumable. When the app or TypeDaemon shutdown, the current execution
+ * state will be saved and reloaded when the app starts again.
+ * 
+ * NB: All variables must be JSON serializable.
+ */
 export const resumable = (f, context: ClassMethodDecoratorContext) => {
     function scope_wrapped(...args) {
         const executor: Executor<any> = f.call(this, ...args);
