@@ -27,6 +27,7 @@ import { logPluginClientMessage } from '../../hypervisor/logging';
 import { HyperWrapper } from '../../hypervisor/managed_apps';
 import { ResumablePromise } from "../../runtime/resumable";
 import { SerializeContext } from '../../runtime/resumable/resumable_promise';
+import { internal_sleep } from '../../util';
 import { Plugin, get_plugin, handle_client_error } from '../base';
 import { MqttPlugin } from '../mqtt';
 import { HomeAssistantApi, homeAssistantApi } from './api';
@@ -184,25 +185,29 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     }
 
     private async connect() {
-        let url = this.config.url;
-        let access_token = this.config.access_token;
+        while (true) {
+            let url = this.config.url;
+            let access_token = this.config.access_token;
+    
+            if ('SUPERVISOR_TOKEN' in process.env) {
+                url ||= "http://supervisor/core"
+                access_token ||= process.env['SUPERVISOR_TOKEN']
+            }
 
-        if ('SUPERVISOR_TOKEN' in process.env) {
-            url ||= "http://supervisor/core"
-            access_token ||= process.env['SUPERVISOR_TOKEN']
-        }
-
-        try {
-            const ha = await createConnection({
-                auth: createLongLivedTokenAuth(url, access_token),
-            })
-            ha[HyperWrapper] = this[HyperWrapper];
-            this._ha_api = ha;
-        } catch (ex) {
-            if (HA_WS_ERRORS[ex]) {
-                throw new Error(`HA WebSocket Error: ${HA_WS_ERRORS[ex]}`);
-            } else {
-                throw ex;
+            try {
+                const ha = await createConnection({
+                    auth: createLongLivedTokenAuth(url, access_token),
+                })
+                ha[HyperWrapper] = this[HyperWrapper];
+                this._ha_api = ha;
+                break;
+            } catch (ex) {
+                if (HA_WS_ERRORS[ex]) {
+                    this[HyperWrapper].logMessage("error", `Could not connect to Home Assistant (${HA_WS_ERRORS[ex]}). Retrying in 30s...`);
+                    await internal_sleep(30_000);
+                } else {
+                    throw ex;
+                }
             }
         }
 
@@ -228,8 +233,8 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
         this._ha_api.addEventListener("disconnected", () => {
             this[HyperWrapper].logMessage("warn", `HA Websocket Disconnected`)
         })
-        this._ha_api.addEventListener("reconnect-error", () => {
-            this[HyperWrapper].logMessage("warn", `HA Websocket Reconnect Error`)
+        this._ha_api.addEventListener("reconnect-error", (conn, err) => {
+            this[HyperWrapper].logMessage("warn", `HA Websocket Reconnect Error (${HA_WS_ERRORS[err] || err})`)
         })
 
         // Listen for events
@@ -262,8 +267,10 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     }
 
     configuration_updated(new_config: HomeAssistantPluginConfig, old_config: HomeAssistantPluginConfig) {
-        this._ha_api.options.auth = createLongLivedTokenAuth(this.config.url, this.config.access_token);
-        this._ha_api.reconnect();
+        if (this._ha_api) {
+            this._ha_api.options.auth = createLongLivedTokenAuth(this.config.url, this.config.access_token);
+            this._ha_api.reconnect();
+        }
     }
 }
 
