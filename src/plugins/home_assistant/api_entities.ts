@@ -327,16 +327,16 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         number: inputApi<number, NumberInputOptions>("input_number"),
 
         /** Create an `input_text` helper and sync it with the decorated accessor */
-        text: inputApi<string, { min?: number, max?: number, pattern?: string | RegExp, mode?: 'text' | 'password' }>("input_text"),
+        text: inputApi<string, { min?: number, max?: number, pattern?: string | RegExp, mode?: 'text' | 'password' } & InputOptions<string>>("input_text"),
 
         /** Create an `input_boolean` helper and sync it with the decorated accessor */
-        boolean: inputApi<boolean>("input_boolean"),
+        boolean: inputApi<boolean, InputOptions<boolean>>("input_boolean"),
 
         /** Create an `input_boolean` helper and sync it with the decorated accessor */
-        bool: inputApi<boolean>("input_boolean"),
+        bool: inputApi<boolean, InputOptions<boolean>>("input_boolean"),
 
         /** Create an `input_datetime` helper and sync it with the decorated accessor */
-        datetime: inputApi<Date | number | Iso8601String, { has_date?: boolean, has_time?: boolean }>("input_datetime"),
+        datetime: inputApi<Date | number | Iso8601String, { has_date?: boolean, has_time?: boolean } & InputOptions<string>>("input_datetime"),
 
         /** Create an `input_select` helper and sync it with the decorated accessor */
         select: funcOrNew(
