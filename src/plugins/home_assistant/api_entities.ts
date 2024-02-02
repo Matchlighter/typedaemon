@@ -10,7 +10,7 @@ import { chainedDecorators, dec_once } from "../../common/decorators";
 import { current } from "../../hypervisor/current";
 import { persistent } from "../../runtime/persistence";
 import { Annotable, assert_application_context, client_call_safe, getOrCreateLocalData, notePluginAnnotation } from "../base";
-import { ButtonOptions, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity } from "./entity_api";
+import { ButtonOptions, HABoolean, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity } from "./entity_api";
 import { trackAutocleanEntity } from "./entity_api/auto_cleaning";
 import { domain_entities } from "./entity_api/domains";
 import { EntityClass, EntityClassConstructor, EntityClassOptions, EntityClassType } from "./entity_api/domains/base";
@@ -64,7 +64,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     }
 
     function _linkFieldEntityBase<T extends TDEntity<any>>(
-        construct: () => T,
+        construct: (self: any) => T,
         context: DecoratorContext,
         roptions: EntityRegistrationOptions,
         init_callback?: (self, ent: T) => void,
@@ -80,7 +80,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         const init_linked = async (self) => {
             if (get_linked(self, false)) return;
 
-            const ent = construct();
+            const ent = construct(self);
             init_callback?.(self, ent);
             ents.set(self, ent);
 
@@ -219,13 +219,28 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         return ((access, context) => {
             const { entity_options, registration_options } = separateRegistrationOptions(options);
 
+            if (entity_options.existing) {
+                if (registration_options.auto_clean) throw new Error("Cannot use auto_clean: true with existing: true");
+                registration_options.auto_clean = false;
+            }
+
+            const initialValues = new WeakMap<any, any>();
+
             const { get_linked } = _linkFieldEntityBase(
-                () => new InputEntity(entity_options.id || String(context.name), { domain, ...entity_options }),
+                (self) => new InputEntity(entity_options.id || String(context.name), {
+                    domain,
+                    initial: initialValues.get(self),
+                    ...entity_options,
+                }),
                 context,
                 registration_options,
             )
 
             return {
+                init(v) {
+                    initialValues.set(this, v);
+                    return v;
+                },
                 get() {
                     return get_linked(this, true).state;
                 },
@@ -330,10 +345,10 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         text: inputApi<string, { min?: number, max?: number, pattern?: string | RegExp, mode?: 'text' | 'password' } & InputOptions<string>>("input_text"),
 
         /** Create an `input_boolean` helper and sync it with the decorated accessor */
-        boolean: inputApi<boolean, InputOptions<boolean>>("input_boolean"),
+        boolean: inputApi<HABoolean, InputOptions<HABoolean>>("input_boolean"),
 
         /** Create an `input_boolean` helper and sync it with the decorated accessor */
-        bool: inputApi<boolean, InputOptions<boolean>>("input_boolean"),
+        bool: inputApi<HABoolean, InputOptions<HABoolean>>("input_boolean"),
 
         /** Create an `input_datetime` helper and sync it with the decorated accessor */
         datetime: inputApi<Date | number | Iso8601String, { has_date?: boolean, has_time?: boolean } & InputOptions<string>>("input_datetime"),
