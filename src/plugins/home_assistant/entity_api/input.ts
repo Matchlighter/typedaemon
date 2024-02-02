@@ -1,4 +1,5 @@
 import { observable, runInAction } from "mobx";
+import * as moment from "moment";
 
 import type { HomeAssistantPlugin } from "..";
 import { client_call_safe } from "../../base";
@@ -30,6 +31,8 @@ export interface NumberInputOptions extends InputOptions<number> {
     step?: number;
     mode?: 'slider' | 'box';
 }
+
+export type HABoolean = "on" | "off";
 
 class InputEntity<T> extends TDEntity<T> {
     constructor(readonly id: string, readonly options: InputOptions<T>) {
@@ -78,6 +81,16 @@ class InputEntity<T> extends TDEntity<T> {
         const service_params: any = {
             entity_id: this.uuid,
         };
+
+        if (this.domain == "input_datetime" && value instanceof Date) {
+            value = value.toISOString() as any;
+        }
+        if (this.domain == "input_datetime" && moment.isMoment(value)) {
+            value = value.toISOString() as any;
+        }
+        if (this.domain == "input_boolean" && typeof value == "boolean") {
+            value = value ? "on" : "off" as any;
+        }
 
         if (this.domain == "input_select") {
             service = "input_select.select_option";
