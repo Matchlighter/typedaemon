@@ -10,7 +10,7 @@ import { callback_or_decorator2 } from "../../util";
 
 import { sleep } from "../..";
 import { bind_callback_env, get_plugin } from "../../plugins/base";
-import { HomeAssistantPlugin } from "../../plugins/home_assistant";
+import { HomeAssistantPlugin } from "../../plugins/home_assistant/plugin";
 import { ResumableCallbackPromise } from "../resumable/resumable_method";
 import { sleep_until } from "../sleep";
 

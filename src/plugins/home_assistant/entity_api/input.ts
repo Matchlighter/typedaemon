@@ -1,7 +1,7 @@
 import { observable, runInAction } from "mobx";
 import * as moment from "moment";
 
-import type { HomeAssistantPlugin } from "..";
+import type { HomeAssistantPlugin } from "../plugin";
 import { client_call_safe } from "../../base";
 import { plgmobx } from "../../mobx";
 import { setAutocleaner } from "./auto_cleaning";
@@ -32,7 +32,7 @@ export interface NumberInputOptions extends InputOptions<number> {
     mode?: 'slider' | 'box';
 }
 
-export type HABoolean = "on" | "off";
+export type HassBoolean = "on" | "off";
 
 class InputEntity<T> extends TDEntity<T> {
     constructor(readonly id: string, readonly options: InputOptions<T>) {

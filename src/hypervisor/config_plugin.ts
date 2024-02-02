@@ -2,9 +2,9 @@
 import { merger } from "@matchlighter/common_library/data/config";
 
 import { PLUGIN_TYPES } from "..";
-import { HomeAssistantPluginConfig } from "../plugins/home_assistant";
-import { HttpPluginConfig } from "../plugins/http";
-import { MQTTPluginConfig } from "../plugins/mqtt";
+import { HomeAssistantPluginConfig } from "../plugins/home_assistant/plugin";
+import { HttpPluginConfig } from "../plugins/http/plugin";
+import { MQTTPluginConfig } from "../plugins/mqtt/plugin";
 import { LogLevel } from "./logging";
 
 export interface BasePluginConfig {

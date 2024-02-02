@@ -29,7 +29,7 @@ import { ResumablePromise } from "../../runtime/resumable";
 import { SerializeContext } from '../../runtime/resumable/resumable_promise';
 import { internal_sleep } from '../../util';
 import { Plugin, get_plugin, handle_client_error } from '../base';
-import { MqttPlugin } from '../mqtt';
+import { MqttPlugin } from '../mqtt/plugin';
 import { HomeAssistantApi, homeAssistantApi } from './api';
 
 // @ts-ignore

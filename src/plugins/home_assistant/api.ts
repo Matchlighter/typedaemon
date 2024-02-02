@@ -3,7 +3,7 @@ import { HassEntity, HassEvent, MessageBase, StateChangedEvent } from "home-assi
 
 import "@matchlighter/common_library/decorators/20223fills";
 
-import { HomeAssistantPlugin } from ".";
+import { HomeAssistantPlugin } from "./plugin";
 import { escapeRegExp } from "../../common/util";
 import { current } from "../../hypervisor/current";
 import { callback_or_decorator2 } from "../../util";
@@ -271,4 +271,7 @@ homeAssistantApi.defaultPluginId = "home_assistant";
 export type HomeAssistantApi = ReturnType<typeof homeAssistantApi>;
 
 // TODO Re-Export types
+export { HassEntity, HassEntities, HassEvent, HassService, HassServiceTarget } from "home-assistant-js-websocket";
+export { HassBoolean } from "./entity_api/input"
+
 export const api = makeApiExport(homeAssistantApi)
