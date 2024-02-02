@@ -86,6 +86,31 @@ type COD2ReturnSignatureDirect<P extends any[], F extends (...params: any[]) => 
 type COD2ReturnSignature<P extends any[], F extends (...params: any[]) => any, R> = COD2ReturnSignatureBase<P,F,R> & (P['length'] extends 0 ? COD2ReturnSignatureDirect<P,F,R> : {})
 type COD2ReturnSignatureWithDirect<P extends any[], F extends (...params: any[]) => any, R> = COD2ReturnSignatureBase<P,F,R> & COD2ReturnSignatureDirect<P,F,R>
 
+/**
+ * Returns a function that wraps the given function, making it a registering call.
+ * The returned function can be used directly or as a decorator.
+ * 
+ * ```ts
+ * class App {
+ *   initialize() {
+ *     on_shutdown(() => {
+ *       ...
+ *     })
+ *   }
+ * 
+ *   @on_shutdown(...)
+ *   do_this_at_shutdown() {
+ *     ...
+ *   }
+ * 
+ *   // If `default_params` is given, the decorator may be used w/o parens
+ *   @on_shutdown
+ *   do_this_at_shutdown() {
+ *     ...
+ *   }
+ * }
+ * ```
+ */
 export function callback_or_decorator2<const P extends any[], F extends (...params: any[]) => any, R>(func: (f: F, ...params: P) => R): COD2ReturnSignature<P, F, R>
 export function callback_or_decorator2<const P extends any[], F extends (...params: any[]) => any, R>(func: (f: F, ...params: P) => R, default_params: P): COD2ReturnSignatureWithDirect<P, F, R>
 export function callback_or_decorator2<const P extends any[], F extends (...params: any[]) => any, R>(func: (f: F, ...params: P) => R, default_params?: P): COD2ReturnSignature<P, F, R> {
