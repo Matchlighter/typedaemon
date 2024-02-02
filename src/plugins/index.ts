@@ -1,7 +1,7 @@
 
-import { HomeAssistantPlugin } from "./home_assistant";
-import { HttpPlugin } from "./http";
-import { MqttPlugin } from "./mqtt";
+import { HomeAssistantPlugin } from "./home_assistant/plugin";
+import { HttpPlugin } from "./http/plugin";
+import { MqttPlugin } from "./mqtt/plugin";
 
 export const PLUGIN_TYPES = {
     "home_assistant": HomeAssistantPlugin,

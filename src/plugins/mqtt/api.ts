@@ -3,7 +3,7 @@ import * as mqtt from "mqtt";
 import mqtt_match = require('mqtt-match')
 
 import { computed, observable } from "mobx";
-import { MqttPlugin } from ".";
+import { MqttPlugin } from "./plugin";
 import { current } from "../../hypervisor/current";
 import { HyperWrapper } from "../../hypervisor/managed_apps";
 import { assert_application_context, bind_callback_env, client_call_safe, makeApiExport, notePluginAnnotation, pluginAnnotationDecorator } from "../base";

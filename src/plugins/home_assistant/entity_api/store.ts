@@ -1,9 +1,9 @@
 import { TDEntity } from ".";
-import type { HomeAssistantPlugin } from "..";
+import type { HomeAssistantPlugin } from "../plugin";
 import { ApplicationInstance } from "../../../hypervisor/application_instance";
 import { logPluginClientMessage } from "../../../hypervisor/logging";
 import { HyperWrapper } from "../../../hypervisor/managed_apps";
-import { MqttPlugin } from "../../mqtt";
+import { MqttPlugin } from "../../mqtt/plugin";
 import { HAEntititesDestroyer, autocleanEntities } from "./auto_cleaning";
 
 export class EntityStore {

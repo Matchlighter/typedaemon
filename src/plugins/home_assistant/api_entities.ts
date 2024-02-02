@@ -4,13 +4,13 @@ import { action, computed, observable } from "mobx";
 import { ClassAccessorDecorator, ClassGetterDecorator, ClassMethodDecorator } from "@matchlighter/common_library/decorators/20223fills";
 import { optional_config_decorator } from "@matchlighter/common_library/decorators/utils";
 
-import { HomeAssistantPlugin } from ".";
+import { HomeAssistantPlugin } from "./plugin";
 import { funcOrNew } from "../../common/alternative_calls";
 import { chainedDecorators, dec_once } from "../../common/decorators";
 import { current } from "../../hypervisor/current";
 import { persistent } from "../../runtime/persistence";
 import { Annotable, assert_application_context, client_call_safe, getOrCreateLocalData, notePluginAnnotation } from "../base";
-import { ButtonOptions, HABoolean, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity } from "./entity_api";
+import { ButtonOptions, HassBoolean, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity } from "./entity_api";
 import { trackAutocleanEntity } from "./entity_api/auto_cleaning";
 import { domain_entities } from "./entity_api/domains";
 import { EntityClass, EntityClassConstructor, EntityClassOptions, EntityClassType } from "./entity_api/domains/base";
@@ -215,7 +215,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
     // ========= Input Entity Helpers ========= //
 
-    function _inputDecorator<O extends {} = {}>(domain: string, options: InputOptions<any> & O) {
+    function _inputDecorator<V, O extends {} = {}>(domain: string, options: InputOptions<any> & O) {
         return ((access, context) => {
             const { entity_options, registration_options } = separateRegistrationOptions(options);
 
@@ -248,7 +248,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
                     get_linked(this, true).state = value;
                 },
             } as any
-        }) as ClassAccessorDecorator<Annotable, any>
+        }) as ClassAccessorDecorator<Annotable, V>
     }
 
     /** API Factory for creating input entities with either `new` or decorator syntax */
@@ -258,7 +258,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         }
 
         return funcOrNew(
-            (options: O & EntityRegistrationOptions) => _inputDecorator(domain, options),
+            (options: O & EntityRegistrationOptions) => _inputDecorator<V, O>(domain, options),
             TIEnt as typeof InputEntity<V>,
         )
     }
@@ -266,7 +266,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     type Iso8601String = string;
 
     /** Create an `input_button` helper and trigger the decorated method when pressed */
-    const _inputButtonDecorator = (options: ButtonOptions & EntityRegistrationOptions): ClassMethodDecorator => {
+    const _inputButtonDecorator = (options: ButtonOptions & EntityRegistrationOptions): ClassMethodDecorator<Annotable, () => any> => {
         const { entity_options, registration_options } = separateRegistrationOptions(options);
 
         return (func, context) => {
@@ -345,17 +345,17 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         text: inputApi<string, { min?: number, max?: number, pattern?: string | RegExp, mode?: 'text' | 'password' } & InputOptions<string>>("input_text"),
 
         /** Create an `input_boolean` helper and sync it with the decorated accessor */
-        boolean: inputApi<HABoolean, InputOptions<HABoolean>>("input_boolean"),
+        boolean: inputApi<HassBoolean, InputOptions<HassBoolean>>("input_boolean"),
 
         /** Create an `input_boolean` helper and sync it with the decorated accessor */
-        bool: inputApi<HABoolean, InputOptions<HABoolean>>("input_boolean"),
+        bool: inputApi<HassBoolean, InputOptions<HassBoolean>>("input_boolean"),
 
         /** Create an `input_datetime` helper and sync it with the decorated accessor */
         datetime: inputApi<Date | number | Iso8601String, { has_date?: boolean, has_time?: boolean } & InputOptions<string>>("input_datetime"),
 
         /** Create an `input_select` helper and sync it with the decorated accessor */
         select: funcOrNew(
-            <const T extends string>(options: T[], config?: InputOptions<T>) => _inputDecorator("input_select", { options, ...config }),
+            <const T extends string>(options: T[], config?: InputOptions<T>) => _inputDecorator<T, InputOptions<T>>("input_select", { options, ...config }),
             InputSelect,
         ),
 

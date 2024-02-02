@@ -3,7 +3,7 @@ import express = require('express')
 import path = require('path');
 import { Socket } from 'net';
 
-import { HttpPlugin } from ".";
+import { HttpPlugin } from "./plugin";
 import { ApplicationInstance } from '../../hypervisor/application_instance';
 import { current } from "../../hypervisor/current";
 import { int_callback_or_decorator } from '../../util';

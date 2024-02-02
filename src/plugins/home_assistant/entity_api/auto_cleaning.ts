@@ -1,7 +1,7 @@
 import { AbstractConstructor } from "type-fest";
 
 import { TDEntity } from ".";
-import { HomeAssistantPlugin } from "..";
+import { HomeAssistantPlugin } from "../plugin";
 import { DestroyerStore } from "../../../hypervisor/destroyer";
 import { logMessage, logPluginClientMessage } from "../../../hypervisor/logging";
 import { HyperWrapper } from "../../../hypervisor/managed_apps";
