@@ -89,6 +89,7 @@ jobs:
             # BASEIMGTYPE=${{ matrix.image.baseimg }}
           build-args: |
             BUILD_VERSION=${{ steps.tags.outputs.version }}
+            BUILD_CHANNEL=${{ steps.tags.outputs.channel }}
 
   deploy-ha-addon-repo:
     if: github.repository == 'matchlighter/typedaemon' && github.event_name == 'release'

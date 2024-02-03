@@ -5,18 +5,23 @@ import path = require("path");
 import { CommandModule } from "yargs";
 
 import { saveGeneratedTsconfig } from "../common/generate_tsconfig";
-import { TD_DEVELOPER_MODE, TD_MODULES_PATH, TD_VERSION, __package_dir } from "../common/util";
+import { SimpleStore, TD_DEVELOPER_MODE, TD_MODULES_PATH, TD_VERSION, __package_dir } from "../common/util";
 import { UtilityHypervisor } from "../hypervisor/hypervisor";
 import { InstallOpts, installDependencies } from "../hypervisor/packages";
 
 const INSTALL_MODE: 'download' | 'copy' | 'link' = 'copy';
 
-export async function syncDevEnv(wdir: string) {
-    const hv = new UtilityHypervisor({
-        working_directory: wdir,
-    })
+export async function syncDevEnv(wdir: string | UtilityHypervisor) {
+    let hv: UtilityHypervisor;
+    if (typeof wdir == "string") {
+        hv = new UtilityHypervisor({
+            working_directory: wdir,
+        });
+        await hv.start();
+    } else {
+        hv = wdir;
+    }
 
-    await hv.start()
     console.log("Generating tsconfig.json")
     await saveGeneratedTsconfig(hv);
 
@@ -59,20 +64,42 @@ export async function syncDevEnv(wdir: string) {
         await fse.link(path.join(__package_dir, 'node_modules'), nmpath)
     }
 
-    await hv.shutdown();
+    if (typeof wdir == "string") {
+        await hv.shutdown();
+    }
 }
 
 export default {
     command: "dev_env",
     describe: "Setup/Sync the Development Environment",
     builder: y => y.strict(false).options({
-
+        'fast': { boolean: true, default: false, desc: "Only sync if the TypeDaemon version mismatches" },
     }),
     handler: async (argv) => {
         // This loads Babel, which has a custom resolver. We need to execute from where TD is installed, but against the TD config
         if (process.env['TYPEDAEMON_MODULE']) {
             process.chdir(path.join(process.env['TYPEDAEMON_MODULE'], '../..'));
         }
-        await syncDevEnv(argv.config as string);
+
+        const hv = new UtilityHypervisor({
+            working_directory: argv.config as string,
+        });
+
+        const meta = new SimpleStore<any>(path.join(hv.operations_directory, "dev_env.json"));
+        await meta.load();
+
+        if (argv.fast) {
+            if (meta.data.devenv_version == TD_VERSION) {
+                console.log("Already up to date");
+                return;
+            }
+        }
+
+        await hv.start();
+        await syncDevEnv(hv);
+        await hv.shutdown();
+
+        meta.data.devenv_version = TD_VERSION;
+        await meta.save();
     },
 } as CommandModule
