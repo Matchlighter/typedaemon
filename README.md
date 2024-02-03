@@ -36,8 +36,7 @@ TypeDaemon runs completely in Docker, but apps/config are expected to be edited 
 You can execute an arbitrary command in-container with `./td exec CMD`. You can easily gain an in-container shell with `./td shell`.
 
 ### Syncing the Dev Environment
-TypeDaemon tries to abstract the need for you to learn how JS packaging and NPM work. It does this by generating the appropriate configs and automagically downloading appropriate typings and support files.
-This process is triggered via the `td dev_env` command. 
+TypeDaemon tries to abstract the need for you to learn how JS packaging and NPM work. It does this by generating the appropriate configs and automagically downloading appropriate typings and support files. This process occurs automatically upon first startup and when TypeDaemon detects that it was updated, but you can also manually trigger this by running `./td dev_env`
 
 ## Where thar be Dragons
 

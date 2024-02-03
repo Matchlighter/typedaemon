@@ -265,6 +265,7 @@ export function patch<T, K extends keyof T>(target: T, key: K, patcher: (origina
 }
 
 import { eachLine } from "line-reader";
+import * as objectHash from "object-hash";
 
 export function read_lines(file: string, options: LineReaderOptions, iteratee: (line: string, last: boolean) => void) {
     return new Promise((resolve, reject) => {
@@ -281,4 +282,27 @@ export function read_lines(file: string, options: LineReaderOptions, iteratee: (
 export function split_once(str: string, splitter: string) {
     const i = str.indexOf(splitter);
     return [str.slice(0, i), str.slice(i + 1)];
+}
+
+export class SimpleStore<T extends {}> {
+    constructor(readonly path: string) {}
+
+    data: T = {} as any;
+    private savedHash: string;
+
+    async load() {
+        try {
+            const metajson = await fs.promises.readFile(this.path, 'utf-8');
+            this.data = JSON.parse(metajson);
+        } catch (ex) {
+        }
+        this.savedHash = objectHash.sha1(this.data);
+    }
+
+    async save() {
+        const hash = objectHash.sha1(this.data);
+        if (this.savedHash == hash) return;
+        await fs.promises.writeFile(this.path, JSON.stringify(this.data));
+        this.savedHash = hash;
+    }
 }

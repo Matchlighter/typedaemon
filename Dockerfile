@@ -11,7 +11,12 @@ RUN /build/build_socat.sh
 # ======= TD Package Builder ======= #
 FROM node:18 AS builder
 
+ARG BUILD_VERSION
+ARG BUILD_CHANNEL
+
 WORKDIR /opt/typedaemon_build
+
+RUN apt-get update && apt-get install -y jq
 
 # Install Deps
 COPY package.json yarn.lock ./
@@ -30,6 +35,11 @@ RUN yarn build
 # Copy in non-compiled files
 COPY . .
 COPY ./docker/skel ./skel
+
+# Add version info
+RUN \
+    echo '{ "version": "'${BUILD_VERSION}'", "channel": "'${BUILD_CHANNEL}'" }' > version.json && \
+    jq '.version = "'${BUILD_VERSION}'"' package.json > /tmp/package.json && mv /tmp/package.json package.json
 
 # Remove src
 RUN rm -rf src/ node_modules/ docker/
