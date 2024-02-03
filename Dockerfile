@@ -38,8 +38,8 @@ COPY ./docker/skel ./skel
 
 # Add version info
 RUN \
-    echo '{ "version": "'${BUILD_VERSION}'", "channel": "'${BUILD_CHANNEL}'" }' > version.json
-    # && jq '.version = "'${BUILD_VERSION}'"' package.json > /tmp/package.json && mv /tmp/package.json package.json
+    echo '{ "version": "'${BUILD_VERSION}'", "channel": "'${BUILD_CHANNEL}'" }' > version.json \
+    && jq '.image_version = "'${BUILD_VERSION}'" | .image_channel = "'${BUILD_CHANNEL}'"' package.json > /tmp/package.json && mv /tmp/package.json package.json
 
 # Remove src
 RUN rm -rf src/ node_modules/ docker/

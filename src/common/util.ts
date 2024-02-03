@@ -15,6 +15,10 @@ export const TD_MODULES_PATH = TD_DEVELOPER_MODE ? path.join(__package_dir, 'nod
 const TD_PACKAGE_JSON = require(path.join(__package_dir, "package.json"));
 
 export const TD_VERSION = TD_PACKAGE_JSON.version;
+export const TD_IMAGE_VERSION = TD_PACKAGE_JSON.image_version;
+export const TD_IMAGE_CHANNEL = TD_PACKAGE_JSON.image_channel;
+
+export const TD_VERSION_PRECISE = `${TD_IMAGE_CHANNEL || "local"}-${TD_IMAGE_VERSION || TD_VERSION}`;
 
 // Deep ReadOnly
 export type DeepReadonly<T> =
