@@ -1,5 +1,5 @@
 ---
-name: Publish Release
+name: Publish Images
 
 # yamllint disable-line rule:truthy
 on:
