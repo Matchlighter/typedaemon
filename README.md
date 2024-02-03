@@ -4,6 +4,8 @@ Typescript-based application environment for Home Assistant. Similar in principl
 
 Aims to "include the batteries", providing simple, clean APIs for writing automations.
 
+TypeDaemon is still a work in progress. It works to do what I do in my production Home Assistant and has been stable, but it is still beta software - there are probably bugs and things may change.
+
 ## Installation
 
 ### Hassio (Recommended)
@@ -36,3 +38,9 @@ You can execute an arbitrary command in-container with `./td exec CMD`. You can 
 ### Syncing the Dev Environment
 TypeDaemon tries to abstract the need for you to learn how JS packaging and NPM work. It does this by generating the appropriate configs and automagically downloading appropriate typings and support files.
 This process is triggered via the `td dev_env` command. 
+
+## Where thar be Dragons
+
+### Using the edge/dev Version
+
+The TypeDaemon edge/dev addon does not auto-update. To pull the latest version, run `docker pull ghcr.io/matchlighter/typedaemon:edge` and restart the addon. The edge image is built from the latest code pushed to the `master` branch of this repo.
