@@ -16,7 +16,20 @@ parser.add_argument(
     required=False,
     help="The suffix of the tag.",
 )
+parser.add_argument(
+    "--package-version",
+    type=str,
+    required=False,
+)
+parser.add_argument(
+    "--package-version-changed",
+    type=str,
+    required=False,
+)
 
+
+def package_json_version_changed():
+    pass
 
 def main():
     args = parser.parse_args()
@@ -25,8 +38,13 @@ def main():
     version = ""
     major_minor_version = None
     tags_to_push = []
-    if os.environ.get("GITHUB_EVENT_NAME", None) == "release":
-        version = os.environ.get("GITHUB_REF").replace("refs/tags/", "")
+
+    branch = os.environ.get("GITHUB_REF", "arbitrary").replace("refs/heads/", "")
+
+    def set_version(v):
+        nonlocal version, channel, major_minor_version
+
+        version = v
         tags_to_push.append(version)
 
         # detect channel from tag
@@ -39,8 +57,12 @@ def main():
             channel = CHANNEL_RELEASE
         else:
             channel = CHANNEL_BETA
+
+    if os.environ.get("GITHUB_EVENT_NAME", None) == "release":
+        set_version(os.environ.get("GITHUB_REF").replace("refs/tags/", ""))
+    elif branch == "master" and args.package_version_changed == "true":
+        set_version(args.package_version)
     else:
-        branch = os.environ.get("GITHUB_REF", "arbitrary").replace("refs/heads/", "")
         sha = os.environ.get("GITHUB_SHA", "")
         datecode = datetime.datetime.now().isoformat()
         version = f"{branch}-{sha}-{datecode}"
