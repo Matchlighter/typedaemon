@@ -1,13 +1,14 @@
 
 import type { HassEntity } from 'home-assistant-js-websocket'
 
-import { Application, get_app, ha, mqtt, persistence, resumable, schedule, sleep, lifecycle } from "@td"
+import { Application, get_app, ha, mqtt, persistence, resumable, schedule, sleep, lifecycle, get_plugin, current } from "@td"
 import * as mobx from 'mobx'
 
 // TypeDaemon uses MobX to make things automatically react when values change
 // Read more about MobX here: https://mobx.js.org/README.html
 
 export default class MyApp extends Application {
+
     // Make a property automatically persist to disk, surviving restarts
     @persistence.property
     accessor pvalue = 1;
@@ -28,12 +29,17 @@ export default class MyApp extends Application {
         mobx.autorun(() => {
             console.log("Input 'test' changed:", ha.states['input_select.test'])
         });
+
+        // Access custom config parameters from `typedaemon_config.ts`:
+        this.config['your_param'];
+        // or
+        current.config['your_param'];
     }
 
     // Advanced: You can also/alternatively provide an initialize method.
     // It is executed _before_ the application is considered started and _before_ TypeDaemon @annotations are fully applied, so
     // you should be wary and understand that @annotations may not yet be fully setup.
-    async initialize() {}
+    async initialize() { }
 
     // Create a Button Helper in Home Assistant that will call the method when it is pressed
     @ha.button({ id: "td_button", name: "TD Button" })
@@ -56,7 +62,7 @@ export default class MyApp extends Application {
 
     // Run some logic when a Home Assistant entity changes
     @ha.subscribe_state(["binary_sensor.front_door", "binary_sensor.back_door", "binary_sensor.garage_side_door"])
-    handle_door_state(new_state: HassEntity, old_state, entity: string) {}
+    handle_door_state(new_state: HassEntity, old_state, entity: string) { }
 
     // Do something everyday at 4:30AM (Hover over the second `schedule` to see more accepted date formats)
     @schedule.schedule("4:30 AM")
@@ -94,7 +100,28 @@ export default class MyApp extends Application {
 
     // Perform logic when the application shutsdown
     shutdown() { }
+    // or
+    @lifecycle.on_started
+    more_shutdown_logic() { }
 
     // Advanced: Perform custom logic when the configuration changes instead of the automatically restarting the app
     configuration_updated() { }
+
+    @lifecycle.on_started
+    async handle_app_started_advanced() {
+        // Advanced: Everything you can do via decorators should be doable imperatively.
+        // This is useful for more advanced/dynamic use cases, or if you just don't like decorators.
+        const btn1 = new ha.button("test", { name: "Some Button" });
+        btn1.on_pressed = () => {
+            console.log("Pressed");
+        }
+        ha.registerEntity(btn1);
+    }
 }
+
+// Advanced: Multiple HA instances or non-default plugin configuration:
+// Each plugin (HA, MQTT) has a default id in the config file. The plugin APIs exported from @td (eg ha, mqtt) use the default config.
+// If you have multiple configs (or for some reason can't use the default naming), the default plugin API exports will not work. Instead,
+// you'll need to use `get_plugin("plugin_id")`
+const ha2 = get_plugin<typeof ha>("home_assistant2");
+const ha3 = get_plugin<typeof ha>(current.config['home_asistant_plugin_id']);
