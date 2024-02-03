@@ -5,8 +5,7 @@ import { Server, createServer } from "http";
 import express = require('express')
 
 import { promisify } from "util";
-import { TD_VERSION } from "../../common/util";
-import { HyperWrapper } from "../../hypervisor/managed_apps";
+import { TD_VERSION_PRECISE } from "../../common/util";
 import { Plugin } from "../base";
 import { AppHttpStore, HttpApi, httpApi } from "./api";
 
@@ -32,7 +31,7 @@ export class HttpPlugin extends Plugin<HttpPluginConfig> {
         this.app.get("/status", (req, resp, next) => {
             resp.json({
                 status: "up",
-                version: TD_VERSION,
+                version: TD_VERSION_PRECISE,
             })
         })
 

@@ -5,7 +5,7 @@ import path = require("path");
 import { CommandModule } from "yargs";
 
 import { saveGeneratedTsconfig } from "../common/generate_tsconfig";
-import { SimpleStore, TD_DEVELOPER_MODE, TD_MODULES_PATH, TD_VERSION, __package_dir } from "../common/util";
+import { SimpleStore, TD_DEVELOPER_MODE, TD_MODULES_PATH, TD_VERSION, TD_VERSION_PRECISE, __package_dir } from "../common/util";
 import { UtilityHypervisor } from "../hypervisor/hypervisor";
 import { InstallOpts, installDependencies } from "../hypervisor/packages";
 
@@ -89,7 +89,7 @@ export default {
         await meta.load();
 
         if (argv.fast) {
-            if (meta.data.devenv_version == TD_VERSION) {
+            if (meta.data.devenv_version == TD_VERSION_PRECISE) {
                 console.log("Already up to date");
                 return;
             }
@@ -99,7 +99,7 @@ export default {
         await syncDevEnv(hv);
         await hv.shutdown();
 
-        meta.data.devenv_version = TD_VERSION;
+        meta.data.devenv_version = TD_VERSION_PRECISE;
         await meta.save();
     },
 } as CommandModule
