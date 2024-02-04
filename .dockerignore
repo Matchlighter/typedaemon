@@ -3,4 +3,6 @@ test_setup/
 experiments/
 dist/
 .git/
+.github/
+.gitignore
 Dockerfile
