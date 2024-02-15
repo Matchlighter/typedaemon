@@ -84,7 +84,7 @@ jobs:
       - name: Generate short tags
         id: tags
         run: |
-          script/generate_tags.py --package-version ${{ steps.check.outputs.version }} --package-version-changed ${{ steps.check.outputs.changed }}
+          script/generate_tags.py --package-version="${{ steps.check.outputs.version }}" --package-version-changed="${{ steps.check.outputs.changed }}"
         # --suffix "${{ matrix.image.suffix }}"
 
       - name: Build and push
