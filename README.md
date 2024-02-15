@@ -2,7 +2,7 @@
 
 Typescript-based application environment for Home Assistant. Similar in principle to AppDaemon, but swaps Python for Javascript/Typescript.
 
-Aims to "include the batteries", providing simple, clean APIs for writing automations.
+Aims to "include the batteries", providing simple, clean APIs for writing automations - just take a look at the [example](skel/applications/full_app/index.ts).
 
 TypeDaemon is still a work in progress. It works to do what I do in my production Home Assistant and has been stable, but it is still beta software - there are probably bugs and things may change.
 
