@@ -60,16 +60,18 @@ def main():
 
     if os.environ.get("GITHUB_EVENT_NAME", None) == "release":
         set_version(os.environ.get("GITHUB_REF").replace("refs/tags/", ""))
-    elif branch == "master" and args.package_version_changed == "true":
-        set_version(args.package_version)
     else:
-        sha = os.environ.get("GITHUB_SHA", "")
-        datecode = datetime.datetime.now().isoformat()
-        version = f"{branch}-{sha}-{datecode}"
+        if branch == "master" and args.package_version_changed == "true":
+            set_version(args.package_version)
+        else:
+            sha = os.environ.get("GITHUB_SHA", "")
+            datecode = datetime.datetime.now().isoformat()
+            version = f"{branch}-{sha}-{datecode}"
+
         if branch == "master":
             tags_to_push.append("edge")
-        else:
-            tags_to_push.append(f"branch-{branch}")
+
+        tags_to_push.append(f"branch-{branch}")
 
     if channel == CHANNEL_BETA:
         tags_to_push.append("beta")
