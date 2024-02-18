@@ -1,6 +1,7 @@
 
 
-import { get_plugin as _get_plugin } from "../plugins/base";
+import { HyperWrapper } from "../hypervisor/managed_apps";
+import { NoSuchPluginError, Plugin, PluginNotStartedError, get_plugin as _get_plugin } from "../plugins/base";
 import { ApplicationReference } from "./application";
 
 export { Application } from './application';
@@ -22,6 +23,13 @@ export const get_app = <A = any>(identifier: string) => {
 
 /** Get the API for the specified plugin ID */
 export const get_plugin = <P>(identifier: string): P => {
+    const pl = _get_plugin<Plugin>(identifier);
+    if (!pl) throw new NoSuchPluginError(identifier);
+    if (pl[HyperWrapper].state != "started") throw new PluginNotStartedError(identifier);
+    return pl.getAPI();
+}
+
+get_plugin.or_null = <P>(identifier: string): P => {
     // @ts-ignore
-    return _get_plugin(identifier)?.getAPI();
+    return _get_plugin<P>(identifier).getAPI();
 }

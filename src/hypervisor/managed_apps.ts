@@ -218,6 +218,7 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
         await this._startInstance(id);
     }
 
+    private _startupPromise: Promise<any>;
     private _startInstance(id: string, options?: C) {
         options ||= this.options.getInstanceConfig(id);
 
@@ -236,13 +237,18 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
         })
 
         this.instances[id] = instance;
-        return instance._start().catch((ex) => {
-            this.logMessage("error", `${this.name} '${id}' failed while starting up: `, ex)
+
+        const prom = this._startupPromise = (async () => {
             try {
-                instance.logClientMessage("error", `Failed while starting up: `, ex);
-            } catch {}
-            // We're intnetionally forgoing immediate shutdown and cleanup - this allows the app's config watcher to remain active and restart the app
-        });
+                await instance._start();
+            } catch (ex) {
+                this.logMessage("error", `${this.name} '${id}' failed while starting up: `, ex)
+                // We're intentionally forgoing immediate shutdown and cleanup - this allows the app's config watcher to remain active and restart the app
+            }
+            this._startupPromise = null;
+        })();
+
+        return prom;
     }
 
     private shutdownPromises = new Set<Promise<any>>();
@@ -253,25 +259,36 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
 
         if (instance.state == 'stopping' || instance.state == 'stopped') return;
 
-        // TODO Handle starting state (should probably wait for it to finish and then stop it)
-
         const id = instance?.id;
 
         this.logMessage("info", `Stopping ${this.name}: '${id}'...`)
 
         if (instance != this.instances[id]) throw new Error(`Attempt to reinitialize an inactive ${this.name}`);
 
-        // TODO Kill dependent instances?
-
         delete this.instances[id];
 
-        const prom = Promise.resolve(instance._shutdown());
+        const prom = (async () => {
+            try {
+                // Handle starting state (should probably wait for it to finish and then stop it)
+                if (this._startupPromise) {
+                    try {
+                        await timeoutPromise(5000, this._startupPromise, () => {
+                            this.logMessage("warn", `Shutting down an app that never finished startup`);
+                        })
+                    } catch (ex) { }
+                }
+                await instance._shutdown();
+            } catch (ex) {
+                this.logMessage("error", `${this.name} '${id}' failed while shutting down: `, ex);
+                throw ex;
+            } finally {
+                this.shutdownPromises.delete(prom)
+            }
+        })();
+
         this.shutdownPromises.add(prom);
-        // TODO Set a timer to check that it actually stopped?
-        return prom.finally(() => this.shutdownPromises.delete(prom)).catch((ex) => {
-            this.logMessage("error", `${this.name} '${id}' failed while shutting down: `, ex);
-            throw ex;
-        })
+
+        return prom;
     }
 
     sync(desired: Record<string, C>) {
@@ -284,6 +301,7 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
         // TODO Better support for dependencies.
         //   Each app to await other_app.state == 'started'.
         //   Restart apps here when one of it's deps change
+        //   (This may be resolved by the cross-call subsystem)
 
         // Kill running apps that shouldn't be
         for (let [id, instance] of Object.entries(currentInstances)) {

@@ -11,7 +11,7 @@ import extract_comments = require('extract-comments');
 import { debounce } from "@matchlighter/common_library/limit";
 
 import { TYPEDAEMON_PATH, fileExists, trim, watchFile } from '../common/util';
-import { flushPluginAnnotations } from '../plugins/base';
+import { PluginNotStartedError, flushPluginAnnotations } from '../plugins/base';
 import { Application } from '../runtime/application';
 import { ResumableStore, resumable } from '../runtime/resumable';
 import { AppConfiguration } from "./config_app";
@@ -161,130 +161,156 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
     }
 
     async _start() {
-        if (!await fileExists(this.entrypoint)) {
-            throw new Error(`Application entrypoint '${this.entrypoint}' not found`)
-        }
-
-        await fs.promises.mkdir(this.operating_directory, { recursive: true });
-        await fs.promises.mkdir(this.shared_operating_directory, { recursive: true });
-        await fs.promises.mkdir(path.dirname(this.loggerFile()), { recursive: true });
-
-        this.markFileDependency(this.entrypoint);
-
-        const moduleSource = (await fs.promises.readFile(this.entrypoint)).toString();
-
-        this.destroyerStore = new DestroyerStore(this);
-        this.cleanups.append(() => this.destroyerStore.dispose());
-
-        this.logMessage("debug", `Parsing package dependencies`);
-        const { dependencies } = parseAnnotations(moduleSource);
-
-        // Items in the config override any that are in the source
-        Object.assign(dependencies, this.options.dependencies || {});
-
-        const packageFilePath = path.join(this.shared_operating_directory, "package.json");
-        let packageJson: any = {};
-        let shouldManagePackage = !await fileExists(packageFilePath);
-        if (!shouldManagePackage) {
-            packageJson = JSON.parse((await fs.promises.readFile(packageFilePath)).toString());
-            if (packageJson['typedaemon_managed']) {
-                shouldManagePackage = true;
-            } else if (Object.keys(dependencies).length > 0) {
-                this.logMessage("warn", `Source file includes dependency annotations, but a non-managed package.json file was found. In-file dependency annoations will be ignored.`)
-            }
-        }
-
-        if (shouldManagePackage) {
-            this.logMessage("debug", `Generating managed package.json`);
-            // TODO Do not install items that are available in the Host
-            packageJson = this.generateOpPackageJson({ dependencies });
-            await fs.promises.writeFile(packageFilePath, JSON.stringify(packageJson));
-        }
-
-        // if (Object.keys(packageJson?.dependencies || {}).length > 0) {
-        this.logMessage("info", `Installing packages`);
-        // TODO Skip if unchanged
-        //   - Add a file (eg .tdmeta) to the shared_operating_directory?
-        await this.invoke(() => installDependencies({
-            dir: this.shared_operating_directory,
-            lockfile: this.isThickApp,
-            devPackages: true,
-        }));
-
-        // Abort if the app started shutting down
-        if (this.state as AppLifecycle != "initializing") return;
-
-        this.transitionState("compiling");
-
-        const module = await this.compileModule();
-        this.cleanups.append(() => this._vm.removeAllListeners?.());
-        const mainExport = module[this.options.export || 'default'];
-        const metadata: ApplicationMetadata = (typeof mainExport == 'object' && mainExport) || mainExport.metadata || module.metadata || { applicationClass: mainExport, ...module, ...mainExport };
-
-        // Abort if the app started shutting down
-        if (this.state as AppLifecycle != "compiling") return;
-
-        this.transitionState("starting")
-
-        this.persistedStorage = new PersistentStorage(path.join(this.operating_directory, ".persistence.jkv"));
-        await this.persistedStorage.load();
-        this.cleanups.append(() => this.persistedStorage.dispose());
-
-        const AppClass = metadata.applicationClass;
-        this._instance = new AppClass(this);
-
-        resumable.register_context("APPLICATION", this._instance, true);
-
-        // Self-watch for config changes
-        if (this.options.watch?.config) {
-            const handler = configChangeHandler(this, async ({ handle, ncfg, ocfg }) => {
-                if (!deepEqual(immutableConfigBits(ocfg), immutableConfigBits(ncfg))) {
-                    this.logMessage("debug", `Configuration changed significantly, restarting`);
-                    throw new RequireRestart()
-                }
-
-                handle("logging", () => this._updateLogConfig())
-            });
-            const disposer = this.hypervisor.watchConfigEntry<AppConfiguration>(`apps.${this.id}`, handler);
-            this.cleanups.append(disposer);
-        }
-
-        this.resumableStore = new ResumableStore({
-            file: path.join(this.operating_directory, ".resumable_state.json"),
-            logger: this.logger,
-        }, {
-            "APPLICATION": this._instance,
-        })
-
-        this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
-
         try {
-            // TODO Timeout or cancel during restart
-            await this.invoke(() => this.instance.initialize?.());
-        } catch (ex) {
-            this.invoke(() => {
-                this.logClientMessage("error", `Failed while starting up: `, ex)
+            if (!await fileExists(this.entrypoint)) {
+                throw new Error(`Application entrypoint '${this.entrypoint}' not found`)
+            }
+
+            await fs.promises.mkdir(this.operating_directory, { recursive: true });
+            await fs.promises.mkdir(this.shared_operating_directory, { recursive: true });
+            await fs.promises.mkdir(path.dirname(this.loggerFile()), { recursive: true });
+
+            this.markFileDependency(this.entrypoint);
+
+            const moduleSource = (await fs.promises.readFile(this.entrypoint)).toString();
+
+            this.destroyerStore = new DestroyerStore(this);
+            this.cleanups.append(() => this.destroyerStore.dispose());
+
+            this.logMessage("debug", `Parsing package dependencies`);
+            const { dependencies } = parseAnnotations(moduleSource);
+
+            // Items in the config override any that are in the source
+            Object.assign(dependencies, this.options.dependencies || {});
+
+            const packageFilePath = path.join(this.shared_operating_directory, "package.json");
+            let packageJson: any = {};
+            let shouldManagePackage = !await fileExists(packageFilePath);
+            if (!shouldManagePackage) {
+                packageJson = JSON.parse((await fs.promises.readFile(packageFilePath)).toString());
+                if (packageJson['typedaemon_managed']) {
+                    shouldManagePackage = true;
+                } else if (Object.keys(dependencies).length > 0) {
+                    this.logMessage("warn", `Source file includes dependency annotations, but a non-managed package.json file was found. In-file dependency annoations will be ignored.`)
+                }
+            }
+
+            if (shouldManagePackage) {
+                this.logMessage("debug", `Generating managed package.json`);
+                // TODO Do not install items that are available in the Host
+                packageJson = this.generateOpPackageJson({ dependencies });
+                await fs.promises.writeFile(packageFilePath, JSON.stringify(packageJson));
+            }
+
+            // if (Object.keys(packageJson?.dependencies || {}).length > 0) {
+            this.logMessage("info", `Installing packages`);
+            // TODO Skip if unchanged
+            //   - Add a file (eg .tdmeta) to the shared_operating_directory?
+            await this.invoke(() => installDependencies({
+                dir: this.shared_operating_directory,
+                lockfile: this.isThickApp,
+                devPackages: true,
+            }));
+
+            // Abort if the app started shutting down
+            if (this.state as AppLifecycle != "initializing") return;
+
+            // Self-watch for config changes
+            if (this.options.watch?.config) {
+                const handler = configChangeHandler(this, async ({ handle, ncfg, ocfg }) => {
+                    if (!deepEqual(immutableConfigBits(ocfg), immutableConfigBits(ncfg))) {
+                        this.logMessage("debug", `Configuration changed significantly, restarting`);
+                        throw new RequireRestart()
+                    }
+
+                    handle("logging", () => this._updateLogConfig())
+                });
+                const disposer = this.hypervisor.watchConfigEntry<AppConfiguration>(`apps.${this.id}`, handler);
+                this.cleanups.append(disposer);
+            }
+
+            this.transitionState("compiling");
+
+            let module;
+            try {
+                module = await this.compileModule();
+            } catch (ex) {
+                this.handle_client_startup_error(ex);
+                return;
+            }
+
+            this.cleanups.append(() => this._vm.removeAllListeners?.());
+            const mainExport = module[this.options.export || 'default'];
+            const metadata: ApplicationMetadata = (typeof mainExport == 'object' && mainExport) || mainExport.metadata || module.metadata || { applicationClass: mainExport, ...module, ...mainExport };
+
+            // Abort if the app started shutting down
+            if (this.state as AppLifecycle != "compiling") return;
+
+            this.transitionState("starting")
+
+            this.persistedStorage = new PersistentStorage(path.join(this.operating_directory, ".persistence.jkv"));
+            await this.persistedStorage.load();
+            this.cleanups.append(() => this.persistedStorage.dispose());
+
+            const AppClass = metadata.applicationClass;
+            try {
+                this._instance = new AppClass(this);
+            } catch (ex) {
+                this.handle_client_startup_error(ex);
+                return;
+            }
+
+            resumable.register_context("APPLICATION", this._instance, true);
+
+            this.resumableStore = new ResumableStore({
+                file: path.join(this.operating_directory, ".resumable_state.json"),
+                logger: this.logger,
+            }, {
+                "APPLICATION": this._instance,
             })
-            return
+
+            this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
+
+            try {
+                // TODO Timeout or cancel during restart
+                await this.invoke(() => this.instance.initialize?.());
+            } catch (ex) {
+                this.handle_client_startup_error(ex);
+                return;
+            }
+
+            // Abort if the app started shutting down
+            if (this.state as AppLifecycle != "starting") return;
+
+            await this.invoke(async () => {
+                // TODO Skip if initialize already did this
+                await flushPluginAnnotations(this.instance);
+                await this.resumableStore.load();
+            })
+
+            // We want this to run before the userspace app has completely shutdown
+            this.cleanups.append(async () => {
+                this.logMessage("info", "Suspending Resumables")
+                await this.resumableStore.save();
+            });
+
+            // Abort if the app started shutting down
+            if (this.state as AppLifecycle != "starting") return;
+
+            this.transitionState('started');
+
+            await this.hypervisor.crossCallStore.handleAppStart(this);
+
+            // Abort if the app started shutting down
+            if (this.state as AppLifecycle != "starting") return;
+
+            await this.fireLifecycleHooks("started");
+        } catch (ex) {
+            this.logClientMessage("error", `Failed while starting up: `, ex);
+            // "dead" is more like "mostly dead" - we don't do shutdown so that watchers are kept live and can trigger a restart
+            this.transitionState("dead");
+            throw ex;
         }
-
-        await this.invoke(async () => {
-            // TODO Skip if initialize already did this
-            await flushPluginAnnotations(this.instance);
-            await this.resumableStore.load();
-        })
-
-        // We want this to run before the userspace app has completely shutdown
-        this.cleanups.append(async () => {
-            this.logMessage("info", "Suspending Resumables")
-            await this.resumableStore.save();
-        });
-
-        this.transitionState('started');
-
-        await this.hypervisor.crossCallStore.handleAppStart(this);
-
-        await this.fireLifecycleHooks("started");
     }
 
     /** Cleanup all traces of the application */
@@ -366,6 +392,25 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
     get unsafe_vm() {
         return this._vm;
+    }
+
+    private handle_client_startup_error(err: Error) {
+        this.transitionState("dead");
+        if (err instanceof PluginNotStartedError) {
+            this.logClientMessage("warn", `Tried to use a plugin (${err.plugin_id}) that hasn't started yet. Will retry app startup later`)
+            const plh = this.hypervisor.getPlugin(err.plugin_id);
+            const handler = (state: AppLifecycle) => {
+                if (state == "started") {
+                    plh.off("lifecycle", handler);
+                    this.namespace.reinitializeInstance(this);
+                }
+            }
+            plh.on("lifecycle", handler);
+        } else {
+            this.invoke(() => {
+                this.logClientMessage("error", `Failed while starting up: `, err);
+            })
+        }
     }
 }
 

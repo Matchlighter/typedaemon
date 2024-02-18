@@ -39,7 +39,8 @@ export function configChangeHandler<C>(instance: BaseInstance<C, CCHBaseInstance
             await prehandle(prehandleContext);
         } catch (ex) {
             if (ex instanceof RequireRestart) {
-                instance.namespace.reinitializeInstance(instance);
+                await instance.namespace.reinitializeInstance(instance);
+                return;
             } else {
                 throw ex;
             }
@@ -48,12 +49,13 @@ export function configChangeHandler<C>(instance: BaseInstance<C, CCHBaseInstance
         if (deepEqual(unhandled_ncfg, unhandled_ocfg)) return;
 
         try {
+            if (!instance.instance) throw new RequireRestart();
             if (!instance.instance.configuration_updated) throw new RequireRestart();
             await instance.invoke(() => instance.instance.configuration_updated(ncfg, ocfg));
         } catch (ex) {
             if (ex instanceof RequireRestart) {
                 instance.logMessage("debug", `Determined that changes require a restart, restarting`);
-                instance.namespace.reinitializeInstance(instance);
+                await instance.namespace.reinitializeInstance(instance);
             } else {
                 instance.logMessage("error", `Error occurred while updating configuration:`, ex);
                 throw ex;
