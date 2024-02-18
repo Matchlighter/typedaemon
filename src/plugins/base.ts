@@ -20,7 +20,7 @@ const PluginAnnotationsSymbol = Symbol("PluginAnnotations")
 /**
  * Retrieve the plugin instance for the given Plugin id
  */
-export const get_plugin = <T>(identifier: string): T => {
+export const get_plugin = <T = Plugin>(identifier: string): T => {
     return current.hypervisor.getPlugin(identifier)?.instance as any;
 }
 
@@ -83,7 +83,7 @@ export function bind_callback_env<T extends (...args: any[]) => any>(callback: T
     }) as any
 }
 
-class NoApplicationError extends Error {}
+class NoApplicationError extends Error { }
 export function assert_application_context() {
     if (!current.application) throw new NoApplicationError("Method can only be called from an Application. If it was, a callback was likely called without invoke()")
 }
@@ -108,13 +108,25 @@ export type DefaultApiExport<F extends ApiFactory> = ReturnType<F> & {
 
 }
 
+export class PluginNotStartedError extends Error {
+    constructor(readonly plugin_id: string) {
+        super(`Plugin '${plugin_id}' not started`)
+    }
+}
+export class NoSuchPluginError extends Error {
+    constructor(readonly plugin_id: string) {
+        super(`No such plugin '${plugin_id}'`)
+    }
+}
+
 export function makeApiExport<F extends ApiFactory<any>>(factory: F): DefaultApiExport<F> {
     const base = {};
     Object.preventExtensions(base);
     return new Proxy(base, {
         get(target, p, receiver) {
             const pl = get_plugin<Plugin>(factory.defaultPluginId);
-            if (!pl) current.application.logMessage("warn", `Attempted to use default ${factory.defaultPluginId} plugin, but it is not configured!`)
+            if (!pl) current.application.logMessage("warn", `Attempted to use default ${factory.defaultPluginId} plugin, but it is not configured!`);
+            if (pl[HyperWrapper].state != "started") throw new PluginNotStartedError(factory.defaultPluginId);
             const api = pl.getAPI() as any;
             return Reflect.get(api, p, api);
         }

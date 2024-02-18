@@ -11,12 +11,11 @@ import { MultiMap } from "@matchlighter/common_library/data/multimap"
 import { deep_get } from "@matchlighter/common_library/deep/index"
 
 import { LifecycleHelper } from "../common/lifecycle_helper"
-import { DeepReadonly, fileExists, resolveSourceFile, watchFile } from "../common/util"
+import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile } from "../common/util"
 
 import { saveGeneratedTsconfig } from "../common/generate_tsconfig"
 import { Plugin } from "../plugins/base"
 import { Application } from "../runtime/application"
-import { internal_sleep } from "../util"
 import { AppLifecycle, ApplicationInstance } from "./application_instance"
 import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config"
 import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app"
@@ -174,21 +173,22 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         this.logMessage("info", "Starting Plugins");
         const proms = this.pluginInstances.sync(this.currentConfig.plugins || {});
 
-        let loaded = false;
-        // TODO Support optional plugins?
-        const all_settled = Promise.allSettled(proms).then(() => { loaded = true });
-        while (true) {
-            await Promise.any([all_settled, internal_sleep(10000)]);
-            if (!loaded) {
-                this.logMessage("warn", `Plugins not started after 10s`)
-            } else {
-                break;
-            }
-        }
-        this.watchConfigEntry("plugins", () => this.pluginInstances.sync(this.currentConfig.plugins));
+        await timeoutPromise(10000, Promise.allSettled(proms), () => {
+            this.logMessage("warn", `Plugins failed to start within 10s`)
+        });
 
-        // TODO If plugins didn't start, should we keep waiting or continuing booting the apps?
-        // - We could do dependency tracking in the apps where we note plugins that they try to use during init. If all plugins accessed come online, we restart the app?
+        // let loaded = false;
+        // // TODO Support optional plugins?
+        // const all_settled = Promise.allSettled(proms).then(() => { loaded = true });
+        // while (true) {
+        //     await Promise.any([all_settled, internal_sleep(10000)]);
+        //     if (!loaded) {
+        //         this.logMessage("warn", `Plugins not started after 10s`)
+        //     } else {
+        //         break;
+        //     }
+        // }
+        this.watchConfigEntry("plugins", () => this.pluginInstances.sync(this.currentConfig.plugins));
 
         if (this.state != 'running') return;
 
