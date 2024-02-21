@@ -5,10 +5,10 @@ import { TsConfigJson } from "type-fest";
 import fse = require('fs-extra');
 
 import { merger } from "@matchlighter/common_library/data/config";
-import { Hypervisor } from "../hypervisor/hypervisor";
-import { TD_DEVELOPER_MODE, TYPEDAEMON_PATH } from "./util";
 import { Configuration } from "../hypervisor/config";
-import { PATH_ALIASES } from "../hypervisor/vm";
+import { Hypervisor } from "../hypervisor/hypervisor";
+import { TYPE_ALIASES } from "../hypervisor/vm";
+import { TD_DEVELOPER_MODE, TYPEDAEMON_PATH } from "./util";
 
 const tsconfigMerger = merger<TsConfigJson>({
     compilerOptions: merger({
@@ -32,12 +32,12 @@ export async function saveGeneratedTsconfig(hv: Hypervisor) {
 
     const paths = {}
 
-    for (let [k, v] of Object.entries(PATH_ALIASES)) {
-        paths[k] = [v.replace("@TYPEDAEMON", typedaemon_dir)]
+    for (let [k, v] of Object.entries(TYPE_ALIASES)) {
+        paths[k] = [v.replace("@TYPEDAEMON", typedaemon_dir).replace("@SYS_NODE_MODULES", "./node_modules")]
     }
 
     Object.assign(paths, {
-        "*": ["./node_modules/*"],
+        // "*": ["./node_modules/*"],
     })
 
     let tscfg: TsConfigJson = {
