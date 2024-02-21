@@ -66,3 +66,8 @@ export function sleep(time_ms: number) {
 export function sleep_until(u: Date) {
     return new SleeperPromise(u.getTime());
 }
+
+export {
+    debounce,
+    throttle
+} from "@matchlighter/common_library/limit"
