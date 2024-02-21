@@ -14,6 +14,8 @@ export { resumable } from './resumable';
 export * as schedule from './schedule';
 export { sleep, sleep_until } from "./sleep";
 
+export * as func from "./func";
+
 /**
  * Retrieve a handle to an application instance for the given Application id
  */

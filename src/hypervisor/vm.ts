@@ -44,6 +44,7 @@ export const PATH_ALIASES = {
     "@td": "@TYPEDAEMON",
     "@td/ha": "@TYPEDAEMON/plugins/home_assistant/api",
     "@td/mqtt": "@TYPEDAEMON/plugins/mqtt/api",
+    "@td/http": "@TYPEDAEMON/plugins/http/api",
     "@td/*": "@TYPEDAEMON/*",
 }
 
