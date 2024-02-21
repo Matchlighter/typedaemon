@@ -20,7 +20,7 @@ import { BaseInstance, InstanceLogConfig } from './managed_apps';
 import { RequireRestart, configChangeHandler } from './managed_config_events';
 import { installDependencies } from './packages';
 import { PersistentStorage } from './persistent_storage';
-import { createApplicationVM } from './vm';
+import { createApplicationVM, determineModuleContext } from './vm';
 
 export interface ApplicationMetadata {
     applicationClass?: typeof Application;
@@ -78,44 +78,12 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         }
     }
 
-    includedFileScope(file: string) {
-        if (!file) return "sandbox";
-
-        // Make sure TypeDaemon stuff always runs on the Host
-        if (file.includes(TYPEDAEMON_PATH)) {
-            return "host";
-        }
-
-        // _Any_ files in the app directory should run in the Sandbox
-        if (file.includes(this.source_directory)) {
-            return "sandbox";
-        }
-
-        // In fact, any files in the applications directory should run in the Sandbox
-        if (file.includes(path.resolve(this.hypervisor.working_directory, 'applications'))) {
-            return "sandbox";
-        }
-
-        // Any Lite-App Environments should run in the Sandbox
-        if (file.includes(path.resolve(this.shared_operating_directory))) {
-            return "sandbox";
-        }
-
-        // TODO If hosted_module, "host"
-        // TODO If global dependency, "host"
-
-        if (file.match(/node_modules/)) {
-            return "host"
-        }
-
-        return "sandbox";
-    }
-
     private watchedDependencies = new Set<string>();
     markFileDependency(file: string, calling_module?: string) {
         if (!this.options.watch?.source) return;
-        if (this.includedFileScope(file) != "sandbox") return;
+        if (determineModuleContext(file) != "sandbox") return;
         if (file.includes("/node_modules/")) return;
+        if (file.includes(TYPEDAEMON_PATH) && !file.includes(this.hypervisor.working_directory)) return;
 
         // Don't watch the new file if it was somehow hopped to
         // if (calling_module && !this.watchedDependencies.has(calling_module)) return;
