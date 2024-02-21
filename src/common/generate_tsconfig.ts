@@ -27,7 +27,7 @@ const tsconfigMerger = merger<TsConfigJson>({
 })
 
 export async function saveGeneratedTsconfig(hv: Hypervisor) {
-    const typedaemon_dir = TD_DEVELOPER_MODE ? path.relative(hv.operations_directory, TYPEDAEMON_PATH) : "./node_modules/typedaemon";
+    const typedaemon_dir = TD_DEVELOPER_MODE ? path.relative(hv.operations_directory, TYPEDAEMON_PATH) : "./node_modules/typedaemon/dist";
     const cfg = hv.currentConfig as Configuration;
 
     const paths = {}
