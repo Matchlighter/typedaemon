@@ -8,12 +8,12 @@ import moment = require("moment-timezone");
 
 require('winston-daily-rotate-file');
 
-
 import { mapStackTrace } from "../app_transformer/source_maps";
 import { pojso } from "../common/util";
+import { cacheOn } from "../util";
 import { current } from "./current";
-import { PluginInstance } from "./plugin_instance";
 import { HyperWrapper } from "./managed_apps";
+import { PluginInstance } from "./plugin_instance";
 
 export const CONSOLE_METHODS = ['debug', 'info', 'warn', 'error', 'dir'] as const;
 export type ConsoleMethod = TupleToUnion<typeof CONSOLE_METHODS>
@@ -110,6 +110,7 @@ export interface LoggerOptions {
     domain?: string;
     level?: LogLevel;
     file?: string;
+    transport_cache?: any;
 }
 
 export type Logger = winston.Logger;
@@ -134,21 +135,20 @@ export function createDomainLogger(opts: LoggerOptions) {
             if (!hasExt) filename += ".log";
         }
 
-        transports.push(...[
-            // @ts-ignore
-            new winston.transports.DailyRotateFile({
-                filename,
-                auditFile: path.join(path.dirname(filename), ".log_audit.json"),
-                datePattern: 'YYYY-MM-DD',
-                // zippedArchive: true,
-                maxSize: '1m',
-                maxFiles: '14',
-                format: fmt.combine(
-                    timed_formatter,
-                    fmt.uncolorize({}),
-                ),
-            }),
-        ]);
+        const file_transport = cacheOn(opts.transport_cache, filename, () => new (winston.transports as any).DailyRotateFile({
+            filename,
+            auditFile: path.join(path.dirname(filename), ".log_audit.json"),
+            datePattern: 'YYYY-MM-DD',
+            // zippedArchive: true,
+            maxSize: '1m',
+            maxFiles: '14',
+            format: fmt.combine(
+                timed_formatter,
+                fmt.uncolorize({}),
+            ),
+        }));
+
+        transports.push(file_transport);
     }
 
     const logger = winston.createLogger({
@@ -207,7 +207,7 @@ export function createDomainLogger(opts: LoggerOptions) {
         return logger.log(level, message.join(' '), meta);
     }
 
-    logger.on("finish", () => console.log("END", opts.file))
+    logger.on("finish", () => ORIGINAL_CONSOLE.log("END", opts.file))
 
     return logger;
 }

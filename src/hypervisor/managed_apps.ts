@@ -105,12 +105,14 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
 
     protected _updateLogConfig() {
         const { tag: domain, manager, user, ...rest } = this.loggerOptions();
+        const transport_cache = {};
 
         this._logger = createDomainLogger({
             level: "warn",
             domain,
             ...rest,
             ...manager,
+            transport_cache,
         })
 
         this._userSpaceLogger = createDomainLogger({
@@ -118,6 +120,7 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
             domain,
             ...rest,
             ...user,
+            transport_cache,
         })
     }
 

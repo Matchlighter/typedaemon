@@ -91,15 +91,19 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         let sys_file = cfg.system_file;
         sys_file ||= path.join(this.operations_directory, "logs", "%DATE%.log");
 
+        const transport_cache = {};
+
         this._logger = createDomainLogger({
             level: cfg.system,
             domain: chalk.cyan`Hypervisor`,
             file: path.resolve(this.working_directory, sys_file),
+            transport_cache,
         });
         setFallbackLogger(
             createDomainLogger({
                 domain: chalk.yellow("???"),
                 file: path.resolve(this.working_directory, sys_file),
+                transport_cache,
             })
         );
     }
