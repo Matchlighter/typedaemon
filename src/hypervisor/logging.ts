@@ -10,7 +10,6 @@ require('winston-daily-rotate-file');
 
 import { mapStackTrace } from "../app_transformer/source_maps";
 import { pojso } from "../common/util";
-import { cacheOn } from "../util";
 import { current } from "./current";
 import { HyperWrapper } from "./managed_apps";
 import { PluginInstance } from "./plugin_instance";
@@ -110,13 +109,90 @@ export interface LoggerOptions {
     domain?: string;
     level?: LogLevel;
     file?: string;
-    transport_cache?: any;
 }
 
 export type Logger = winston.Logger;
 
 export interface ExtendedLoger extends winston.Logger {
     logMessage: (level: LogLevel, message: any[], meta?: any) => void;
+}
+
+const LOGGER_INT_CONSOLE = { debug: (msg: string) => null }
+
+const rotating_streams: Record<string, { ref_count: number, stream: any, kill_timer?: any }> = {};
+function getRotatedStream(filename: string) {
+    if (!rotating_streams[filename]) {
+        const stream = new (winston.transports as any).DailyRotateFile({
+            filename,
+            auditFile: path.join(path.dirname(filename), ".log_audit.json"),
+            datePattern: 'YYYY-MM-DD',
+            // zippedArchive: true,
+            maxSize: '1m',
+            maxFiles: '14',
+        });
+
+        stream.on("finish", () => {
+            LOGGER_INT_CONSOLE.debug(`ROTATING STREAM ${filename} CLOSED`);
+        });
+
+        rotating_streams[filename] = { ref_count: 0, stream }
+    }
+
+    const sdef = rotating_streams[filename];
+    if (sdef.kill_timer) {
+        clearTimeout(sdef.kill_timer);
+        LOGGER_INT_CONSOLE.debug(`ROTATING STREAM ${filename} RESURECTED`);
+        sdef.kill_timer = null;
+    }
+
+    sdef.ref_count += 1;
+    sdef.kill_timer = null;
+
+    let derefed = false;
+    const dreference = () => {
+        if (derefed) return;
+        LOGGER_INT_CONSOLE.debug(`ROTATING STREAM ${filename} DEREF`);
+        derefed = true;
+        sdef.ref_count -= 1;
+        if (sdef.ref_count < 1) {
+            LOGGER_INT_CONSOLE.debug(`ROTATING STREAM ${filename} DIED`);
+            const timer = setTimeout(() => {
+                if (sdef.ref_count < 1) {
+                    sdef.stream.close();
+                    delete rotating_streams[filename];
+                    LOGGER_INT_CONSOLE.debug(`ROTATING STREAM ${filename} CLOSING`);
+                } else {
+                    LOGGER_INT_CONSOLE.debug(`ROTATING STREAM ${filename} RESURECTED`);
+                }
+            }, 3000);
+            sdef.kill_timer = timer;
+            timer.unref();
+        }
+    }
+
+    return {
+        stream: sdef.stream,
+        dreference,
+    }
+}
+
+import WinstonTransport = require("winston-transport");
+class ForwardTransport extends WinstonTransport {
+    constructor(private readonly backend: ReturnType<typeof getRotatedStream>) {
+        super();
+    }
+
+    close() {
+        this.backend.dreference();
+    }
+
+    log(...rest) {
+        return this.backend.stream.log(...rest);
+    }
+
+    query(...rest) {
+        return this.backend.stream.query(...rest);
+    }
 }
 
 export function createDomainLogger(opts: LoggerOptions) {
@@ -135,20 +211,13 @@ export function createDomainLogger(opts: LoggerOptions) {
             if (!hasExt) filename += ".log";
         }
 
-        const file_transport = cacheOn(opts.transport_cache, filename, () => new (winston.transports as any).DailyRotateFile({
-            filename,
-            auditFile: path.join(path.dirname(filename), ".log_audit.json"),
-            datePattern: 'YYYY-MM-DD',
-            // zippedArchive: true,
-            maxSize: '1m',
-            maxFiles: '14',
-            format: fmt.combine(
-                timed_formatter,
-                fmt.uncolorize({}),
-            ),
-        }));
-
-        transports.push(file_transport);
+        const rs = getRotatedStream(filename);
+        const ftransport = new ForwardTransport(rs);
+        ftransport.format = fmt.combine(
+            timed_formatter,
+            fmt.uncolorize({}),
+        );
+        transports.push(ftransport);
     }
 
     const logger = winston.createLogger({
@@ -207,7 +276,7 @@ export function createDomainLogger(opts: LoggerOptions) {
         return logger.log(level, message.join(' '), meta);
     }
 
-    logger.on("finish", () => ORIGINAL_CONSOLE.log("END", opts.file))
+    // logger.on("close", () => ORIGINAL_CONSOLE.log("END", opts.file))
 
     return logger;
 }
@@ -242,6 +311,7 @@ export function logHVMessage(level: LogLevel, ...rest: any[]) {
 
 export let UNKNOWN_LOGGER = createDomainLogger({ domain: chalk.yellow("???") });
 export function setFallbackLogger(logger: ExtendedLoger) {
+    UNKNOWN_LOGGER?.close();
     UNKNOWN_LOGGER = logger;
 }
 
