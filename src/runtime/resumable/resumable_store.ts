@@ -13,7 +13,7 @@ interface TrackerEntry {
 
 interface StoreOptions {
     file: string,
-    logger: ExtendedLoger;
+    logMessage: ExtendedLoger['logMessage'];
 }
 
 export class ResumableStore {
@@ -99,7 +99,7 @@ export class ResumableStore {
     }
 
     protected logMessage(level: LogLevel, ...rest) {
-        this.opts.logger.logMessage(level, rest);
+        this.opts.logMessage(level, rest);
     }
 
     private async _loadWithLookups(serialized: any) {

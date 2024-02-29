@@ -283,12 +283,14 @@ export function createDomainLogger(opts: LoggerOptions) {
 
 export type LogAMessage = typeof logMessage;
 
+/** Log a message to the app stream */
 export function logClientMessage(level: LogLevel, ...rest: any[]) {
     const ctx = current.application;
     const logger = ctx?.userSpaceLogger || UNKNOWN_LOGGER
     logger.logMessage(level, rest);
 }
 
+/** Log a message from an app-bound plugin to the app stream */
 export function logPluginClientMessage(plugin: any, level: LogLevel, ...rest: any[]) {
     if (!(plugin instanceof PluginInstance)) plugin = plugin[HyperWrapper];
 
@@ -297,14 +299,16 @@ export function logPluginClientMessage(plugin: any, level: LogLevel, ...rest: an
     logger.logMessage(level, ["[" + chalk.blueBright`${plugin.id}` + "]", ...rest], {});
 }
 
-export function logMessage(level: LogLevel, ...rest: any[]) {
-    const ctx = current.application || current.hypervisor;
+/** Log a message to the HV stream */
+export function logHVMessage(level: LogLevel, ...rest: any[]) {
+    const ctx = current.hypervisor;
     const logger = ctx?.logger || UNKNOWN_LOGGER
     logger.logMessage(level, rest);
 }
 
-export function logHVMessage(level: LogLevel, ...rest: any[]) {
-    const ctx = current.hypervisor;
+/** Log a message to the app stream if present, else to the HV stream */
+export function logMessage(level: LogLevel, ...rest: any[]) {
+    const ctx = current.application || current.hypervisor;
     const logger = ctx?.logger || UNKNOWN_LOGGER
     logger.logMessage(level, rest);
 }
