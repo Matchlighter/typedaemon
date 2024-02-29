@@ -191,7 +191,10 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
                         throw new RequireRestart()
                     }
 
-                    handle("logging", () => this._updateLogConfig())
+                    handle("logging", () => {
+                        this.options.logging = ncfg.logging;
+                        this._updateLogConfig();
+                    })
                 });
                 const disposer = this.hypervisor.watchConfigEntry<AppConfiguration>(`apps.${this.id}`, handler);
                 this.cleanups.append(disposer);
@@ -232,7 +235,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
             this.resumableStore = new ResumableStore({
                 file: path.join(this.operating_directory, ".resumable_state.json"),
-                logger: this.logger,
+                logMessage: (...rest) => this.logMessage(...rest),
             }, {
                 "APPLICATION": this._instance,
             })
