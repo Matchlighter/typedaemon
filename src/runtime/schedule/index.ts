@@ -6,7 +6,7 @@ import * as SunCalc from "suncalc";
 import moment = require("moment-timezone");
 
 import { current } from "../../hypervisor/current";
-import { callback_or_decorator2 } from "../../util";
+import { callback_or_decorator2 } from "../../plugins/util";
 
 import { sleep } from "../..";
 import { bind_callback_env, get_plugin } from "../../plugins/base";
