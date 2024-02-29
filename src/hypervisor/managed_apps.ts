@@ -93,6 +93,14 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
         this.transitionState('stopping')
         await this.invoke(() => this.cleanups.cleanup())
         this.transitionState('stopped')
+
+        this._logger?.close();
+        this._userSpaceLogger?.close();
+
+        // await new Promise(resolve => {
+        //     this._logger.once("close", resolve)
+        //     // setTimeout(resolve, 5000)
+        // });
     }
 
     logMessage(level: LogLevel, ...rest) {
@@ -105,14 +113,15 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
 
     protected _updateLogConfig() {
         const { tag: domain, manager, user, ...rest } = this.loggerOptions();
-        const transport_cache = {};
+
+        this._logger?.close();
+        this._userSpaceLogger?.close();
 
         this._logger = createDomainLogger({
             level: "warn",
             domain,
             ...rest,
             ...manager,
-            transport_cache,
         })
 
         this._userSpaceLogger = createDomainLogger({
@@ -120,7 +129,6 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
             domain,
             ...rest,
             ...user,
-            transport_cache,
         })
     }
 
