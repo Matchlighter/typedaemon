@@ -1,6 +1,6 @@
 
 import { current } from "../hypervisor/current";
-import { callback_or_decorator2 } from "../util";
+import { callback_or_decorator2 } from "../plugins/util";
 
 /**
  * Helper to run logic when the application finishes initializing and is considered fully started.

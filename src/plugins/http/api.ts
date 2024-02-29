@@ -6,7 +6,7 @@ import { Socket } from 'net';
 import { HttpPlugin } from "./plugin";
 import { ApplicationInstance } from '../../hypervisor/application_instance';
 import { current } from "../../hypervisor/current";
-import { int_callback_or_decorator } from '../../util';
+import { int_callback_or_decorator } from '../util';
 import { assert_application_context, bind_callback_env, getOrCreateLocalData, handle_client_error, makeApiExport } from "../base";
 
 export type RequestHandler = express.RequestHandler;
