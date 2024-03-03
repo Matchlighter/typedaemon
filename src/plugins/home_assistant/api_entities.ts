@@ -4,10 +4,10 @@ import { action, computed, observable } from "mobx";
 import { ClassAccessorDecorator, ClassGetterDecorator, ClassMethodDecorator } from "@matchlighter/common_library/decorators/20223fills";
 import { optional_config_decorator } from "@matchlighter/common_library/decorators/utils";
 
-import { HomeAssistantPlugin } from "./plugin";
 import { funcOrNew } from "../../common/alternative_calls";
 import { chainedDecorators, dec_once } from "../../common/decorators";
 import { current } from "../../hypervisor/current";
+import { logPluginClientMessage } from "../../hypervisor/logging";
 import { persistent } from "../../runtime/persistence";
 import { Annotable, assert_application_context, client_call_safe, getOrCreateLocalData, notePluginAnnotation } from "../base";
 import { ButtonOptions, HassBoolean, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity } from "./entity_api";
@@ -17,6 +17,7 @@ import { EntityClass, EntityClassConstructor, EntityClassOptions, EntityClassTyp
 import type { TDButton } from "./entity_api/domains/button";
 import type { TDScene } from "./entity_api/domains/scene";
 import { EntityStore } from "./entity_api/store";
+import { HomeAssistantPlugin } from "./plugin";
 
 export interface EntityRegistrationOptions {
     /** If `true`, entity will be added to the auto-clean registry - if it's not registered again on the next app start up, it will be removed from HA */
@@ -72,7 +73,10 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         const ents = new WeakMap<any, T>();
         const get_linked = (self, init: boolean = false) => {
             if (init && !ents.has(self)) {
-                init_linked(self);
+                init_linked(self).catch((reason) => {
+                    logPluginClientMessage(_plugin(), "error", `Error asynchronously initializing entity ${String(context.name)}`, reason);
+                });
+                // TODO ^ this is a call to an async from a sync. Standup some way to track it within the app.
             }
             return ents.get(self);
         }
@@ -363,9 +367,9 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     }
 
     const entity = optional_config_decorator([{}], (options: EntityRegistrationOptions) => (target, context: ClassFieldDecoratorContext) => {
-        notePluginAnnotation(context, (self) => {
+        notePluginAnnotation(context, async (self) => {
             const ent = self[context.name];
-            if (ent) registerEntity(ent)
+            if (ent) await registerEntity(ent)
         })
     })
 
