@@ -6,6 +6,7 @@ import chalk = require("chalk")
 import moment = require("moment-timezone")
 import { AsyncLocalStorage } from "async_hooks"
 import { TypedEmitter } from "tiny-typed-emitter"
+import { whyIsNodeStillRunning } from 'why-is-node-still-running'
 
 import { MultiMap } from "@matchlighter/common_library/data/multimap"
 import { deep_get } from "@matchlighter/common_library/deep/index"
@@ -16,13 +17,14 @@ import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile 
 import { saveGeneratedTsconfig } from "../common/generate_tsconfig"
 import { Plugin } from "../plugins/base"
 import { Application } from "../runtime/application"
+import { internal_sleep } from "../util"
 import { AppLifecycle, ApplicationInstance } from "./application_instance"
 import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config"
 import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app"
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin"
 import { CrossCallStore } from "./cross_call"
 import { current } from "./current"
-import { ExtendedLoger, LogLevel, createDomainLogger, setFallbackLogger } from "./logging"
+import { ExtendedLoger, LogLevel, ORIGINAL_CONSOLE, createDomainLogger, setFallbackLogger } from "./logging"
 import { AppNamespace } from "./managed_apps"
 import { SharedStorages } from "./persistent_storage"
 import { PluginInstance } from "./plugin_instance"
@@ -116,6 +118,9 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         })
     }
 
+    private sigint_count = 0;
+    private sigterm_count = 0;
+
     async _start() {
         this.logMessage("lifecycle", "Starting");
 
@@ -131,22 +136,42 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         })
 
         process.on('SIGINT', async () => {
-            console.log('');
-            this.logMessage("info", "SIGINT received. Shutting down...");
-            try {
-                await this.shutdown();
-                await new Promise(accept => this._logger.info('Done', accept))
-            } catch (ex) {
-                console.error("Error while shutting down; Forcing", ex)
+            if (this.sigint_count == 0) {
+                this.logMessage("info", "SIGINT received. Shutting down...");
+                this.sigint_count += 1;
+                startShutdownTimer();
+
+                try {
+                    await this.shutdown();
+                    this._logger.info('Done')
+                    await internal_sleep(500);
+                    // await new Promise(accept => this._logger.info('Done', accept))
+                } catch (ex) {
+                    console.error("Error while shutting down; Forcing", ex)
+                }
+                process.exit(0);
+            } else if (this.sigint_count == 1) {
+                ORIGINAL_CONSOLE.log("SIGINT received again. Send again to force immediate shutdown.")
+            } else {
+                process.exit(504);
             }
-            process.exit(0);
         });
 
         process.on('SIGTERM', async () => {
-            this.logMessage("info", "SIGTERM received. Shutting down...");
-            await this.shutdown();
-            await new Promise(accept => this._logger.info('Done', accept))
-            process.exit(0);
+            if (this.sigterm_count == 0) {
+                this.logMessage("info", "SIGTERM received. Shutting down...");
+                this.sigint_count += 1;
+                startShutdownTimer();
+
+                await this.shutdown();
+                this._logger.info('Done')
+                await internal_sleep(500);
+                // await new Promise(accept => this._logger.info('Done', accept))
+                process.exit(0);
+            } else {
+                this.logMessage("info", "SIGTERM received again. Killing...");
+                process.exit(504);
+            }
         });
 
         process.on("uncaughtException", (err, origin) => {
@@ -161,14 +186,21 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
             }
         })
 
-        process.on("unhandledRejection", (err, origin) => {
+        process.on("unhandledRejection", (err: any, origin) => {
             const app = current.application;
             if (app) {
-                console.error("Unhandled rejection in application")
-                console.error(err, origin)
+                if (app.state == "dead" || app.state == "stopped") {
+                    // Downgrade level if the error if it came in after death.
+                    // TODO Investigate such cases
+                    console.debug(`Unhandled rejection in ${app.state} application`)
+                    console.debug(err, err?.stack, origin)
+                } else {
+                    console.error(`Unhandled rejection in application`)
+                    console.error(err, err?.stack, origin)
+                }
             } else {
                 console.error("Unhandled rejection in TypeDaemon")
-                console.error(err, origin)
+                console.error(err, err?.stack, origin)
                 // this.shutdown();
             }
         })
@@ -393,4 +425,12 @@ export class UtilityHypervisor extends Hypervisor {
     async shutdown() {
         await this.cleanupTasks.cleanup();
     }
+}
+
+function startShutdownTimer() {
+    setTimeout(() => {
+        console.error("TypeDaemon would not shutdown. Dumping state and forcing exit.");
+        whyIsNodeStillRunning();
+        process.exit(503);
+    }, 15_000).unref();
 }

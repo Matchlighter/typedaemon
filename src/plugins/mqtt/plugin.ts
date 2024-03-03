@@ -136,8 +136,10 @@ export class MqttPlugin extends Plugin<MQTTPluginConfig> {
         let last_message;
 
         client.on("connect", () => {
+            if (client.disconnecting || client.disconnected) return;
+
             last_message = null;
-            this[HyperWrapper].logMessage("debug", `MQTT (${name}) Connected!`)
+            this[HyperWrapper].logMessage("debug", `MQTT (${name}:${uid}) Connected!`)
             if (publish_status) {
                 client.publish(status_topic, "online", {
                     retain: true,
@@ -146,15 +148,15 @@ export class MqttPlugin extends Plugin<MQTTPluginConfig> {
         })
 
         client.on("disconnect", () => {
-            this[HyperWrapper].logMessage("debug", `MQTT (${name}) Disconnected!`)
+            this[HyperWrapper].logMessage("debug", `MQTT (${name}:${uid}) Disconnected!`)
         })
 
         client.on("reconnect", () => {
-            this[HyperWrapper].logMessage("debug", `MQTT (${name}) Reconnecting`)
+            this[HyperWrapper].logMessage("debug", `MQTT (${name}:${uid}) Reconnecting`)
         })
 
         client.on("end", () => {
-            this[HyperWrapper].logMessage("debug", `MQTT (${name}) Destroyed!`)
+            this[HyperWrapper].logMessage("debug", `MQTT (${name}:${uid}) Destroyed!`)
         })
 
         client.on("error", (err) => {
@@ -162,7 +164,7 @@ export class MqttPlugin extends Plugin<MQTTPluginConfig> {
             // if (String(err) == last_message) log_line = err.message;
             // last_message = String(err);
 
-            this[HyperWrapper].logMessage("error", `MQTT (${name}) Error:`, err);
+            this[HyperWrapper].logMessage("error", `MQTT (${name}:${uid}) Error:`, err);
         })
 
         Object.assign(client, {
