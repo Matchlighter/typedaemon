@@ -1,0 +1,80 @@
+diff --git a/node_modules/cron-parser/lib/expression.js b/node_modules/cron-parser/lib/expression.js
+index 0a56853..aab2fd2 100644
+--- a/node_modules/cron-parser/lib/expression.js
++++ b/node_modules/cron-parser/lib/expression.js
+@@ -39,7 +39,7 @@ function CronExpression (fields, options) {
+  * Field mappings
+  * @type {Array}
+  */
+-CronExpression.map = [ 'second', 'minute', 'hour', 'dayOfMonth', 'month', 'dayOfWeek' ];
++CronExpression.map = [ 'second', 'minute', 'hour', 'dayOfMonth', 'month', 'dayOfWeek', 'year' ];
+ 
+ /**
+  * Prefined intervals
+@@ -64,6 +64,7 @@ CronExpression.constraints = [
+   { min: 1, max: 31, chars: ['L'] }, // Day of month
+   { min: 1, max: 12, chars: [] }, // Month
+   { min: 0, max: 7, chars: ['L'] }, // Day of week
++  { min: 2023, max: 3000, chars: [] }, // Year
+ ];
+ 
+ /**
+@@ -120,7 +121,7 @@ CronExpression.aliases = {
+  * Field defaults
+  * @type {Array}
+  */
+-CronExpression.parseDefaults = [ '0', '*', '*', '*', '*', '*' ];
++CronExpression.parseDefaults = [ '0', '*', '*', '*', '*', '*', '*' ];
+ 
+ CronExpression.standardValidCharacters = /^[,*\d/-]+$/;
+ CronExpression.dayOfWeekValidCharacters = /^[?,*\dL#/-]+$/;
+@@ -132,6 +133,7 @@ CronExpression.validCharacters = {
+   dayOfMonth: CronExpression.dayOfMonthValidCharacters,
+   month: CronExpression.standardValidCharacters,
+   dayOfWeek: CronExpression.dayOfWeekValidCharacters,
++  year: CronExpression.standardValidCharacters,
+ };
+ 
+ CronExpression._isValidConstraintChar = function _isValidConstraintChar(constraints, value) {
+@@ -409,7 +411,7 @@ CronExpression._freezeFields = function(fields) {
+ };
+ 
+ CronExpression.prototype._applyTimezoneShift = function(currentDate, dateMathVerb, method) {
+-  if ((method === 'Month') || (method === 'Day')) {
++  if ((method === 'Year') || (method === 'Month') || (method === 'Day')) {
+     var prevTime = currentDate.getTime();
+     currentDate[dateMathVerb + method]();
+     var currTime = currentDate.getTime();
+@@ -608,6 +610,12 @@ CronExpression.prototype._findSchedule = function _findSchedule (reverse) {
+       continue;
+     }
+ 
++    // Match year
++    if (this.fields.year && !matchSchedule(currentDate.getFullYear(), this.fields.year)) {
++      this._applyTimezoneShift(currentDate, dateMathVerb, 'Year');
++      continue;
++    }
++
+     // Match month
+     if (!matchSchedule(currentDate.getMonth() + 1, this.fields.month)) {
+       this._applyTimezoneShift(currentDate, dateMathVerb, 'Month');
+@@ -862,13 +870,16 @@ CronExpression.parse = function parse(expression, options) {
+     var fields = [];
+     var atoms = (expression + '').trim().split(/\s+/);
+ 
+-    if (atoms.length > 6) {
++    if (atoms.length > 7) {
+       throw new Error('Invalid cron expression');
+     }
+ 
++    var c = CronExpression.map.length;
++    if (atoms.length < 7) c --; // Only consider year if all fields are present
++
+     // Resolve fields
+-    var start = (CronExpression.map.length - atoms.length);
+-    for (var i = 0, c = CronExpression.map.length; i < c; ++i) {
++    var start = (c - atoms.length);
++    for (var i = 0; i < c; ++i) {
+       var field = CronExpression.map[i]; // Field name
+       var value = atoms[atoms.length > c ? i : i - start]; // Field value
+ 

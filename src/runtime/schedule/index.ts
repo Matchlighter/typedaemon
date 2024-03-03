@@ -9,12 +9,13 @@ import { current } from "../../hypervisor/current";
 import { callback_or_decorator2 } from "../../plugins/util";
 
 import { sleep } from "../..";
+import { logPluginClientMessage } from "../../hypervisor/logging";
 import { bind_callback_env, get_plugin } from "../../plugins/base";
 import { HomeAssistantPlugin } from "../../plugins/home_assistant/plugin";
 import { ResumableCallbackPromise } from "../resumable/resumable_method";
 import { sleep_until } from "../sleep";
 
-import grammar_cmp from "./schedule_grammar";
+import grammar_cmp from "./schedule2_grammar";
 
 const grammar = ne.Grammar.fromCompiled(grammar_cmp)
 
@@ -39,6 +40,11 @@ type SunConfig = {
 
 type SunOptions = "td" | `ha:${string}` | SunConfig
 
+interface ScheduleOpts {
+    sun?: SunOptions;
+    timezone?: string;
+}
+
 /**
  * Helper to schedule future tasks.
  * 
@@ -48,30 +54,48 @@ type SunOptions = "td" | `ha:${string}` | SunConfig
  * - `4:23:00 PM`
  * 
  * Any numeric component can be replaced with a `*` or a cron-like pattern in curly braces, like so:
- * `{*}/{9-12/2}/{1,15} *:30:00 PM`
+ * - `{*}/{9-12/2}/{1,15} *:30:00 PM` (Runs half-past each hour on the 1st and 15th of October and December)
+ * 
+ * Specific weekdays may be specified before the time part:
+ * - `MON 4:23:00 PM`
+ * - `MON-FRI 4:23:00 PM`
+ * - `{*}/{*}/{1-15} MON,TUE 4:23:00 PM` (Runs every Monday and Tuesday during the first half of the month)
+ * 
+ * A timezone may be suffixed to the time, like so:
+ * - `4:23:00 PM America/Denver`
  * 
  * Schedules can also be created relative to sunrise or sunset:
  * - `2023/05/30 sunset+1:00`
  * - `2023/05/30 sunrise-1:00:30`
  * - `sunrise-1:00:30`
  */
-export const schedule = callback_or_decorator2((func: SchedulerHandler, sched: Schedule, options?: { sun?: SunOptions }) => {
-    const ctx = current.application;
+export const schedule = callback_or_decorator2((func: SchedulerHandler, sched: Schedule, options?: ScheduleOpts) => {
+    options = {
+        sun: "ha:default",
+        timezone: "ha:default",
+        ...options,
+    }
 
     if (typeof sched == "string") {
         if (sched.match(/\d+ ?(h|m|s|d|w)/)) {
             // TODO Is it run_every or run_in? Should it just not be supported here?
             // https://www.npmjs.com/package/parse-duration
-            const parsed = parse_duration(sched);
+            // const parsed = parse_duration(sched);
+            throw new Error(`Schedule string is ambiguous. Did you mean to use run_every or run_in?`);
         } else if (isCronValid(sched)) {
             // https://www.npmjs.com/package/cron-parser
-            const parsed = cron.parseExpression(sched, {})
+            const tz = resolveTimezone({
+                // parsed: , // TODO Support cron with TZ appended
+                passed: options?.timezone,
+            });
+            const parsed = cron.parseExpression(sched, { tz });
+
             return scheduleRecurring(() => {
                 parsed.reset(Date.now());
                 return parsed.next().toDate();
             }, func)
         } else {
-            const get_next = _parseTDFormat(sched, options?.sun);
+            const get_next = _parseTDFormat(sched, options);
 
             return scheduleRecurring(() => {
                 const nextCronDate = get_next();
@@ -86,7 +110,69 @@ export const schedule = callback_or_decorator2((func: SchedulerHandler, sched: S
     }
 })
 
-export const _parseTDFormat = (sched: string, sun_options: SunOptions = "ha:default") => {
+function getHAConfig(token: any) {
+    if (typeof token == 'string' && token.startsWith('ha:')) {
+        let plg_name = token.substring(3);
+
+        const plg = get_plugin(plg_name == "default" ? "home_assistant" : plg_name) as HomeAssistantPlugin;
+        if (!plg && plg_name != "default") throw new Error(`Tried to load location info from HA '${plg_name}', but no such plugin exists!`);
+
+        return plg?.ha_config;
+    }
+    return null;
+}
+
+function resolveTimezone(opts: { parsed?: string, passed?: string }) {
+    const tdcfg = current.hypervisor?.currentConfig;
+
+    let tz = opts.parsed;
+
+    if (!tz && opts.passed) {
+        const hacfg = getHAConfig(opts.passed);
+        tz = hacfg ? hacfg.time_zone : opts.passed;
+    }
+
+    if (!tz || tz == "td") {
+        tz = tdcfg?.location?.timezone;
+    }
+
+    if (!tz) {
+        tz = moment.tz.guess();
+        // TODO Only log once per app
+        logPluginClientMessage("Scheduler", "warn", `Scheduling based on a time, but no timezone set. Guessing ${tz}`);
+    }
+
+    return tz;
+}
+
+function resolveSunConfig(sun_options: SunOptions): SunConfig {
+    const hacfg = getHAConfig(sun_options);
+    if (hacfg) {
+        sun_options = {
+            lat: hacfg.latitude,
+            long: hacfg.longitude,
+            elev: hacfg.elevation,
+        }
+    }
+
+    if (sun_options == "td" || !sun_options) {
+        const tdcfg = current.hypervisor?.currentConfig;
+
+        sun_options = {
+            lat: tdcfg?.location?.latitude,
+            long: tdcfg?.location?.longitude,
+            elev: tdcfg?.location?.elevation,
+        }
+    }
+
+    if (!sun_options || typeof sun_options != "object") {
+        throw new Error(`Tried to schedule something in relation to the sun, but could not determine location. You need to configure HA or TypeDaemon appropriately.`);
+    }
+
+    return sun_options;
+}
+
+export const _parseTDFormat = (sched: string, options: ScheduleOpts) => {
     // 2023/05/30 4:23:00 PM
     // 16:23:00
     // 4:23:00 PM
@@ -95,20 +181,21 @@ export const _parseTDFormat = (sched: string, sun_options: SunOptions = "ha:defa
     // */{5-8}/10 4:23:00 PM
     // */{*/3}/10 4:23:00 PM
     // */{*}/10 4:23:00 PM
+    // */{*}/10 MON 4:23:00 PM
+    // */{*}/10 MON-FRI 4:23:00 PM
+    // */{*}/10 MON,THU 4:23:00 PM
+    // */{*}/10 MON,THU 4:23:00 PM America/Denver
+    // */{*}/10 MON,THU 4:23:00 PM -07:00
     // */{*}/10 sunset+4:23:00
 
     const parser = new ne.Parser(grammar);
-    parser.feed(sched);
+    parser.feed(sched.toUpperCase());
     const parsed = parser.results[0];
 
     parsed.date ||= { year: '*', month: '*', day: '*' };
+    parsed.day_of_week ||= '*';
 
-    // TODO Addd year support (likely patch-package)
-
-    const cfg = current.hypervisor?.currentConfig;
-
-    // TODO TZ support in parser
-    let tz = cfg?.location?.timezone || moment.tz.guess();
+    const tz = resolveTimezone({ parsed: parsed.time?.tz, passed: options.timezone });
 
     // Sun-relative time
     if (parsed.time?.ref) {
@@ -118,7 +205,8 @@ export const _parseTDFormat = (sched: string, sun_options: SunOptions = "ha:defa
             "23",
             parsed.date.day,
             parsed.date.month,
-            "*",
+            parsed.day_of_week,
+            parsed.date.year,
         ]), {
             tz,
         });
@@ -127,37 +215,7 @@ export const _parseTDFormat = (sched: string, sun_options: SunOptions = "ha:defa
             const mdt = dt.clone().tz(tz);
             const dtStart = mdt.clone().startOf('day');
             const dtEnd = mdt.clone().endOf('day');
-
-            if (typeof sun_options == 'string' && sun_options.startsWith('ha:')) {
-                let plg_name = sun_options.substring(3);
-                if (plg_name == "default") plg_name = "home_assistant";
-                const plg = get_plugin(plg_name) as HomeAssistantPlugin;
-                
-                if (plg?.ha_config) {
-                    const hac = plg.ha_config;
-                    sun_options = {
-                        lat: hac.latitude,
-                        long: hac.longitude,
-                        elev: hac.elevation,
-                    }
-                } else {
-                    sun_options = null;
-                }
-            }
-
-            if (sun_options == "td" || !sun_options) {
-                sun_options = {
-                    lat: cfg?.location?.latitude,
-                    long: cfg?.location?.longitude,
-                    elev: cfg?.location?.elevation,
-                }
-            }
-
-            if (!sun_options || typeof sun_options != "object") {
-                throw new Error(`Tried to schedule something in relation to the sun, but could not determin lat/long. You need to configure HA or TypeDaemon appropriately.`);
-            }
-
-            const sun_config = sun_options as SunConfig;
+            const sun_config = resolveSunConfig(options.sun);
 
             let chosen: moment.Moment;
 
@@ -208,7 +266,8 @@ export const _parseTDFormat = (sched: string, sun_options: SunOptions = "ha:defa
             applyMeridian(parsed.time.hour, parsed.time.meridian),
             parsed.date.day,
             parsed.date.month,
-            "*",
+            parsed.day_of_week,
+            parsed.date.year,
         ]), {
             tz,
         });
@@ -334,8 +393,8 @@ export function run_in(period: string) {
 /**
  * Run the given function once at the given time
  */
-export function run_at(time: string) {
-    const parsed = _parseTDFormat(time);
+export function run_at(time: string, options?: ScheduleOpts) {
+    const parsed = _parseTDFormat(time, options);
 
     const run_time: Date = parsed().toDate();
     const func = (cb) => scheduleTimer(run_time, cb);
