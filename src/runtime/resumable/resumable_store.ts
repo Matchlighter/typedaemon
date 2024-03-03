@@ -2,7 +2,7 @@ import fs = require('fs');
 
 import { Batcher } from '../../common/batched';
 import { fileExists, timeoutPromise } from "../../common/util";
-import { ExtendedLoger, LogLevel } from "../../hypervisor/logging";
+import { logPluginClientMessage } from "../../hypervisor/logging";
 import { ResumableOwnerLookup, resumable } from "./resumable_method";
 import { FailedResume, ResumablePromise, SettledPromise } from "./resumable_promise";
 
@@ -13,7 +13,6 @@ interface TrackerEntry {
 
 interface StoreOptions {
     file: string,
-    logMessage: ExtendedLoger['logMessage'];
 }
 
 export class ResumableStore {
@@ -28,7 +27,7 @@ export class ResumableStore {
     async load() {
         if (!await fileExists(this.store_file)) return;
 
-        this.logMessage("info", "Found stored Resumables; resuming them")
+        logPluginClientMessage("Resumable", "info", "Found stored Resumables; resuming them")
         const restore_json = await fs.promises.readFile(this.store_file);
         const restore_list = JSON.parse(restore_json.toString());
 
@@ -36,9 +35,9 @@ export class ResumableStore {
         const failures = Object.values(loaded).filter(p => p instanceof FailedResume) as FailedResume[];
         if (failures.length) {
             // TODO Add help link
-            this.logMessage('error', `Failed to resume at least some resumables. Failed items will continue to be persisted and resumption will be re-attempted every time the app loads.`);
+            logPluginClientMessage("Resumable", 'error', `Failed to resume at least some resumables. Failed items will continue to be persisted and resumption will be re-attempted every time the app loads.`);
             for (let f of failures) {
-                this.logMessage('error', f.error);
+                logPluginClientMessage("Resumable", 'error', f.error);
             }
         }
 
@@ -98,10 +97,6 @@ export class ResumableStore {
         }
     }
 
-    protected logMessage(level: LogLevel, ...rest) {
-        this.opts.logMessage(level, rest);
-    }
-
     private async _loadWithLookups(serialized: any) {
         const lookup = this.context;
         if (lookup) {
@@ -113,7 +108,7 @@ export class ResumableStore {
 
     private async _suspendAndSerialize({ timeout = 5 }: { timeout?: number } = {}) {
         this._state = 'shutdown_requested';
-        this.logMessage("debug", "Resumable - shutting down resumables")
+        logPluginClientMessage("Resumable", "debug", "Shutting down resumables")
 
         const track_states = [...this.tracked_tasks.values()];
 
@@ -133,11 +128,11 @@ export class ResumableStore {
         });
 
         await timeoutPromise(timeout * 1000, flushPromise, () => {
-            this.logMessage("warn", "Resumable - ResumablePromises failed to resolve. Force Suspending.")
+            logPluginClientMessage("Resumable", "warn", "ResumablePromises failed to resolve. Force Suspending.")
         })
 
         this._state = 'suspending';
-        this.logMessage("debug", "Resumable - suspending remaining resumables")
+        logPluginClientMessage("Resumable", "debug", "Suspending remaining resumables")
 
         // Force cleanup unsuspended Resumables
         for (let state of track_states) {
@@ -147,7 +142,7 @@ export class ResumableStore {
         }
 
         await timeoutPromise(5000, flushPromise, () => {
-            this.logMessage("warn", "Resumable - Some Resumables still would not suspend.")
+            logPluginClientMessage("Resumable", "warn", "Some Resumables still would not suspend.")
             for (let state of track_states) {
                 if (!state.resumable.suspended) {
                     console.log("NOT SUSPENDED:", state.resumable)
@@ -167,7 +162,7 @@ export class ResumableStore {
         */
 
         this._state = 'suspended';
-        this.logMessage("debug", "Resumable - resumables suspended")
+        logPluginClientMessage("Resumable", "debug", "Resumables suspended")
 
         // Serialize and return
         return ResumablePromise.serialize_all(this.allForSerializing());

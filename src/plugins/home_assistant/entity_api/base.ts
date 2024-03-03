@@ -1,6 +1,6 @@
 
 import { LifecycleHelper } from "../../../common/lifecycle_helper";
-import { logMessage } from "../../../hypervisor/logging";
+import { logPluginClientMessage } from "../../../hypervisor/logging";
 import { EntityStore } from "./store";
 
 export class TDDevice {
@@ -45,7 +45,7 @@ abstract class TDEntity<T> {
      */
     async unlink() {
         if (!this._bound_store) throw new Error("Not registered");
-        logMessage("debug", `Unlinking entity '${this.uuid}'`)
+        logPluginClientMessage(this._bound_store.plugin, "debug", `Unlinking entity '${this.uuid}'`)
 
         await this._unlink();
         await this._disposers.cleanup();
@@ -63,7 +63,7 @@ abstract class TDEntity<T> {
      */
     async destroy() {
         if (!this._bound_store) throw new Error("Not registered");
-        logMessage("debug", `Destroying entity '${this.uuid}'`)
+        logPluginClientMessage(this._bound_store.plugin, "debug", `Destroying entity '${this.uuid}'`)
 
         await this._destroy();
         await this._disposers.cleanup();

@@ -96,11 +96,6 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
 
         this._logger?.close();
         this._userSpaceLogger?.close();
-
-        // await new Promise(resolve => {
-        //     this._logger.once("close", resolve)
-        //     // setTimeout(resolve, 5000)
-        // });
     }
 
     logMessage(level: LogLevel, ...rest) {

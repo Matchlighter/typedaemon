@@ -292,11 +292,17 @@ export function logClientMessage(level: LogLevel, ...rest: any[]) {
 
 /** Log a message from an app-bound plugin to the app stream */
 export function logPluginClientMessage(plugin: any, level: LogLevel, ...rest: any[]) {
-    if (!(plugin instanceof PluginInstance)) plugin = plugin[HyperWrapper];
+    let plgid: string;
+    if (typeof plugin == "string") {
+        plgid = plugin;
+    } else if (!(plugin instanceof PluginInstance)) {
+        plugin = plugin[HyperWrapper];
+    }
+    if (plugin instanceof PluginInstance) plgid = plugin.id;
 
     const ctx = current.application;
     const logger = ctx?.logger || UNKNOWN_LOGGER
-    logger.logMessage(level, ["[" + chalk.blueBright`${plugin.id}` + "]", ...rest], {});
+    logger.logMessage(level, ["[" + chalk.blueBright`${plgid}` + "]", ...rest], {});
 }
 
 /** Log a message to the HV stream */

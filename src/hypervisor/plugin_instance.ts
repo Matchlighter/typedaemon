@@ -27,11 +27,13 @@ export class PluginInstance extends BaseInstance<PluginConfiguration, Plugin> {
 
         // Self-watch for config changes
         if (this.options.watch?.config) {
-            const handler = configChangeHandler(this, async ({ handle, ncfg, ocfg }) => {
-                handle("logging", () => {
+            const handler = configChangeHandler(this, async ({ handle, invoke_client_handler, ncfg, ocfg }) => {
+                await handle("logging", () => {
                     this.options.logging = ncfg.logging;
                     this._updateLogConfig();
                 });
+
+                await invoke_client_handler(ncfg, ocfg);
             });
             const disposer = this.hypervisor.watchConfigEntry<PluginConfiguration>(`plugins.${this.id}`, handler);
             this.cleanups.append(disposer);
