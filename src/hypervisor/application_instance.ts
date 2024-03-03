@@ -297,7 +297,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             if (ex instanceof ShuttingDown) return;
 
             if (!ex[MessagingHandled]) {
-                this.logClientMessage("error", `Failed while starting up: `, ex);
+                this.logClientMessage("error", `Failed while starting up: `, ex, ex?.stack);
             }
 
             // There's "dead" and "mostly dead" - we go for "mostly dead" so that watchers are kept live and can trigger a restart

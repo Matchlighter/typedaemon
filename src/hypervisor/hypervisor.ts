@@ -190,7 +190,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
             const app = current.application;
             if (app) {
                 if (app.state == "dead" || app.state == "stopped") {
-                    // Downgrade level if the error if it came in after death.
+                    // Downgrade level of the error if it came in after death.
                     // TODO Investigate such cases
                     console.debug(`Unhandled rejection in ${app.state} application`)
                     console.debug(err, err?.stack, origin)
