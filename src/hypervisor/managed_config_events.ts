@@ -8,7 +8,9 @@ export interface CCHBaseInstanceClient<C> extends BaseInstanceClient<BaseInstanc
 }
 
 export interface CCHPrehandlerContext<C> {
-    handle<K extends keyof C>(key: K, handler: (ncfg: C[K], ocfg: C[K]) => void)
+    handle<K extends keyof C>(key: K, handler?: (ncfg: C[K], ocfg: C[K]) => void)
+    invoke_client_handler(ncfg, ocfg): void;
+    unhandled(): any;
     ocfg: C;
     ncfg: C;
 }
@@ -16,7 +18,7 @@ export interface CCHPrehandlerContext<C> {
 export class RequireRestart extends Error { }
 export class FallbackRequireRestart extends RequireRestart { }
 
-export function configChangeHandler<C>(instance: BaseInstance<C, CCHBaseInstanceClient<C>>, prehandle: (context: CCHPrehandlerContext<C>) => void) {
+export function configChangeHandler<C>(instance: BaseInstance<C, CCHBaseInstanceClient<C>>, prehandle: (context: CCHPrehandlerContext<C>) => void, transform_for_client?: (any) => any) {
     return async (ncfg: C, ocfg: C) => {
         if (instance.state != 'started') return;
 
@@ -33,6 +35,25 @@ export function configChangeHandler<C>(instance: BaseInstance<C, CCHBaseInstance
                     return handler?.(ncfg[key], ocfg[key]);
                 }
             },
+            unhandled() {
+                return [unhandled_ncfg, unhandled_ocfg];
+            },
+            async invoke_client_handler(ncfg2 = ncfg, ocfg2 = ocfg) {
+                if (deepEqual(ncfg2, ocfg2)) return;
+
+                try {
+                    if (!instance.instance) throw new RequireRestart();
+                    if (!instance.instance.configuration_updated) throw new RequireRestart();
+                    await instance.invoke(() => instance.instance.configuration_updated(ncfg2, ocfg2));
+                } catch (ex) {
+                    if (ex instanceof RequireRestart) {
+                        instance.logMessage("debug", `App determined that changes require a restart, restarting`);
+                    } else {
+                        instance.logMessage("error", `Error occurred while updating configuration:`, ex);
+                    }
+                    throw ex;
+                }
+            }
         }
 
         try {
@@ -42,22 +63,6 @@ export function configChangeHandler<C>(instance: BaseInstance<C, CCHBaseInstance
                 await instance.namespace.reinitializeInstance(instance);
                 return;
             } else {
-                throw ex;
-            }
-        }
-
-        if (deepEqual(unhandled_ncfg, unhandled_ocfg)) return;
-
-        try {
-            if (!instance.instance) throw new RequireRestart();
-            if (!instance.instance.configuration_updated) throw new RequireRestart();
-            await instance.invoke(() => instance.instance.configuration_updated(ncfg, ocfg));
-        } catch (ex) {
-            if (ex instanceof RequireRestart) {
-                instance.logMessage("debug", `Determined that changes require a restart, restarting`);
-                await instance.namespace.reinitializeInstance(instance);
-            } else {
-                instance.logMessage("error", `Error occurred while updating configuration:`, ex);
                 throw ex;
             }
         }

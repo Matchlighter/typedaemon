@@ -35,6 +35,10 @@ export type MyConditionalKeys<Base, Condition> = {
 
 type LifecycleHookType = "started";
 
+class ShuttingDown extends Error { };
+
+const MessagingHandled = Symbol("MessagingHandled");
+
 export class ApplicationInstance extends BaseInstance<AppConfiguration, Application, {}> {
     get uuid() {
         return this.options.uuid || this.id;
@@ -102,7 +106,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         this.cleanups.append(() => {
             watcher.close()
             this.watchedDependencies.delete(file);
-        });
+        }, { tags: ["watcher"] });
     }
 
     @debounce({ timeToStability: 2000, unref: true })
@@ -138,12 +142,40 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             await fs.promises.mkdir(this.shared_operating_directory, { recursive: true });
             await fs.promises.mkdir(path.dirname(this.loggerFile()), { recursive: true });
 
+            // Self-watch for config changes
+            if (this.options.watch?.config) {
+                const handler = configChangeHandler(this, async ({ handle, invoke_client_handler, ncfg, ocfg }) => {
+                    if (!deepEqual(immutableConfigBits(ocfg), immutableConfigBits(ncfg))) {
+                        this.logMessage("debug", `Configuration changed significantly, restarting`);
+                        throw new RequireRestart()
+                    }
+
+                    await handle("logging", async () => {
+                        this.options.logging = ncfg.logging;
+                        this._updateLogConfig();
+                    })
+
+                    await handle("config", async (nappcfg, oappcfg) => {
+                        if (this.state != 'started') throw new RequireRestart();
+                        await invoke_client_handler(nappcfg, oappcfg);
+                        this.options["config"] = nappcfg;
+                    })
+                });
+                const disposer = this.hypervisor.watchConfigEntry<AppConfiguration>(`apps.${this.id}`, handler);
+                this.cleanups.append(disposer, { tags: ["watcher"] });
+            }
+
+            // Watch the main entrypoint
             this.markFileDependency(this.entrypoint);
 
-            const moduleSource = (await fs.promises.readFile(this.entrypoint)).toString();
+            // Load PersistentStorage
+            this.logMessage("debug", `Loading PersitentStorage`);
+            this.persistedStorage = new PersistentStorage(path.join(this.operating_directory, ".persistence.jkv"));
+            await this.persistedStorage.load();
+            this.cleanups.append(() => this.persistedStorage.dispose());
 
-            this.destroyerStore = new DestroyerStore(this);
-            this.cleanups.append(() => this.destroyerStore.dispose());
+            //#region Package Installation
+            const moduleSource = (await fs.promises.readFile(this.entrypoint)).toString();
 
             this.logMessage("debug", `Parsing package dependencies`);
             const { dependencies } = parseAnnotations(moduleSource);
@@ -179,29 +211,18 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
                 lockfile: this.isThickApp,
                 devPackages: true,
             }));
+            //#endregion
 
             // Abort if the app started shutting down
-            if (this.state as AppLifecycle != "initializing") return;
+            this.assert_not_shutdown();
 
-            // Self-watch for config changes
-            if (this.options.watch?.config) {
-                const handler = configChangeHandler(this, async ({ handle, ncfg, ocfg }) => {
-                    if (!deepEqual(immutableConfigBits(ocfg), immutableConfigBits(ncfg))) {
-                        this.logMessage("debug", `Configuration changed significantly, restarting`);
-                        throw new RequireRestart()
-                    }
-
-                    handle("logging", () => {
-                        this.options.logging = ncfg.logging;
-                        this._updateLogConfig();
-                    })
-                });
-                const disposer = this.hypervisor.watchConfigEntry<AppConfiguration>(`apps.${this.id}`, handler);
-                this.cleanups.append(disposer);
-            }
+            // Setup Destroyer Store
+            this.destroyerStore = new DestroyerStore(this);
+            this.cleanups.append(() => this.destroyerStore.dispose());
 
             this.transitionState("compiling");
 
+            // Initialize VM and execute entry module
             let module;
             try {
                 module = await this.compileModule();
@@ -215,44 +236,40 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             const metadata: ApplicationMetadata = (typeof mainExport == 'object' && mainExport) || mainExport.metadata || module.metadata || { applicationClass: mainExport, ...module, ...mainExport };
 
             // Abort if the app started shutting down
-            if (this.state as AppLifecycle != "compiling") return;
+            this.assert_not_shutdown();
 
             this.transitionState("starting")
 
-            this.persistedStorage = new PersistentStorage(path.join(this.operating_directory, ".persistence.jkv"));
-            await this.persistedStorage.load();
-            this.cleanups.append(() => this.persistedStorage.dispose());
-
+            // Instanciate App instance
             const AppClass = metadata.applicationClass;
             try {
                 this._instance = new AppClass(this);
             } catch (ex) {
                 this.handle_client_startup_error(ex);
-                return;
             }
 
             resumable.register_context("APPLICATION", this._instance, true);
 
             this.resumableStore = new ResumableStore({
                 file: path.join(this.operating_directory, ".resumable_state.json"),
-                logMessage: (...rest) => this.logMessage(...rest),
             }, {
                 "APPLICATION": this._instance,
             })
 
             this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
 
+            // Invoke App initialize method
             try {
                 // TODO Timeout or cancel during restart
                 await this.invoke(() => this.instance.initialize?.());
             } catch (ex) {
                 this.handle_client_startup_error(ex);
-                return;
             }
 
             // Abort if the app started shutting down
-            if (this.state as AppLifecycle != "starting") return;
+            this.assert_not_shutdown();
 
+            // Apply Plugin Annotations and load Resumables
             await this.invoke(async () => {
                 // TODO Skip if initialize already did this
                 await flushPluginAnnotations(this.instance);
@@ -262,24 +279,31 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             // We want this to run before the userspace app has completely shutdown
             this.cleanups.append(async () => {
                 this.logMessage("info", "Suspending Resumables")
-                await this.resumableStore.save();
+                await this.invoke(() => this.resumableStore.save());
             });
 
             // Abort if the app started shutting down
-            if (this.state as AppLifecycle != "starting") return;
+            this.assert_not_shutdown();
 
             this.transitionState('started');
 
             await this.hypervisor.crossCallStore.handleAppStart(this);
 
             // Abort if the app started shutting down
-            if (this.state as AppLifecycle != "starting") return;
+            this.assert_not_shutdown();
 
             await this.fireLifecycleHooks("started");
         } catch (ex) {
-            this.logClientMessage("error", `Failed while starting up: `, ex);
-            // "dead" is more like "mostly dead" - we don't do shutdown so that watchers are kept live and can trigger a restart
+            if (ex instanceof ShuttingDown) return;
+
+            if (!ex[MessagingHandled]) {
+                this.logClientMessage("error", `Failed while starting up: `, ex);
+            }
+
+            // There's "dead" and "mostly dead" - we go for "mostly dead" so that watchers are kept live and can trigger a restart
             this.transitionState("dead");
+            await this.cleanups.cleanup({ except_tags: ["watcher"] });
+
             throw ex;
         }
     }
@@ -366,9 +390,9 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
     }
 
     private handle_client_startup_error(err: Error) {
-        this.transitionState("dead");
         if (err instanceof PluginNotStartedError) {
             this.logClientMessage("warn", `Tried to use a plugin (${err.plugin_id}) that hasn't started yet. Will retry app startup later`)
+
             const plh = this.hypervisor.getPlugin(err.plugin_id);
             const handler = (state: AppLifecycle) => {
                 if (state == "started") {
@@ -376,11 +400,27 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
                     this.namespace.reinitializeInstance(this);
                 }
             }
+
             plh.on("lifecycle", handler);
+
+            this.cleanups.append(() => {
+                plh.off("lifecycle", handler);
+            }, { tags: ["watcher"] })
+
+            err[MessagingHandled] = true;
+
+            throw err;
         } else {
-            this.invoke(() => {
-                this.logClientMessage("error", `Failed while starting up: `, err);
-            })
+            // this.invoke(() => {
+            //     this.logClientMessage("error", `Failed while starting up: `, err);
+            // })
+            throw err;
+        }
+    }
+
+    private assert_not_shutdown() {
+        if (this.state == "stopping" || this.state == "stopped" || this.state == "dead") {
+            throw new ShuttingDown();
         }
     }
 }
