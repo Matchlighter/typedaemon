@@ -129,13 +129,20 @@ export const _parseTDFormat = (sched: string, sun_options: SunOptions = "ha:defa
             const dtEnd = mdt.clone().endOf('day');
 
             if (typeof sun_options == 'string' && sun_options.startsWith('ha:')) {
-                const plg_name = sun_options.substring(3);
+                let plg_name = sun_options.substring(3);
+                if (plg_name == "default") plg_name = "home_assistant";
                 const plg = get_plugin(plg_name) as HomeAssistantPlugin;
-
-                if (!plg) sun_options = "td";
-
-                // TODO Get From HA
-                sun_options = null;
+                
+                if (plg?.ha_config) {
+                    const hac = plg.ha_config;
+                    sun_options = {
+                        lat: hac.latitude,
+                        long: hac.longitude,
+                        elev: hac.elevation,
+                    }
+                } else {
+                    sun_options = null;
+                }
             }
 
             if (sun_options == "td" || !sun_options) {
@@ -144,6 +151,10 @@ export const _parseTDFormat = (sched: string, sun_options: SunOptions = "ha:defa
                     long: cfg?.location?.longitude,
                     elev: cfg?.location?.elevation,
                 }
+            }
+
+            if (!sun_options || typeof sun_options != "object") {
+                throw new Error(`Tried to schedule something in relation to the sun, but could not determin lat/long. You need to configure HA or TypeDaemon appropriately.`);
             }
 
             const sun_config = sun_options as SunConfig;

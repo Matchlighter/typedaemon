@@ -6,6 +6,7 @@ import {
     ERR_HASS_HOST_REQUIRED,
     ERR_INVALID_AUTH,
     ERR_INVALID_HTTPS_TO_HTTP,
+    HassConfig,
     HassEntities,
     HassEvent,
     HassServiceTarget,
@@ -14,6 +15,7 @@ import {
     createConnection as _createConnection,
     callService,
     createLongLivedTokenAuth,
+    getConfig,
     getStates
 } from 'home-assistant-js-websocket';
 import { action, observable, runInAction } from 'mobx';
@@ -166,6 +168,9 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     //     // TODO
     // }
 
+    private readonly haConfigStore: any = {};
+    get ha_config(): DeepReadonly<HassConfig> { return this.haConfigStore }
+
     private readonly stateStore: any = observable({}, {}, { deep: false }) as any;
     get state(): DeepReadonly<HassEntities> { return this.stateStore }
 
@@ -225,6 +230,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
 
         // Synchronize states
         await this.resyncStatesNow();
+
         this._ha_api.addEventListener("ready", () => this.resyncStatesNow());
 
         this._ha_api.addEventListener("ready", () => {
@@ -250,10 +256,20 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
                         delete state[entity_id];
                     }
                 })
+            } else if (ev.event_type == "core_config_updated") {
+                this.syncConfigNow();
             }
 
             // TODO Dispatch event to other listeners
-        })
+        });
+
+        await this.syncConfigNow();
+    }
+
+    @action
+    private async syncConfigNow() {
+        const cfg = await getConfig(this._ha_api);
+        sync_to_observable(this.haConfigStore, cfg, { });
     }
 
     @action
