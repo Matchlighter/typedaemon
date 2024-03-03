@@ -3625,6 +3625,11 @@ which@^2.0.1:
   dependencies:
     isexe "^2.0.0"
 
+why-is-node-still-running@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/why-is-node-still-running/-/why-is-node-still-running-1.0.0.tgz#b10998778ead008e149b9a1ecac9a3c236b137b8"
+  integrity sha512-oLjSBpYU0cY77XUJZzu0acNMaM/23dncjWsMcvSt45ZyyBEUuVXGDV2rH3XOg85xobxIIp1jcrq91r74XT1QDg==
+
 winston-daily-rotate-file@^4.7.1:
   version "4.7.1"
   resolved "https://registry.yarnpkg.com/winston-daily-rotate-file/-/winston-daily-rotate-file-4.7.1.tgz#f60a643af87f8867f23170d8cd87dbe3603a625f"
