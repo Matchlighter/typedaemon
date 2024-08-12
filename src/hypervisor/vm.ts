@@ -1,22 +1,22 @@
 
 
-import * as Module from "module";
+import * as babel from "@babel/core";
 import * as fs from "fs";
-import * as VM from "vm2";
-import * as babel from "@babel/core"
 import * as json5 from 'json5';
+import * as Module from "module";
+import * as VM from "vm2";
 import path = require("path");
 
+import { loadTsConfig } from "load-tsconfig";
 import { createMatchPath } from 'tsconfig-paths';
-import { loadTsConfig } from "load-tsconfig"
 
-import { parseYaml } from "../common/ha_yaml";
-import { ApplicationInstance } from "./application_instance";
 import { APP_BABEL_CONFIG } from "../app_transformer";
-import { CONSOLE_METHODS, logMessage } from "./logging";
 import { registerSourceMap } from "../app_transformer/source_maps";
-import { appmobx } from "../plugins/mobx";
+import { parseYaml } from "../common/ha_yaml";
 import { TD_MODULES_PATH, TYPEDAEMON_PATH, patch } from "../common/util";
+import { ApplicationInstance } from "./application_instance";
+import { CONSOLE_METHODS, logMessage } from "./logging";
+import { patchModule } from "./vm_patches";
 
 type VMExtensions = Record<`.${string}`, (mod: Module, filename: string) => void>;
 
@@ -221,12 +221,10 @@ export async function createApplicationVM(app: ApplicationInstance) {
             customRequire(id) {
                 logMessage("debug", `Requiring host module '${id}'`)
 
-                // Supply a patched MobX that will automatically add Reaction disposers to the cleanups
-                if (id?.includes("node_modules/mobx/dist/")) {
-                    return appmobx;
-                }
+                let mod = require(id);
+                mod = patchModule(id, mod);
 
-                return require(id)
+                return mod;
             },
             // Fallback Resolver if nothing else works
             resolve(moduleName, parentDirname) {
