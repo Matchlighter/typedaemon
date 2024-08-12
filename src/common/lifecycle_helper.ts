@@ -84,7 +84,7 @@ abstract class BaseLifecycleHelper {
             try {
                 return cleaner();
             } finally {
-                this.remove(wrapped_cleaner)
+                this.remove(cleaner)
             }
         }
 
