@@ -91,7 +91,6 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
 
     private updateLogConfiguration(cfg: Configuration['logging']) {
         let sys_file = cfg.system_file;
-        sys_file ||= path.join(this.operations_directory, "logs", "%DATE%.log");
 
         this._logger?.close();
 
@@ -317,10 +316,11 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
 
             const cfg = ConfigMerger.mergeConfigs(defaultConfig, parsed);
 
-            cfg.logging.plugins_file ||= cfg.logging.system_file;
+            cfg.logging.plugins_file ||= path.join(this.operations_directory, "logs", "plugins", "{plugin}", "%DATE%.log");
+            cfg.logging.plugins_file = path.resolve(this.working_directory, cfg.logging.plugins_file);
 
-            // cfg.logging.system_file = path.resolve(this.working_directory, cfg.logging.system_file);
-            // cfg.logging.plugins_file = path.resolve(this.working_directory, cfg.logging.plugins_file);
+            cfg.logging.system_file ||= path.join(this.operations_directory, "logs", "%DATE%.log");
+            cfg.logging.system_file = path.resolve(this.working_directory, cfg.logging.system_file);
 
             if (no_watching) {
                 cfg.daemon.watch = { app_configs: false, app_source: false, config: false }
