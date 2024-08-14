@@ -120,6 +120,52 @@ export interface HomeAssistantPluginConfig {
     mqtt_plugin?: string;
 }
 
+interface HADevice {
+    area_id;
+    configuration_url;
+    config_entries;
+    connections;
+    created_at;
+    disabled_by;
+    entry_type;
+    hw_version;
+    id;
+    identifiers;
+    labels;
+    manufacturer;
+    model;
+    model_id;
+    modified_at;
+    name_by_user;
+    name;
+    primary_config_entry;
+    serial_number;
+    sw_version;
+    via_device_id;
+}
+
+interface HAArea {
+    aliases;
+    area_id;
+    floor_id;
+    icon;
+    labels;
+    name;
+    picture;
+    created_at;
+    modified_at;
+}
+
+interface HALabel {
+    color;
+    created_at;
+    description;
+    icon;
+    label_id;
+    name;
+    modified_at;
+}
+
 export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     readonly api: HomeAssistantApi = homeAssistantApi(this);
 
@@ -173,6 +219,15 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
 
     private readonly stateStore: any = observable({}, {}, { deep: false }) as any;
     get state(): DeepReadonly<HassEntities> { return this.stateStore }
+
+    private readonly deviceStore: any = observable({}, {}, { deep: false }) as any;
+    get devices(): DeepReadonly<HassEntities> { return this.deviceStore }
+
+    private readonly areaStore: any = observable({}, {}, { deep: false }) as any;
+    get areas(): DeepReadonly<HassEntities> { return this.areaStore }
+
+    private readonly labelStore: any = observable({}, {}, { deep: false }) as any;
+    get labels(): DeepReadonly<HassEntities> { return this.labelStore }
 
     _ha_api: Connection;
     private pingInterval;
@@ -258,18 +313,55 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
                 })
             } else if (ev.event_type == "core_config_updated") {
                 this.syncConfigNow();
+            } else if (ev.event_type == "device_registry_updated") {
+                this.syncDevicesNow();
+            } else if (ev.event_type == "area_registry_updated") {
+                this.syncAreasNow();
+            } else if (ev.event_type == "label_registry_updated") {
+                this.syncLabelsNow();
             }
-
-            // TODO Dispatch event to other listeners
         });
 
         await this.syncConfigNow();
+        await this.syncDevicesNow();
+        await this.syncAreasNow();
+        await this.syncLabelsNow();
     }
 
     @action
     private async syncConfigNow() {
         const cfg = await getConfig(this._ha_api);
         sync_to_observable(this.haConfigStore, cfg, { });
+    }
+
+    @action
+    private async syncDevicesNow() {
+        const devices = await this.request("config/device_registry/list", {}) as HADevice[];
+        const indexed = {};
+        for (let l of devices) {
+            indexed[l.id] = l;
+        }
+        sync_to_observable(this.deviceStore, indexed, { });
+    }
+
+    @action
+    private async syncAreasNow() {
+        const areas = await this.request("config/area_registry/list", {}) as HAArea[];
+        const indexed = {};
+        for (let l of areas) {
+            indexed[l.area_id] = l;
+        }
+        sync_to_observable(this.areaStore, indexed, { });
+    }
+
+    @action
+    private async syncLabelsNow() {
+        const labels = await this.request("config/label_registry/list", {}) as HALabel[];
+        const indexed = {};
+        for (let l of labels) {
+            indexed[l.label_id] = l;
+        }
+        sync_to_observable(this.labelStore, indexed, { });
     }
 
     @action
