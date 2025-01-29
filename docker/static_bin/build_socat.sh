@@ -4,10 +4,10 @@ set -e
 set -o pipefail
 set -x
 
-SOCAT_VERSION=1.7.4.4
-NCURSES_VERSION=6.0
-READLINE_VERSION=7.0
-OPENSSL_VERSION=1.1.1d
+SOCAT_VERSION=1.8.0.2
+NCURSES_VERSION=6.5
+READLINE_VERSION=8.2
+OPENSSL_VERSION=3.4.0
 
 function build_ncurses() {
     cd /build
@@ -27,7 +27,8 @@ function build_readline() {
     cd /build
 
     # Download
-    curl -LO ftp://ftp.cwru.edu/pub/bash/readline-${READLINE_VERSION}.tar.gz
+    # curl -LO ftp://ftp.cwru.edu/pub/bash/readline-${READLINE_VERSION}.tar.gz
+    curl -LO ftp://ftp.gnu.org/gnu/readline/readline-${READLINE_VERSION}.tar.gz
     tar xzvf readline-${READLINE_VERSION}.tar.gz
     cd readline-${READLINE_VERSION}
 
@@ -73,7 +74,7 @@ function build_socat() {
         CFLAGS='-fPIC' \
         CPPFLAGS="-I/build -I/build/openssl-${OPENSSL_VERSION}/include -DNETDB_INTERNAL=-1" \
         LDFLAGS="-L/build/readline-${READLINE_VERSION} -L/build/ncurses-${NCURSES_VERSION}/lib -L/build/openssl-${OPENSSL_VERSION}" \
-        ./configure
+        ./configure --disable-shared --enable-static
     make -j4
     strip socat
 }

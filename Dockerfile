@@ -1,5 +1,5 @@
 # ======= Static Binaries ======= #
-FROM alpine:latest AS static_bin
+FROM alpine:3.20.2 AS static_bin
 
 RUN apk --update add build-base bash automake git curl linux-headers openssl-dev
 
@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y jq
 # Install Deps
 COPY package.json yarn.lock ./
 COPY patches patches
-RUN yarn install --frozen-lockfile
+RUN yarn install --frozen-lockfile --network-timeout 1000000
 
 # Add App
 COPY tsconfig.json ./
