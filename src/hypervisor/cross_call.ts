@@ -57,7 +57,7 @@ export class CrossCallStore {
         await this.storage.load();
     }
 
-    private app_state_atoms: Record<string, Atom> = {};
+    private app_state_atoms: Record<string, ReturnType<typeof createAtom>> = {};
     private query_observers: Record<string, IComputedValue<any>> = {};
 
     crossQueryProperty(source: ApplicationInstance, dest: string | ApplicationInstance, property: string, config: CrossqueryConfig = {}) {
