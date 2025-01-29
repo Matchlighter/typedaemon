@@ -63,6 +63,7 @@ interface ScheduleOpts {
  * 
  * A timezone may be suffixed to the time, like so:
  * - `4:23:00 PM America/Denver`
+ * - `4:23:00 PM -07:00`
  * 
  * Schedules can also be created relative to sunrise or sunset:
  * - `2023/05/30 sunset+1:00`

@@ -123,7 +123,7 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
         // TODO Should we have HA filter the event_type, or do it in the callback?
         //   If we do it in the callback, we end up just using the cached/global subscription instead of creating a second
         return _sync_subscribe({ type: "subscribe_events" }, (evt: HassEvent) => {
-            if (event_types_set.has(evt.event_type) || event_type == '*') {
+            if (event_types_set.has(evt.event_type) || event_types_set.has('*')) {
                 f(evt);
             }
         })
@@ -131,6 +131,8 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
 
     const subscribe_state = callback_or_decorator2((f: (new_state: HassEntity, old_state: HassEntity, entity_id: string) => void, entity: string | string[] | RegExp) => {
         f = bind_callback_env(f);
+        
+        // TODO: Support labels
 
         let match: (evt: StateChangedEvent) => boolean;
         if (typeof entity == 'string') {
