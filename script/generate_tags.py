@@ -89,13 +89,14 @@ def main():
     with open(os.environ["GITHUB_OUTPUT"], "w") as f:
         print(f"version={version}", file=f)
         print(f"channel={channel}", file=f)
-        print(f"image=matchlighter/typedaemon{suffix}", file=f)
+        print(f"image=ghcr.io/matchlighter/typedaemon{suffix}", file=f)
         full_tags = []
 
         for tag in tags_to_push:
             full_tags += [f"ghcr.io/matchlighter/typedaemon{suffix}:{tag}"]
             # full_tags += [f"matchlighter/typedaemon{suffix}:{tag}"]
         print(f"tags={','.join(full_tags)}", file=f)
+        print(f"tags_json={json.dumps(full_tags)}", file=f)
 
 
 if __name__ == "__main__":
