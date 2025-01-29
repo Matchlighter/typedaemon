@@ -37,7 +37,7 @@ export function patchClassCleanup<T extends Constructor<any>>(cls: T,  methods:(
     }
 
     for (let m of methods) {
-        PatchedClass.prototype[m] = function (this: PatchedClass, ...args) {
+        PatchedClass.prototype[m as any] = function (this: PatchedClass, ...args) {
             this._application.cleanups.remove(this._cleaner);
             return cls.prototype[m].call(this, ...args);
         }
