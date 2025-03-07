@@ -42,8 +42,25 @@ interface CountedSubscription {
     callbacks: Set<(...args: any[]) => void>;
     unsubscribe: () => any;
 }
-class SubCountingConnection extends Connection {
+export class SubCountingConnection extends Connection {
     private subscription_counts: Record<string, CountedSubscription> = {};
+
+    private async createCounterSubscription(counter: CountedSubscription) {
+        const unsubscribe = await super.subscribeMessage((...args) => {
+            for (let h of counter.callbacks) {
+                try {
+                    const result = h(...args) as any;
+                    if (result && "then" in result) {
+                        result.catch(handle_client_error);
+                    }
+                } catch (ex) {
+                    handle_client_error(ex);
+                }
+            }
+        }, counter.message, { resubscribe: true });
+
+        counter.unsubscribe = unsubscribe;
+    }
 
     async subscribeMessage<Result>(callback: (result: Result) => void, subscribeMessage: MessageBase, options?: { resubscribe?: boolean; }): Promise<() => Promise<void>> {
         const hash_key = objectHash(subscribeMessage);
@@ -60,20 +77,7 @@ class SubCountingConnection extends Connection {
 
             logPluginClientMessage(this, "debug", "New HA Subscription:", subscribeMessage);
 
-            const unsubscribe = await super.subscribeMessage((...args) => {
-                for (let h of counter.callbacks) {
-                    try {
-                        const result = h(...args) as any;
-                        if (result && "then" in result) {
-                            result.catch(handle_client_error);
-                        }
-                    } catch (ex) {
-                        handle_client_error(ex);
-                    }
-                }
-            }, subscribeMessage, { resubscribe: true });
-
-            counter.unsubscribe = unsubscribe;
+            await this.createCounterSubscription(counter);
         }
 
         counter.callbacks.add(callback);
@@ -85,6 +89,17 @@ class SubCountingConnection extends Connection {
                 delete this.subscription_counts[hash_key];
                 await counter.unsubscribe();
             }
+        }
+    }
+
+    async forceResubscribe() {
+        for (let counter of Object.values(this.subscription_counts)) {
+            try {
+                await counter.unsubscribe();
+            } catch (ex) {
+                // ignore
+            }
+            await this.createCounterSubscription(counter);
         }
     }
 }
@@ -158,7 +173,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     get areas() { return this._synced_store.get("area") }
     get labels() { return this._synced_store.get("label") }
 
-    _ha_api: Connection;
+    _ha_api: SubCountingConnection;
     private pingInterval;
 
     // awaitForEvent(pattern) {
@@ -177,7 +192,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
         while (true) {
             let url = this.config.url;
             let access_token = this.config.access_token;
-    
+
             if ('SUPERVISOR_TOKEN' in process.env) {
                 url ||= "http://supervisor/core"
                 access_token ||= process.env['SUPERVISOR_TOKEN']
@@ -188,7 +203,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
                     auth: createLongLivedTokenAuth(url, access_token),
                 })
                 ha[HyperWrapper] = this[HyperWrapper];
-                this._ha_api = ha;
+                this._ha_api = ha as any;
                 break;
             } catch (ex) {
                 if (HA_WS_ERRORS[ex]) {
@@ -215,10 +230,11 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
 
         this._ha_api.subscribeMessage(() => {
             lastEvent = Date.now();
-        }, { type: "subscribe_events" })
+        }, { type: "subscribe_events" });
 
         this._ha_api.addEventListener("ready", () => {
             this[HyperWrapper].logMessage("info", `HA Websocket Ready`)
+            this._ha_api.forceResubscribe();
         })
         this._ha_api.addEventListener("disconnected", () => {
             this[HyperWrapper].logMessage("warn", `HA Websocket Disconnected`)
@@ -236,7 +252,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     }
 }
 
-class EventAwaiter extends ResumablePromise<any>{
+class EventAwaiter extends ResumablePromise<any> {
     constructor(readonly hap: HomeAssistantPlugin, readonly schema) {
         super();
         this.do_unsuspend();
