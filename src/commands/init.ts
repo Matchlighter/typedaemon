@@ -14,12 +14,18 @@ export default {
     command: "init [name]",
     builder: y => y.options({
         force: { alias: 'f', boolean: true, },
+        automated: { boolean: true, },
     }),
     handler: async (argv) => {
         const name = argv.name as string;
         const targDir = path.resolve(process.cwd(), name);
 
-        if (!argv.force) {
+        if (argv.automated) {
+            if (!argv.force && await fs.pathExists(path.join(targDir, "typedaemon_config.ts"))) {
+                console.log("TypeDaemon already initialized")
+                return;
+            }
+        } else if (!argv.force) {
             if (await fs.pathExists(targDir)) {
                 const dir = await fsp.readdir(targDir);
                 if (dir.length > 0) {
@@ -28,6 +34,8 @@ export default {
             }
         }
 
+        console.log(chalk`{cyan Initializing TypeDaemon project in} {cyan.bold ${targDir}}`);
+
         await fs.mkdirp(targDir);
 
         // const pjson = require(path.join(__package_dir, './package.json'));
@@ -35,6 +43,8 @@ export default {
             // project_name: name || 'crucible-project',
             // crucible_version_req: `^${pjson.version}`
         }
+
+        console.log(chalk`{cyan Copying templates}`);
 
         const exampleDir = path.join(__package_dir, 'skel');
         for await (let file of walk(exampleDir)) {
@@ -50,6 +60,8 @@ export default {
             }
 
             if (await fs.pathExists(targp) && (await fsp.readFile(targp, 'utf-8') != rendered)) {
+                if (argv.automated) continue;
+
                 const answ = await prompts({
                     name: 'overwrite',
                     type: 'confirm',
@@ -61,8 +73,15 @@ export default {
             await fs.mkdirp(path.dirname(targp));
 
             await fsp.writeFile(targp, rendered, 'utf-8');
+
+            console.log(chalk` - {green Created} {cyan ${targp}}`);
         }
 
-        await syncDevEnv(targDir);
+        if (!argv.automated) {
+            console.log(chalk`{cyan Syncing Dev Env}`)
+            await syncDevEnv(targDir);
+        }
+
+        console.log(chalk`{green TypeDaemon project initialized}`)
     }
 } as CommandModule
