@@ -259,6 +259,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     function inputApi<V, O extends {} = {}>(domain: string) {
         class TIEnt extends InputEntity<V> {
             static domain = domain;
+            static { this._defaultAutocleaner(); }
         }
 
         return funcOrNew(
