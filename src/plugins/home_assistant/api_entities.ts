@@ -1,5 +1,6 @@
 
 import { action, computed, observable } from "mobx";
+import { Constructor } from "type-fest";
 
 import { ClassAccessorDecorator, ClassGetterDecorator, ClassMethodDecorator } from "@matchlighter/common_library/decorators/20223fills";
 import { optional_config_decorator } from "@matchlighter/common_library/decorators/utils";
@@ -180,7 +181,8 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     }
 
     /** API Factory for creating R/W entities with either `new` or decorator syntax */
-    function basicRWApi<E extends EntityClass<any, any>>(entCls: EntityClassConstructor<E>, autoinit_callback: RWInitCallback<E>) {
+    // function basicRWApi<E extends EntityClass<any, any>>(entCls: EntityClassConstructor<E>, autoinit_callback: RWInitCallback<E>) {
+    function basicRWApi<E extends EntityClass<any, any>>(entCls: Constructor<E>, autoinit_callback: RWInitCallback<E>) {
         return funcOrNew(
             (options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string, persist_state?: boolean }) => _basicRWDecorator(entCls, options, autoinit_callback),
             entCls,
@@ -290,7 +292,6 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
 
     // ========= Entity APIs ========= //
-
     const entities = {
         ...domain_entities,
 

@@ -23,10 +23,10 @@ export const domain_entities = {
     event: TDEvent,
     image: TDImage,
     light: TDLight,
-    number:TDNumber,
+    number: TDNumber,
     scene: TDScene,
-    select:TDSelect,
+    select: TDSelect,
     sensor: TDSensor,
     switch: TDSwitch,
-    text:TDText,
+    text: TDText,
 }

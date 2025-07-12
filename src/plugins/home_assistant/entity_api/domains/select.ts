@@ -7,7 +7,7 @@ export interface SelectOptions extends EntityOptionsCommon, EntityOptionsCommonW
 }
 
 export class TDSelect extends EntityClass<string, {}, SelectOptions> {
-    static domain = "text";
+    static domain = "select";
 
     static { this._defaultAutocleaner(); }
 
