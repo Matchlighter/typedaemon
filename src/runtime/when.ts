@@ -34,7 +34,7 @@ interface WhenOptions {
     timeout?: number;
 }
 
-interface WhenDecorator<S> extends PromiseLike<any> {
+interface WhenDecorator<S> {
     (callback: (self: S) => boolean): (() => void);
     (decoratee: any, ctx: ClassMethodDecoratorContext<S>): void;
 }
@@ -205,26 +205,6 @@ export function when<S>(
             return connect(undefined, target);
         }
     }
-
-    // dec.then = (onfulfilled, onrejected?) => {
-    //     if (options.resume || options.repeat) {
-    //         throw new Error("Cannot use `await when(...)` with `resume:` or `repeat:` options");
-    //     }
-
-    //     if (options.for && options.for > 0) {
-    //         const p = new ControlledPromise();
-    //         const app_inst = current.application.instance as any;
-    //         appmobx.reaction(() => expr(app_inst), (x) => {
-
-    //         }, { fireImmediately: true });
-    //     } else {
-    //         // Optimize for the common case of no `for` time
-    //         return appmobx.when(() => expr(current.application.instance as any)).then(
-    //             onfulfilled,
-    //             onrejected,
-    //         )
-    //     }
-    // }
 
     return dec;
 }

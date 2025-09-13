@@ -8,6 +8,7 @@ export interface ExecutorOptions {
     try_locs: number[][];
     marked_locs: number[];
     context_name?: string;
+    parameter_names?: string[];
 }
 
 const Op = Object.prototype;

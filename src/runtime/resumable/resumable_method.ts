@@ -55,7 +55,7 @@ ResumablePromise.defineClass<ResumableMethod<any>>({
             actionType: data.actionType,
             // Using mark index makes things more stable if the expressions of the resumable change, but flow changes will still be problematic
             prev: newIndexedMarks[data.prevIndex] || data.prev,
-            next: newIndexedMarks[data.next] || data.next,
+            next: newIndexedMarks[data.nextIndex] || data.next,
             done: data.done,
             rval: data.rval,
         });

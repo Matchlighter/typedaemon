@@ -31,6 +31,8 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<
 
       if (!shouldRegenerate(node, state)) return;
 
+      state.method_params = node.params;
+
       let root = path;
       while (root && root.type != "Program") {
         root = root.parentPath;
@@ -156,7 +158,9 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<
           t.objectProperty(t.identifier("try_locs"), emitter.getTryLocsList() || t.nullLiteral()),
           t.objectProperty(t.identifier("marked_locs"), emitter.getLocIndices() || t.nullLiteral()),
           t.objectProperty(t.identifier("context_name"), t.stringLiteral(contextId.name)),
-          // t.objectProperty(t.identifier("parameters"), t.arrayExpression()),
+          t.objectProperty(t.identifier("parameter_names"), t.arrayExpression([
+            ...(state.method_params ?? []).map(p => t.stringLiteral(p.name))
+          ])),
         ]))
 
         let wrapCall = t.callExpression(
