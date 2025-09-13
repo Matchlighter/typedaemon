@@ -20,7 +20,7 @@ import { HAMobXStore } from '@matchlighter/ha-mobx-store';
 import { logPluginClientMessage } from '../../hypervisor/logging';
 import { HyperWrapper } from '../../hypervisor/managed_apps';
 import { ResumablePromise } from "../../runtime/resumable";
-import { SerializeContext } from '../../runtime/resumable/resumable_promise';
+import { CancellableResumablePromise, SerializeContext } from '../../runtime/resumable/resumable_promise';
 import { internal_sleep } from '../../util';
 import { Plugin, get_plugin, handle_client_error } from '../base';
 import { MqttPlugin } from '../mqtt/plugin';
@@ -242,6 +242,8 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
         this._ha_api.addEventListener("reconnect-error", (conn, err) => {
             this[HyperWrapper].logMessage("warn", `HA Websocket Reconnect Error (${HA_WS_ERRORS[err] || err})`)
         })
+
+        // TODO Await for the _synced_store before marking Plugin as ready
     }
 
     configuration_updated(new_config: HomeAssistantPluginConfig, old_config: HomeAssistantPluginConfig) {
@@ -252,7 +254,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     }
 }
 
-class EventAwaiter extends ResumablePromise<any> {
+class EventAwaiter extends CancellableResumablePromise<any> {
     constructor(readonly hap: HomeAssistantPlugin, readonly schema) {
         super();
         this.do_unsuspend();

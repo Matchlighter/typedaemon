@@ -16,181 +16,201 @@ import { Emitter } from "./emit";
 import * as util from "./util";
 import replaceShorthandObjectMethod from "./replaceShorthandObjectMethod";
 import { Visitor } from "@babel/core";
+import template from "@babel/template";
 
-export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<any> => ({
-  Method(path, state) {
-    let node = path.node;
+const regen_import = template(`
+  import { Executor as _regen_executor } from 'typedaemon/runtime/regen_executor';
+`);
 
-    if (!shouldRegenerate(node, state)) return;
-
-    const container = t.functionExpression(
-      null,
-      [],
-      t.cloneNode(node.body, false),
-      node.generator,
-      node.async,
-    );
-
-    path.get("body").set("body", [
-      t.returnStatement(
-        t.callExpression(container, []),
-      ),
-    ]);
-
-    // Regardless of whether or not the wrapped function is a an async method
-    // or generator the outer function should not be
-    node.async = false;
-    node.generator = false;
-
-    // Unwrap the wrapper IIFE's environment so super and this and such still work.
-    path
-      .get("body.body.0.argument.callee")
-      .unwrapFunctionEnvironment();
-  },
-  Function: {
-    exit: util.wrapWithTypes(t, function (path, state) {
+export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<any> => {
+  // let root;
+  let importedRuntime = false;
+  return {
+    Method(path, state) {
       let node = path.node;
 
       if (!shouldRegenerate(node, state)) return;
 
-      // if this is an ObjectMethod, we need to convert it to an ObjectProperty
-      path = replaceShorthandObjectMethod(path);
-      node = path.node;
-
-      let contextId = path.scope.generateUidIdentifier("context");
-      let argsId = path.scope.generateUidIdentifier("args");
-
-      path.ensureBlock();
-      let bodyBlockPath = path.get("body");
-
-      if (node.async) {
-        bodyBlockPath.traverse(awaitVisitor);
+      let root = path;
+      while (root && root.type != "Program") {
+        root = root.parentPath;
       }
 
-      bodyBlockPath.traverse(functionSentVisitor, {
-        context: contextId
-      });
-
-      let outerBody = [];
-      let innerBody = [];
-
-      bodyBlockPath.get("body").forEach(function (childPath) {
-        let node = childPath.node;
-        if (t.isExpressionStatement(node) &&
-          t.isStringLiteral(node.expression)) {
-          // Babylon represents directives like "use strict" as elements
-          // of a bodyBlockPath.node.directives array, but they could just
-          // as easily be represented (by other parsers) as traditional
-          // string-literal-valued expression statements, so we need to
-          // handle that here. (#248)
-          outerBody.push(node);
-        } else if (node && node._blockHoist != null) {
-          outerBody.push(node);
-        } else {
-          innerBody.push(node);
-        }
-      });
-
-      if (outerBody.length > 0) {
-        // Only replace the inner body if we actually hoisted any statements
-        // to the outer body.
-        bodyBlockPath.node.body = innerBody;
+      if (!importedRuntime) {
+        root.unshiftContainer("body", regen_import());
+        importedRuntime = true;
       }
 
-      let outerFnExpr = getOuterFnExpr(path);
-      // Note that getOuterFnExpr has the side-effect of ensuring that the
-      // function has a name (so node.id will always be an Identifier), even
-      // if a temporary name has to be synthesized.
-      // @ts-ignore
-      t.assertIdentifier(node.id);
-      let innerFnId = t.identifier(node.id.name + "$");
-
-      // Turn all declarations into vars, and replace the original
-      // declarations with equivalent assignment expressions.
-      let vars = hoist(path, contextId);
-
-      let context = {
-        usesThis: true, //false,
-        usesArguments: false,
-        getArgsId: () => t.clone(argsId),
-      };
-      path.traverse(argumentsThisVisitor, context);
-
-      if (context.usesArguments) {
-        vars = vars || t.variableDeclaration("var", []);
-        vars.declarations.push(t.variableDeclarator(
-          t.clone(argsId),
-          t.identifier("arguments"),
-        ));
-      }
-
-      let emitter = new Emitter(contextId);
-      emitter.explode(path.get("body"));
-
-      if (vars && vars.declarations.length > 0) {
-        outerBody.push(vars);
-      }
-
-      let wrapArgs = [emitter.getContextFunction(innerFnId)];
-
-      wrapArgs.push(t.objectExpression([
-        t.objectProperty(t.identifier("self"), t.identifier("this")),
-        t.objectProperty(t.identifier("try_locs"), emitter.getTryLocsList() || t.nullLiteral()),
-        t.objectProperty(t.identifier("marked_locs"), emitter.getLocIndices() || t.nullLiteral()),
-        // t.objectProperty(t.identifier("parameters"), t.arrayExpression()),
-      ]))
-
-      let wrapCall = t.callExpression(
-        util.runtimeProperty(node.async ? "_wrapped_async" : "wrap"),
-        wrapArgs
+      const container = t.functionExpression(
+        null,
+        [],
+        t.cloneNode(node.body, false),
+        node.generator,
+        node.async,
       );
 
-      outerBody.push(t.returnStatement(wrapCall));
-      node.body = t.blockStatement(outerBody);
-      // We injected a few new variable declarations (for every hoisted var),
-      // so we need to add them to the scope.
-      path.get("body.body").forEach(p => p.scope.registerDeclaration(p));
+      path.get("body").set("body", [
+        t.returnStatement(
+          t.callExpression(container, []),
+        ),
+      ]);
 
-      const oldDirectives = bodyBlockPath.node.directives;
-      if (oldDirectives) {
-        // Babylon represents directives like "use strict" as elements of
-        // a bodyBlockPath.node.directives array. (#248)
-        node.body.directives = oldDirectives;
-      }
+      // Regardless of whether or not the wrapped function is a an async method
+      // or generator the outer function should not be
+      node.async = false;
+      node.generator = false;
 
-      let wasGeneratorFunction = node.generator;
-      if (wasGeneratorFunction) {
-        node.generator = false;
-      }
+      // Unwrap the wrapper IIFE's environment so super and this and such still work.
+      path
+        .get("body.body.0.argument.callee")
+        .unwrapFunctionEnvironment();
+    },
+    Function: {
+      exit: util.wrapWithTypes(t, function (path, state) {
+        let node = path.node;
 
-      if (node.async) {
-        node.async = false;
-      }
+        if (!shouldRegenerate(node, state)) return;
 
-      if (wasGeneratorFunction && t.isExpression(node)) {
-        util.replaceWithOrRemove(path, t.callExpression(util.runtimeProperty("mark"), [node]))
-        path.addComment("leading", "#__PURE__");
-      }
+        // if this is an ObjectMethod, we need to convert it to an ObjectProperty
+        path = replaceShorthandObjectMethod(path);
+        node = path.node;
 
-      const insertedLocs = emitter.getInsertedLocs();
+        let contextId = path.scope.generateUidIdentifier("context");
+        let argsId = path.scope.generateUidIdentifier("args");
 
-      path.traverse({
-        NumericLiteral(path) {
-          if (!insertedLocs.has(path.node)) {
-            return;
+        path.ensureBlock();
+        let bodyBlockPath = path.get("body");
+
+        if (node.async) {
+          bodyBlockPath.traverse(awaitVisitor);
+        }
+
+        bodyBlockPath.traverse(functionSentVisitor, {
+          context: contextId
+        });
+
+        let outerBody = [];
+        let innerBody = [];
+
+        bodyBlockPath.get("body").forEach(function (childPath) {
+          let node = childPath.node;
+          if (t.isExpressionStatement(node) &&
+            t.isStringLiteral(node.expression)) {
+            // Babylon represents directives like "use strict" as elements
+            // of a bodyBlockPath.node.directives array, but they could just
+            // as easily be represented (by other parsers) as traditional
+            // string-literal-valued expression statements, so we need to
+            // handle that here. (#248)
+            outerBody.push(node);
+          } else if (node && node._blockHoist != null) {
+            outerBody.push(node);
+          } else {
+            innerBody.push(node);
           }
+        });
 
-          path.replaceWith(t.numericLiteral(path.node.value));
-        },
+        if (outerBody.length > 0) {
+          // Only replace the inner body if we actually hoisted any statements
+          // to the outer body.
+          bodyBlockPath.node.body = innerBody;
+        }
+
+        let outerFnExpr = getOuterFnExpr(path);
+        // Note that getOuterFnExpr has the side-effect of ensuring that the
+        // function has a name (so node.id will always be an Identifier), even
+        // if a temporary name has to be synthesized.
+        // @ts-ignore
+        t.assertIdentifier(node.id);
+        let innerFnId = t.identifier(node.id.name + "$");
+
+        // Turn all declarations into vars, and replace the original
+        // declarations with equivalent assignment expressions.
+        let vars = hoist(path, contextId);
+
+        let context = {
+          usesThis: true, //false,
+          usesArguments: false,
+          getArgsId: () => t.clone(argsId),
+        };
+        path.traverse(argumentsThisVisitor, context);
+
+        if (context.usesArguments) {
+          vars = vars || t.variableDeclaration("var", []);
+          vars.declarations.push(t.variableDeclarator(
+            t.clone(argsId),
+            t.identifier("arguments"),
+          ));
+        }
+
+        let emitter = new Emitter(contextId);
+        emitter.explode(path.get("body"));
+
+        if (vars && vars.declarations.length > 0) {
+          outerBody.push(vars);
+        }
+
+        let wrapArgs = [emitter.getContextFunction(innerFnId)];
+
+        wrapArgs.push(t.objectExpression([
+          t.objectProperty(t.identifier("self"), t.identifier("this")),
+          t.objectProperty(t.identifier("try_locs"), emitter.getTryLocsList() || t.nullLiteral()),
+          t.objectProperty(t.identifier("marked_locs"), emitter.getLocIndices() || t.nullLiteral()),
+          t.objectProperty(t.identifier("context_name"), t.stringLiteral(contextId.name)),
+          // t.objectProperty(t.identifier("parameters"), t.arrayExpression()),
+        ]))
+
+        let wrapCall = t.callExpression(
+          util.runtimeProperty(node.async ? "_wrapped_async" : "wrap"),
+          wrapArgs
+        );
+
+        outerBody.push(t.returnStatement(wrapCall));
+        node.body = t.blockStatement(outerBody);
+        // We injected a few new variable declarations (for every hoisted var),
+        // so we need to add them to the scope.
+        path.get("body.body").forEach(p => p.scope.registerDeclaration(p));
+
+        const oldDirectives = bodyBlockPath.node.directives;
+        if (oldDirectives) {
+          // Babylon represents directives like "use strict" as elements of
+          // a bodyBlockPath.node.directives array. (#248)
+          node.body.directives = oldDirectives;
+        }
+
+        let wasGeneratorFunction = node.generator;
+        if (wasGeneratorFunction) {
+          node.generator = false;
+        }
+
+        if (node.async) {
+          node.async = false;
+        }
+
+        if (wasGeneratorFunction && t.isExpression(node)) {
+          util.replaceWithOrRemove(path, t.callExpression(util.runtimeProperty("mark"), [node]))
+          path.addComment("leading", "#__PURE__");
+        }
+
+        const insertedLocs = emitter.getInsertedLocs();
+
+        path.traverse({
+          NumericLiteral(path) {
+            if (!insertedLocs.has(path.node)) {
+              return;
+            }
+
+            path.replaceWith(t.numericLiteral(path.node.value));
+          },
+        })
+
+        // Generators are processed in 'exit' handlers so that regenerator only has to run on
+        // an ES5 AST, but that means traversal will not pick up newly inserted references
+        // to things like 'regeneratorRuntime'. To avoid this, we explicitly requeue.
+        path.requeue();
       })
-
-      // Generators are processed in 'exit' handlers so that regenerator only has to run on
-      // an ES5 AST, but that means traversal will not pick up newly inserted references
-      // to things like 'regeneratorRuntime'. To avoid this, we explicitly requeue.
-      path.requeue();
-    })
+    }
   }
-});
+};
 
 // Check if a node should be transformed by regenerator
 function shouldRegenerate(node, state) {

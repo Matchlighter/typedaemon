@@ -173,7 +173,28 @@ function resolveSunConfig(sun_options: SunOptions): SunConfig {
     return sun_options;
 }
 
+export const parseTimeOfDay = (sched: string, options?: ScheduleOpts) => {
+    // 16:23:00
+    // 4:23:00 PM
+    // 4:23 PM
+    // sunset+4:23:00
+    options = {
+        sun: "ha:default",
+        timezone: "ha:default",
+        ...options,
+    }
+    const parsed = _parseTDFormatInternal(sched, options);
+    const tz = resolveTimezone({ parsed: null, passed: options?.timezone });
+    console.log(tz)
+    return parsed.nextAfter(moment().tz(tz).startOf('day').unix() * 1000);
+}
+
 export const _parseTDFormat = (sched: string, options: ScheduleOpts) => {
+    const parsed = _parseTDFormatInternal(sched, options);
+    return () => parsed.nextAfter(Date.now());
+}
+
+export const _parseTDFormatInternal = (sched: string, options: ScheduleOpts) => {
     // 2023/05/30 4:23:00 PM
     // 16:23:00
     // 4:23:00 PM
@@ -245,19 +266,34 @@ export const _parseTDFormat = (sched: string, options: ScheduleOpts) => {
             return chosen;
         }
 
-        return () => {
-            srel_cron.reset(Date.now());
+        return {
+            nextAfter(date: number) {
+                srel_cron.reset(date);
 
-            let next_day = toMoment(srel_cron.next());
-            next_day = applySunOffset(next_day, parsed.time);
-
-            // Get sun___ on next_day. If past, bump next_day
-            if (next_day.isBefore(Date.now())) {
-                next_day = toMoment(srel_cron.next());
+                let next_day = toMoment(srel_cron.next());
                 next_day = applySunOffset(next_day, parsed.time);
-            }
 
-            return next_day;
+                // Get sun___ on next_day. If past, bump next_day
+                if (next_day.isBefore(date)) {
+                    next_day = toMoment(srel_cron.next());
+                    next_day = applySunOffset(next_day, parsed.time);
+                }
+
+                return next_day;
+            },
+            prevBefore(date: number) {
+                srel_cron.reset(date);
+                let prev_day = toMoment(srel_cron.prev());
+                prev_day = applySunOffset(prev_day, parsed.time);
+
+                // Get sun___ on prev_day. If past, bump prev_day
+                if (prev_day.isAfter(date)) {
+                    prev_day = toMoment(srel_cron.prev());
+                    prev_day = applySunOffset(prev_day, parsed.time);
+                }
+
+                return prev_day;
+            }
         }
 
     } else {
@@ -273,10 +309,17 @@ export const _parseTDFormat = (sched: string, options: ScheduleOpts) => {
             tz,
         });
 
-        return () => {
-            cron_time.reset(Date.now());
-            const next_time = cron_time.next();
-            return next_time && toMoment(next_time)
+        return {
+            nextAfter(date: number) {
+                cron_time.reset(date);
+                const next_time = cron_time.next();
+                return next_time && toMoment(next_time);
+            },
+            prevBefore(date: number) {
+                cron_time.reset(date);
+                const prev_time = cron_time.prev();
+                return prev_time && toMoment(prev_time);
+            }
         }
     }
 }

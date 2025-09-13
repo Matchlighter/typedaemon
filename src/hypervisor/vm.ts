@@ -138,6 +138,25 @@ export function determineModuleContext(filename: string) {
     return "sandbox";
 }
 
+const _eval_in_module = (code: string, scope?: any) => {
+    const gcode = [];
+    gcode.push("(function() {");
+    if (scope) {
+        for (let k of Object.keys(scope)) {
+            gcode.push(`const ${k} = this["${k}"];`);
+        }
+    }
+    gcode.push("return (" + code + ");");
+    gcode.push("});");
+
+    const finalCode = gcode.join('\n');
+    return eval(finalCode).call(scope || {});
+}
+
+const STD_APPEND = `
+module.exports._eval_in_module = ${_eval_in_module.toString()};
+`;
+
 export async function createApplicationVM(app: ApplicationInstance) {
     const consoleMethods: Console = {} as any;
     for (let m of CONSOLE_METHODS) {
@@ -211,7 +230,8 @@ export async function createApplicationVM(app: ApplicationInstance) {
             // TODO Fix memory leak
             registerSourceMap(filename, result.map);
 
-            return result.code;
+            const transpiled = result.code + `;\n` + STD_APPEND;
+            return transpiled;
         },
 
         require: {

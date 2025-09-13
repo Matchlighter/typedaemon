@@ -1,5 +1,4 @@
 
-
 import { HyperWrapper } from "../hypervisor/managed_apps";
 import { NoSuchPluginError, Plugin, PluginNotStartedError, get_plugin as _get_plugin } from "../plugins/base";
 import { ApplicationReference } from "./application";
@@ -12,7 +11,9 @@ export * as lifecycle from "./lifescycle";
 export { persistence } from './persistence';
 export { resumable } from './resumable';
 export * as schedule from './schedule';
+export { parseTimeOfDay } from './schedule';
 export { sleep, sleep_until } from "./sleep";
+export { script } from "./script";
 
 /**
  * Retrieve a handle to an application instance for the given Application id

@@ -14,6 +14,7 @@ import { TYPEDAEMON_PATH, fileExists, trim, watchFile } from '../common/util';
 import { PluginNotStartedError, flushPluginAnnotations } from '../plugins/base';
 import { Application } from '../runtime/application';
 import { ResumableStore, resumable } from '../runtime/resumable';
+import { getOrMakeMapEntry } from '../util';
 import { AppConfiguration } from "./config_app";
 import { DestroyerStore } from './destroyer';
 import { BaseInstance, InstanceLogConfig } from './managed_apps';
@@ -55,6 +56,14 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
     resumableStore: ResumableStore;
     persistedStorage: PersistentStorage;
     destroyerStore: DestroyerStore;
+
+    private _weakLocalStores: WeakMap<any, any> = new WeakMap();
+    private _localStores: Map<any, any> = new Map();
+
+    getLocalStore<T>(key: any, builder: () => T, { weak }: { weak?: boolean } = {}): T {
+        weak ??= typeof key == "object";
+        return getOrMakeMapEntry(weak ? this._weakLocalStores : this._localStores, key, builder);
+    }
 
     protected loggerFile() {
         const lopts = this.options.logging;
@@ -131,6 +140,8 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         const hooks = this.lifecycle_hooks[event] ||= [];
         hooks.push(hook);
     }
+
+    appModule: any;
 
     async _start() {
         try {
@@ -231,6 +242,8 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
                 return;
             }
 
+            this.appModule = module;
+
             this.cleanups.append(() => this._vm.removeAllListeners?.());
             const mainExport = module[this.options.export || 'default'];
             const metadata: ApplicationMetadata = (typeof mainExport == 'object' && mainExport) || mainExport.metadata || module.metadata || { applicationClass: mainExport, ...module, ...mainExport };
@@ -323,7 +336,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
     private generateOpPackageJson({ dependencies }) {
         return {
-            "name": this.id,
+            "name": this.source_name,
             "version": "0.0.1",
             "license": "UNLICENSED",
             "typedaemon_managed": true,
@@ -347,9 +360,13 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         if (this.isThickApp) return this.source_directory;
 
         // TODO Cleanup this directory automatically when no apps are using it?
-        let entrypoint = path.relative(this.hypervisor.working_directory, this.entrypoint);
-        let uname = entrypoint.replace(/\.\.\\/g, "").replace(/\.[tj]s$/, "").replace(/\//g, "_") + "-" + md5(entrypoint).slice(0, 6);
-        return path.resolve(this.hypervisor.operations_directory, "source_environments", uname)
+        return path.resolve(this.hypervisor.operations_directory, "source_environments", this.source_name)
+    }
+
+    private get source_name() {
+        const entrypoint = path.relative(this.hypervisor.working_directory, this.entrypoint);
+        const uname = entrypoint.replace(/\.\.\\/g, "").replace(/\.[tj]s$/, "").replace(/\//g, "_") + "-" + md5(entrypoint).slice(0, 6);
+        return uname;
     }
 
     get operating_directory() {

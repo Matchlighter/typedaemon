@@ -1,9 +1,9 @@
 
 import { current } from "../hypervisor/current";
 import { ResumablePromise } from "./resumable";
-import { SerializeContext } from "./resumable/resumable_promise";
+import { CancellableResumablePromise, SerializeContext } from "./resumable/resumable_promise";
 
-class SleeperPromise extends ResumablePromise<number>{
+class SleeperPromise extends CancellableResumablePromise<number>{
     constructor(readonly sleep_until: number) {
         super();
         this.do_unsuspend();
@@ -43,11 +43,6 @@ class SleeperPromise extends ResumablePromise<number>{
             const _clearTimeout: typeof clearTimeout = this.application.unsafe_vm.sandbox.clearTimeout;
             _clearTimeout(this.timer);
         }
-    }
-
-    cancel() {
-        this.clearTimeout();
-        this.reject("CANCELLED");
     }
 
     serialize(ctx: SerializeContext) {

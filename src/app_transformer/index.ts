@@ -22,6 +22,7 @@ export const APP_BABEL_CONFIG: babel.TransformOptions = {
         [attachableMacrosPlugin, {
             macros: [
                 { package: TDPACKAGE, import: "resumable", macro: resumableMacro },
+                { package: TDPACKAGE, import: "script", macro: resumableMacro },
             ] as MacroAttachment[],
         }]
     ],

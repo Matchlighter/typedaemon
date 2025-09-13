@@ -1,5 +1,6 @@
 
 import { ExtensiblePromise } from "@matchlighter/common_library/promises";
+
 import { ResumableStore } from ".";
 import { serializable } from "../../common/util";
 import { current } from "../../hypervisor/current";
@@ -242,6 +243,37 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
         }, resumable);
     }
 
+    isCancellable() {
+        return false;
+    }
+
+    protected _cancel(reason?: any) {
+        this.force_suspend();
+        this.reject(reason);
+    }
+
+    protected cancel(reason?: any) {
+        if (!this.isCancellable()) {
+            throw new Error("Cannot cancel a ResumablePromise that is not cancellable");
+        }
+
+        for (let awaiting of this.awaiting_for()) {
+            // Cancel any sub-promises as well.
+            // TODO Should we inject at all levels, or just the deepest level?
+            // TODO Only cancel the inner promise if we're the only awaiter?
+            //   Cancel all cancellable that have only this awaiter?
+            if (awaiting instanceof ResumablePromise && awaiting.isCancellable() && awaiting.awaited_by().length <= 1) {
+                awaiting.cancel(reason);
+            }
+        }
+
+        if (!reason || typeof reason === 'string') {
+            reason = new PromiseCancelled(reason);
+        }
+
+        this._cancel(reason);
+    }
+
     private _promise_state: "accepted" | "rejected";
     private _promise_result: any;
     get settled() { return !!this._promise_state }
@@ -363,6 +395,27 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
     abstract serialize(ctx: SerializeContext): any;
 }
 
+export class PromiseCancelled extends Error {
+    constructor(reason?: any) {
+        super(reason ?? "Promise was cancelled");
+        this.name = "PromiseCancelled";
+    }
+}
+
+export interface ICancellablePromise {
+    cancel(reason?: any): void;
+}
+
+export abstract class CancellableResumablePromise<T = any> extends ResumablePromise<T> implements ICancellablePromise {
+    isCancellable() {
+        return true;
+    }
+
+    cancel(reason?: any) {
+        super.cancel(reason);
+    }
+}
+
 export class ResumableAllPromise<const T extends readonly PromiseLike<any>[]> extends ResumablePromise<T> {
     constructor(protected entries: PromiseLike<any>[]) {
         super();
@@ -391,8 +444,8 @@ export class ResumableAllPromise<const T extends readonly PromiseLike<any>[]> ex
 
     protected followPromises() {
         const entries = this.entries;
-        trackPromiseList(entries, (setlled) => {
-            if (setlled.promise_state != 'accepted') this.reject(setlled.promise_value);
+        trackPromiseList(entries, (settled) => {
+            if (settled.promise_state != 'accepted') this.reject(settled.promise_value);
 
             if (allSettled(entries)) {
                 this.resolve_from_entries();
@@ -617,4 +670,60 @@ function trackPromiseList(
 
         dep.then(...then_args);
     })
+}
+
+abstract class ResumableCallback<T> extends ResumablePromise<any> {
+    constructor(readonly await_for: PromiseLike<any>, readonly state: T) {
+        super();
+
+        this.constructed();
+
+        if (await_for instanceof ResumablePromise) {
+            await_for.then(this.resolve.bind(this), this.reject.bind(this), this);
+        } else {
+            await_for.then(this.resolve.bind(this), this.reject.bind(this));
+        }
+    }
+
+    protected constructed() { }
+
+    protected awaiting_for(): Iterable<PromiseLike<any>> {
+        return [this.await_for]
+    }
+
+    serialize(ctx: SerializeContext) {
+        ctx.side_effects(true);
+        return {
+            await_for: ctx.ref(this.await_for),
+            state: this.state,
+        }
+    }
+}
+
+export function resumableCallbackFactory<T>(
+    id: string,
+    construct: (state: T, promise: ResumableCallback<T>) => void,
+) {
+    class ResumableCallbackPromise extends ResumableCallback<T> {
+        constructor(await_for: PromiseLike<any>, state: T) {
+            super(await_for, state);
+            construct(state, this);
+        }
+
+        serialize(ctx: SerializeContext) {
+            ctx.set_type(`callback:${id}`);
+            return super.serialize(ctx);
+        }
+    }
+
+    ResumablePromise.defineClass<ResumableCallbackPromise>({
+        type: `callback:${id}`,
+        resumer: (data, { require }) => {
+            return new ResumableCallbackPromise(require(data.await_for), data.state);
+        }
+    });
+
+    return (await_for: PromiseLike<any>, state: T) => {
+        return new ResumableCallbackPromise(await_for, state) as ResumablePromise<any>;
+    }
 }

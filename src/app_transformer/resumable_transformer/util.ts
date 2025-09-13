@@ -30,7 +30,7 @@ export function getTypes() {
 export function runtimeProperty(name) {
   const t = getTypes();
   return t.memberExpression(
-    t.identifier("resumable"),
+    t.identifier("_regen_executor"),
     t.identifier(name),
     false
   );
