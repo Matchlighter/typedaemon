@@ -14,6 +14,8 @@ export * as schedule from './schedule';
 export { parseTimeOfDay } from './schedule';
 export { sleep, sleep_until } from "./sleep";
 export { script } from "./script";
+export { when } from "./when";
+export { wait } from "./wait";
 
 /**
  * Retrieve a handle to an application instance for the given Application id

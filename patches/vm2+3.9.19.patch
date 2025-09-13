@@ -10,3 +10,16 @@ index 8690b51..e8236e7 100644
  		const type = typeof other;
  		switch (type) {
  			case 'object':
+diff --git a/node_modules/vm2/lib/setup-sandbox.js b/node_modules/vm2/lib/setup-sandbox.js
+index fbfacc4..bd12386 100644
+--- a/node_modules/vm2/lib/setup-sandbox.js
++++ b/node_modules/vm2/lib/setup-sandbox.js
+@@ -491,7 +491,7 @@ overrideWithProxy(LocalProxy, 'revocable', LocalProxy.revocable, proxyHandler);
+ 
+ global.Proxy = proxiedProxy;
+ global.Function = proxiedFunction;
+-global.eval = new LocalProxy(localEval, EvalHandler);
++// global.eval = new LocalProxy(localEval, EvalHandler);
+ 
+ /*
+  * Promise sanitization
