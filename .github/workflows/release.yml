@@ -188,6 +188,11 @@ jobs:
             const last_release_resp = await github.rest.repos.getLatestRelease({
               owner: "matchlighter",
               repo: "typedaemon",
+            }).catch((err) => {
+              if (err.status === 404) {
+                return null;
+              }
+              throw err;
             });
             const last_release = last_release_resp?.data;
 
