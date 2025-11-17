@@ -178,23 +178,21 @@ export const parseTimeOfDay = (sched: string, options?: ScheduleOpts) => {
     // 4:23:00 PM
     // 4:23 PM
     // sunset+4:23:00
-    options = {
-        sun: "ha:default",
-        timezone: "ha:default",
-        ...options,
-    }
     const parsed = _parseTDFormatInternal(sched, options);
     const tz = resolveTimezone({ parsed: null, passed: options?.timezone });
-    console.log(tz)
     return parsed.nextAfter(moment().tz(tz).startOf('day').unix() * 1000);
 }
 
-export const _parseTDFormat = (sched: string, options: ScheduleOpts) => {
+export const parseDuration = (dur: string) => {
+    return parse_duration(dur);
+}
+
+export const _parseTDFormat = (sched: string, options?: ScheduleOpts) => {
     const parsed = _parseTDFormatInternal(sched, options);
     return () => parsed.nextAfter(Date.now());
 }
 
-export const _parseTDFormatInternal = (sched: string, options: ScheduleOpts) => {
+export const _parseTDFormatInternal = (sched: string, options?: ScheduleOpts) => {
     // 2023/05/30 4:23:00 PM
     // 16:23:00
     // 4:23:00 PM
@@ -209,6 +207,10 @@ export const _parseTDFormatInternal = (sched: string, options: ScheduleOpts) => 
     // */{*}/10 MON,THU 4:23:00 PM America/Denver
     // */{*}/10 MON,THU 4:23:00 PM -07:00
     // */{*}/10 sunset+4:23:00
+
+    options ??= {};
+    options["sun"] ??= "ha:default";
+    options["timezone"] ??= "ha:default";
 
     const parser = new ne.Parser(grammar);
     parser.feed(sched.toUpperCase());
@@ -307,18 +309,28 @@ export const _parseTDFormatInternal = (sched: string, options: ScheduleOpts) => 
             parsed.date.year,
         ]), {
             tz,
+            startDate: moment().subtract(5, 'year').toDate(),
+            endDate: moment().add(5, 'year').toDate(),
         });
 
         return {
             nextAfter(date: number) {
                 cron_time.reset(date);
-                const next_time = cron_time.next();
-                return next_time && toMoment(next_time);
+                try {
+                    const next_time = cron_time.next();
+                    return next_time && toMoment(next_time);
+                } catch (e) {
+                    return null;
+                }
             },
             prevBefore(date: number) {
                 cron_time.reset(date);
-                const prev_time = cron_time.prev();
-                return prev_time && toMoment(prev_time);
+                try {
+                    const prev_time = cron_time.prev();
+                    return prev_time && toMoment(prev_time);
+                } catch (e) {
+                    return null;
+                }
             }
         }
     }

@@ -1,5 +1,5 @@
 diff --git a/node_modules/cron-parser/lib/expression.js b/node_modules/cron-parser/lib/expression.js
-index 0a56853..aab2fd2 100644
+index 0a56853..fe9537a 100644
 --- a/node_modules/cron-parser/lib/expression.js
 +++ b/node_modules/cron-parser/lib/expression.js
 @@ -39,7 +39,7 @@ function CronExpression (fields, options) {
@@ -45,20 +45,110 @@ index 0a56853..aab2fd2 100644
      var prevTime = currentDate.getTime();
      currentDate[dateMathVerb + method]();
      var currTime = currentDate.getTime();
-@@ -608,6 +610,12 @@ CronExpression.prototype._findSchedule = function _findSchedule (reverse) {
-       continue;
+@@ -465,12 +467,16 @@ CronExpression.prototype._findSchedule = function _findSchedule (reverse) {
+    */
+   function matchSchedule (value, sequence) {
+     for (var i = 0, c = sequence.length; i < c; i++) {
+-      if (sequence[i] >= value) {
+-        return sequence[i] === value;
++      if (sequence[i] === value) {
++        return true;
++      }
++      // Early exit for sorted arrays - if we've passed the value, it won't match
++      if (sequence[i] > value) {
++        return false;
+       }
      }
  
+-    return sequence[0] === value;
++    return false;
+   }
+ 
+   /**
+@@ -525,6 +531,13 @@ CronExpression.prototype._findSchedule = function _findSchedule (reverse) {
+   var startTimestamp = currentDate.getTime();
+   var stepCount = 0;
+ 
++  // Cache invariant values outside the loop
++  var hasLInDayOfMonth = isLInExpressions(this.fields.dayOfMonth);
++  var hasLInDayOfWeek = isLInExpressions(this.fields.dayOfWeek);
++  var hasNthDayOfWeek = this._nthDayOfWeek > 0;
++  var isDayOfWeekWildcardMatch = this.fields.dayOfWeek.length === CronExpression.constraints[5].max - CronExpression.constraints[5].min + 1;
++  var hasYearField = !!this.fields.year;
++
+   function isLastWeekdayOfMonthMatch(expressions) {
+     return expressions.some(function(expression) {
+       // There might be multiple expressions and not all of them will contain
+@@ -558,6 +571,24 @@ CronExpression.prototype._findSchedule = function _findSchedule (reverse) {
+       }
+     }
+ 
++    // Check coarser-grained filters first (year, month) before day matching
++    // This allows us to skip more iterations early
++
 +    // Match year
-+    if (this.fields.year && !matchSchedule(currentDate.getFullYear(), this.fields.year)) {
++    if (hasYearField && !matchSchedule(currentDate.getFullYear(), this.fields.year)) {
 +      this._applyTimezoneShift(currentDate, dateMathVerb, 'Year');
 +      continue;
 +    }
 +
-     // Match month
-     if (!matchSchedule(currentDate.getMonth() + 1, this.fields.month)) {
-       this._applyTimezoneShift(currentDate, dateMathVerb, 'Month');
-@@ -862,13 +870,16 @@ CronExpression.parse = function parse(expression, options) {
++    // Cache getMonth() to avoid multiple calls
++    var currentMonth = currentDate.getMonth();
++
++    // Match month
++    if (!matchSchedule(currentMonth + 1, this.fields.month)) {
++      this._applyTimezoneShift(currentDate, dateMathVerb, 'Month');
++      continue;
++    }
++
+     // Day of month and week matching:
+     //
+     // "The day of a command's execution can be specified by two fields --
+@@ -570,16 +601,15 @@ CronExpression.prototype._findSchedule = function _findSchedule (reverse) {
+     //
+ 
+     var dayOfMonthMatch = matchSchedule(currentDate.getDate(), this.fields.dayOfMonth);
+-    if (isLInExpressions(this.fields.dayOfMonth)) {
++    if (hasLInDayOfMonth) {
+       dayOfMonthMatch = dayOfMonthMatch || currentDate.isLastDayOfMonth();
+     }
+-    var dayOfWeekMatch = matchSchedule(currentDate.getDay(), this.fields.dayOfWeek);
+-    if (isLInExpressions(this.fields.dayOfWeek)) {
++    var currentDayOfWeek = currentDate.getDay();
++    var dayOfWeekMatch = matchSchedule(currentDayOfWeek, this.fields.dayOfWeek);
++    if (hasLInDayOfWeek) {
+       dayOfWeekMatch = dayOfWeekMatch || isLastWeekdayOfMonthMatch(this.fields.dayOfWeek);
+     }
+-    var isDayOfMonthWildcardMatch = this.fields.dayOfMonth.length >= CronExpression.daysInMonth[currentDate.getMonth()];
+-    var isDayOfWeekWildcardMatch = this.fields.dayOfWeek.length === CronExpression.constraints[5].max - CronExpression.constraints[5].min + 1;
+-    var currentHour = currentDate.getHours();
++    var isDayOfMonthWildcardMatch = this.fields.dayOfMonth.length >= CronExpression.daysInMonth[currentMonth];
+ 
+     // Add or subtract day if select day not match with month (according to calendar)
+     if (!dayOfMonthMatch && (!dayOfWeekMatch || isDayOfWeekWildcardMatch)) {
+@@ -601,18 +631,15 @@ CronExpression.prototype._findSchedule = function _findSchedule (reverse) {
+ 
+     // Add or subtract day if day of week & nthDayOfWeek are set (and no match)
+     if (
+-      this._nthDayOfWeek > 0 &&
++      hasNthDayOfWeek &&
+       !isNthDayMatch(currentDate, this._nthDayOfWeek)
+     ) {
+       this._applyTimezoneShift(currentDate, dateMathVerb, 'Day');
+       continue;
+     }
+ 
+-    // Match month
+-    if (!matchSchedule(currentDate.getMonth() + 1, this.fields.month)) {
+-      this._applyTimezoneShift(currentDate, dateMathVerb, 'Month');
+-      continue;
+-    }
++    // Cache currentHour to avoid multiple getHours() calls
++    var currentHour = currentDate.getHours();
+ 
+     // Match hour
+     if (!matchSchedule(currentHour, this.fields.hour)) {
+@@ -862,13 +889,16 @@ CronExpression.parse = function parse(expression, options) {
      var fields = [];
      var atoms = (expression + '').trim().split(/\s+/);
  
