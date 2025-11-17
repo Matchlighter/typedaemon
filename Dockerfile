@@ -9,7 +9,7 @@ ADD docker/static_bin /build
 RUN /build/build_socat.sh
 
 # ======= TD Package Builder ======= #
-FROM node:18 AS builder
+FROM node:25 AS builder
 
 ARG BUILD_VERSION
 ARG BUILD_CHANNEL
@@ -53,7 +53,7 @@ RUN yarn patch-package --patch-dir node_modules/typedaemon/patches/
 
 
 # ======= TD Runtime ======= #
-FROM node:18
+FROM node:25
 
 ARG TARGETARCH
 ARG TARGETVARIANT
