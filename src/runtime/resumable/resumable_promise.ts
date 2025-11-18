@@ -419,6 +419,13 @@ export abstract class CancellableResumablePromise<T = any> extends ResumableProm
 export class ResumableAllPromise<const T extends readonly PromiseLike<any>[]> extends ResumablePromise<T> {
     constructor(protected entries: PromiseLike<any>[]) {
         super();
+        this.entries = entries.map(p => {
+            if (p.then) {
+                return p;
+            } else {
+                return new SettledPromise({ result: 'accept', value: p });
+            }
+        })
         this.followPromises();
     }
 
@@ -443,16 +450,20 @@ export class ResumableAllPromise<const T extends readonly PromiseLike<any>[]> ex
     }
 
     protected followPromises() {
-        const entries = this.entries;
-        trackPromiseList(entries, (settled) => {
+        trackPromiseList(this.entries, (settled) => {
             if (settled.promise_state != 'accepted') this.reject(settled.promise_value);
+            this.check_all_settled();
+        });
 
-            if (allSettled(entries)) {
-                this.resolve_from_entries();
-            } else {
-                this.compute_paused();
-            }
-        })
+        this.check_all_settled();
+    }
+
+    protected check_all_settled() {
+        if (allSettled(this.entries)) {
+            this.resolve_from_entries();
+        } else {
+            this.compute_paused();
+        }
     }
 
     protected resolve_from_entries() {
@@ -480,6 +491,13 @@ type MappedPromiseSettledReult<T extends PromiseList> = { [K in keyof T]: Promis
 export class ResumableAllSettledPromise<const T extends PromiseList> extends ResumablePromise<MappedPromiseSettledReult<T>> {
     constructor(protected entries: PromiseLike<any>[]) {
         super();
+        this.entries = entries.map(p => {
+            if (p.then) {
+                return p;
+            } else {
+                return new SettledPromise({ result: 'accept', value: p });
+            }
+        })
         this.followPromises();
     }
 
@@ -506,12 +524,17 @@ export class ResumableAllSettledPromise<const T extends PromiseList> extends Res
     protected followPromises() {
         const entries = this.entries;
         trackPromiseList(entries, (settled) => {
-            if (allSettled(entries)) {
-                this.resolve_from_entries();
-            } else {
-                this.compute_paused();
-            }
+            this.check_all_settled();
         });
+        this.check_all_settled();
+    }
+
+    protected check_all_settled() {
+        if (allSettled(this.entries)) {
+            this.resolve_from_entries();
+        } else {
+            this.compute_paused();
+        }
     }
 
     protected resolve_from_entries() {
