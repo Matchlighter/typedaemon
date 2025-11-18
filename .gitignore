@@ -25,6 +25,8 @@
 /public/uploads
 /node_modules
 /coverage/
+*.lcov
+.jest-cache/
 .idea/*
 yarn-debug.log*
 yarn-error.log*

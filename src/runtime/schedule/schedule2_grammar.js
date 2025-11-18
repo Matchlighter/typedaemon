@@ -26,7 +26,7 @@ const lexer = moo.compile({
   number: /[0-9]+/,
   word: {
     match: /[a-zA-Z]+/,
-    // transform: x => x.toUpCase(),
+    transform: x => x.toUpCase(),
     type: moo.keywords({
       "meridian": ["AM", "PM"],
       "weekday": DAYS_OF_WEEK_PERMUTATIONS,
@@ -115,8 +115,8 @@ var grammar = {
     {"name": "Star", "symbols": [{"literal":"*"}], "postprocess": tval},
     {"name": "Meridian", "symbols": [(lexer.has("meridian") ? {type: "meridian"} : meridian)], "postprocess": tval},
     {"name": "Weekday", "symbols": [(lexer.has("weekday") ? {type: "weekday"} : weekday)], "postprocess": day_of_week},
-    {"name": "SunTimeRef", "symbols": [{"literal":"sunrise"}], "postprocess": tval},
-    {"name": "SunTimeRef", "symbols": [{"literal":"sunset"}], "postprocess": tval},
+    {"name": "SunTimeRef", "symbols": [{"literal":"SUNRISE"}], "postprocess": tval},
+    {"name": "SunTimeRef", "symbols": [{"literal":"SUNSET"}], "postprocess": tval},
     {"name": "_$ebnf$1", "symbols": [(lexer.has("ws") ? {type: "ws"} : ws)], "postprocess": id},
     {"name": "_$ebnf$1", "symbols": [], "postprocess": function(d) {return null;}},
     {"name": "_", "symbols": ["_$ebnf$1"], "postprocess": d => null},

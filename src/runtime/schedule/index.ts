@@ -8,10 +8,10 @@ import moment = require("moment-timezone");
 import { current } from "../../hypervisor/current";
 import { callback_or_decorator2 } from "../../plugins/util";
 
-import { sleep } from "../..";
+import { sleep } from "../sleep";
 import { logPluginClientMessage } from "../../hypervisor/logging";
 import { bind_callback_env, get_plugin } from "../../plugins/base";
-import { HomeAssistantPlugin } from "../../plugins/home_assistant/plugin";
+import type { HomeAssistantPlugin } from "../../plugins/home_assistant/plugin";
 import { ResumableCallbackPromise } from "../resumable/resumable_method";
 import { sleep_until } from "../sleep";
 
@@ -123,7 +123,7 @@ function getHAConfig(token: any) {
     return null;
 }
 
-function resolveTimezone(opts: { parsed?: string, passed?: string }) {
+function resolveTimezone(opts: { parsed?: any, passed?: string }) {
     const tdcfg = current.hypervisor?.currentConfig;
 
     let tz = opts.parsed;
@@ -135,6 +135,10 @@ function resolveTimezone(opts: { parsed?: string, passed?: string }) {
 
     if (!tz || tz == "td") {
         tz = tdcfg?.location?.timezone;
+    }
+
+    if (typeof tz == "object" && "dir" in (tz || {})) {
+        return `${tz.dir}${tz.hour.toString().padStart(2, '0')}:${(tz.minute || 0).toString().padStart(2, '0')}`;
     }
 
     if (!tz) {
@@ -250,7 +254,7 @@ export const _parseTDFormatInternal = (sched: string, options?: ScheduleOpts) =>
                 mdto.add(dto, 'days');
 
                 const suntimes = SunCalc.getTimes(mdto.toDate(), sun_config.lat, sun_config.long, sun_config.elev);
-                const refdt = suntimes[sunrel.ref];
+                const refdt = suntimes[sunrel.ref.toLowerCase()];
                 if (dtStart.isBefore(refdt) && dtEnd.isAfter(refdt)) {
                     chosen = toMoment(refdt);
                     break;
@@ -313,6 +317,8 @@ export const _parseTDFormatInternal = (sched: string, options?: ScheduleOpts) =>
             endDate: moment().add(5, 'year').toDate(),
         });
 
+        // TODO In Cron, day-of-month w/ day-of-week is OR. Here, AND is wanted. Need to handle that here.
+
         return {
             nextAfter(date: number) {
                 cron_time.reset(date);
@@ -353,6 +359,7 @@ const applyMeridian = (hour: any, meridian: 'AM' | 'PM') => {
 
     const diff = meridian == "PM" ? 12 : 0;
     if (typeof hour == 'string') hour = parseInt(hour);
+    if (hour == 12) hour = 0;
     if (typeof hour == 'number') return hour + diff;
     if (Array.isArray(hour)) return hour.map(h => applyMeridian(h, meridian));
     if (hour.type == "range") return {

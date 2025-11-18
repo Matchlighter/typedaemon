@@ -23,7 +23,7 @@ const lexer = moo.compile({
   number: /[0-9]+/,
   word: {
     match: /[a-zA-Z]+/,
-    // transform: x => x.toUpCase(),
+    transform: x => x.toUpCase(),
     type: moo.keywords({
       "meridian": ["AM", "PM"],
       "weekday": DAYS_OF_WEEK_PERMUTATIONS,
@@ -104,7 +104,7 @@ int -> %number {% d => parseInt(d[0].value, 10) %}
 Star -> "*" {% tval %}
 Meridian -> %meridian {% tval %}
 Weekday -> %weekday {% day_of_week %}
-SunTimeRef -> "sunrise" {% tval %} | "sunset" {% tval %}
+SunTimeRef -> "SUNRISE" {% tval %} | "SUNSET" {% tval %}
 
 _ -> %ws:? {% d => null %}
 __ -> %ws {% d => null %}
