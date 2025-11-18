@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import * as assert from "assert";
+import assert from "assert";
 import * as leap from "./leap";
 import * as meta from "./meta";
 import * as util from "./util";

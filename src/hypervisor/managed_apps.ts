@@ -1,4 +1,4 @@
-import chalk = require("chalk");
+import chalk from "chalk";
 import { AsyncLocalStorage } from "async_hooks";
 import { ListenerSignature, TypedEmitter } from "tiny-typed-emitter";
 import { ConditionalKeys, Merge } from "type-fest";

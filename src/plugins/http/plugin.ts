@@ -2,7 +2,7 @@ import type { Express } from 'express';
 import { Server, createServer } from "http";
 
 // const express = require('express')
-import express = require('express')
+import express from 'express';
 
 import { promisify } from "util";
 import { TD_VERSION_PRECISE } from "../../common/util";

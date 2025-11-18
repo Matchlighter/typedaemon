@@ -1,6 +1,6 @@
 
-import express = require('express')
-import path = require('path');
+import * as express from 'express';
+import * as path from 'path';
 import { Socket } from 'net';
 
 import { HttpPlugin } from "./plugin";

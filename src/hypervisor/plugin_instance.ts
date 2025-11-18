@@ -1,10 +1,9 @@
-import path = require("path");
-import chalk = require("chalk");
-import deepEqual = require("deep-eql");
+import * as path from "path";
+import chalk from "chalk";
+import deepEqual from "deep-eql";
 
 import { PluginConfiguration } from "../hypervisor/config_plugin";
 import { BaseInstance, InstanceLogConfig } from "../hypervisor/managed_apps";
-import { PLUGIN_TYPES } from "../plugins";
 import { Plugin } from "../plugins/base";
 import { configChangeHandler } from "./managed_config_events";
 
@@ -20,6 +19,8 @@ export class PluginInstance extends BaseInstance<PluginConfiguration, Plugin> {
     }
 
     async _start() {
+        const { PLUGIN_TYPES } = require("../plugins");
+
         this.transitionState("starting");
 
         const PluginClass = PLUGIN_TYPES[this.options.type];

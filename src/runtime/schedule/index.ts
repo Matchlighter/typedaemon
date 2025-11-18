@@ -3,7 +3,7 @@ import * as cron from "cron-parser";
 import * as ne from "nearley";
 import parse_duration from "parse-duration";
 import * as SunCalc from "suncalc";
-import moment = require("moment-timezone");
+import moment from "moment-timezone";
 
 import { current } from "../../hypervisor/current";
 import { callback_or_decorator2 } from "../../plugins/util";

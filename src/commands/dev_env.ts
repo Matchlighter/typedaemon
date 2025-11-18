@@ -1,7 +1,7 @@
 
-import fs = require("fs")
-import fse = require("fs-extra")
-import path = require("path");
+import * as fs from "fs"
+import * as fse from "fs-extra"
+import * as path from "path";
 import { CommandModule } from "yargs";
 
 import { saveGeneratedTsconfig } from "../common/generate_tsconfig";

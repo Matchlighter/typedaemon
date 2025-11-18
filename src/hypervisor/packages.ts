@@ -1,6 +1,6 @@
-import fs = require("fs");
-import execa = require("execa");
-import path = require("path");
+import * as fs from "fs";
+import execa from "execa";
+import * as path from "path";
 import { TD_MODULES_PATH } from "../common/util";
 import { LogLevel, logMessage } from "./logging";
 

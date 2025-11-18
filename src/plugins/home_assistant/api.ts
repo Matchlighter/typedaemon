@@ -273,7 +273,7 @@ homeAssistantApi.defaultPluginId = "home_assistant";
 export type HomeAssistantApi = ReturnType<typeof homeAssistantApi>;
 
 // TODO Re-Export types
-export { HassEntity, HassEntities, HassEvent, HassService, HassServiceTarget } from "home-assistant-js-websocket";
-export { HassBoolean } from "./entity_api/input"
+export type { HassEntity, HassEntities, HassEvent, HassService, HassServiceTarget } from "home-assistant-js-websocket";
+export type { HassBoolean } from "./entity_api/input"
 
 export const api = makeApiExport(homeAssistantApi)

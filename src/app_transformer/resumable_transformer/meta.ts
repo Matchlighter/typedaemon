@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import * as assert from "assert";
+import assert from "assert";
 import { getTypes } from "./util";
 
 const mMap = new WeakMap();

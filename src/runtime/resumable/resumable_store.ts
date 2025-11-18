@@ -1,4 +1,4 @@
-import fs = require('fs');
+import * as fs from 'fs';
 
 import { Batcher } from '../../common/batched';
 import { fileExists, timeoutPromise } from "../../common/util";

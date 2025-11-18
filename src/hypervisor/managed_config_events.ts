@@ -1,5 +1,5 @@
 
-import deepEqual = require("deep-eql");
+import deepEqual from "deep-eql";
 
 import { BaseInstance, BaseInstanceClient } from "./managed_apps";
 

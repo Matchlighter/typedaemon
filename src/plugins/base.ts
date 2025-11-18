@@ -2,8 +2,8 @@
 import { Constructor } from "type-fest";
 
 import { LifecycleHelper } from "../common/lifecycle_helper";
-import { ApplicationInstance } from "../hypervisor/application_instance";
-import { BasePluginConfig } from "../hypervisor/config_plugin";
+import type { ApplicationInstance } from "../hypervisor/application_instance";
+import type { BasePluginConfig } from "../hypervisor/config_plugin";
 import { current } from "../hypervisor/current";
 import { BaseInstanceClient, HyperWrapper } from "../hypervisor/managed_apps";
 import { PluginInstance } from "../hypervisor/plugin_instance";

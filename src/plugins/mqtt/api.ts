@@ -1,6 +1,6 @@
 
 import * as mqtt from "mqtt";
-import mqtt_match = require('mqtt-match')
+import mqtt_match from 'mqtt-match';
 
 import { computed, observable } from "mobx";
 import { MqttPlugin } from "./plugin";

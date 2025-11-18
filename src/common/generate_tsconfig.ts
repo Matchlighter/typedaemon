@@ -1,8 +1,8 @@
 
-import fs = require("fs")
-import path = require("path");
+import * as fs from "fs";
+import * as path from "path";
 import { TsConfigJson } from "type-fest";
-import fse = require('fs-extra');
+import * as fse from 'fs-extra';
 
 import { merger } from "@matchlighter/common_library/data/config";
 import { Configuration } from "../hypervisor/config";

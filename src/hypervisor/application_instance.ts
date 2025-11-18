@@ -1,12 +1,12 @@
 
 import { exists } from 'fs-extra';
 import { AsyncReturnType } from 'type-fest';
-import path = require('path');
-import chalk = require('chalk');
-import deepEqual = require('deep-eql');
-import fs = require('fs');
-import md5 = require('md5');
-import extract_comments = require('extract-comments');
+import * as path from 'path';
+import chalk from 'chalk';
+import deepEqual from 'deep-eql';
+import * as fs from 'fs';
+import md5 from 'md5';
+import extract_comments from 'extract-comments';
 
 import { debounce } from "@matchlighter/common_library/limit";
 

@@ -2,9 +2,9 @@
 import * as path from "path";
 import { TupleToUnion } from "type-fest";
 import { inspect } from 'util';
-import chalk = require("chalk");
-import winston = require("winston");
-import moment = require("moment-timezone");
+import chalk from "chalk";
+import * as winston from "winston";
+import moment from "moment-timezone";
 
 require('winston-daily-rotate-file');
 
@@ -176,7 +176,7 @@ function getRotatedStream(filename: string) {
     }
 }
 
-import WinstonTransport = require("winston-transport");
+import WinstonTransport from "winston-transport";
 class ForwardTransport extends WinstonTransport {
     constructor(private readonly backend: ReturnType<typeof getRotatedStream>) {
         super();

@@ -7,11 +7,13 @@ module.exports = {
     '^.+\\.ts$': ['ts-jest', {
       tsconfig: {
         // Use the same settings as your main tsconfig
-        module: 'commonjs',
+        module: 'nodenext',
+        moduleResolution: 'nodenext',
         esModuleInterop: true,
-        allowSyntheticDefaultImports: false,
+        allowSyntheticDefaultImports: true,
         resolveJsonModule: true,
         skipLibCheck: true,
+        isolatedModules: true,
         target: 'ES2022',
         lib: ['es6', 'dom', 'es2017', 'ES2020', 'ESNext', 'ES2021.WeakRef', 'es2022', 'esnext.decorators'],
       },

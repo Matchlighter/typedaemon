@@ -13,7 +13,7 @@ import {
     createLongLivedTokenAuth
 } from 'home-assistant-js-websocket';
 import * as ws from "ws";
-import objectHash = require('object-hash');
+import objectHash from 'object-hash';
 
 import { HAMobXStore } from '@matchlighter/ha-mobx-store';
 

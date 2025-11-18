@@ -1,4 +1,4 @@
-import path = require("path");
+import * as path from "path";
 import { randomUUID } from "crypto";
 
 import { _isComputingDerivation, computed, createAtom, onBecomeUnobserved } from "mobx";

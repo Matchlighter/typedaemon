@@ -1,8 +1,8 @@
 
-import babel = require("@babel/core");
-import fs = require("fs");
-import md5 = require("md5");
-import path = require("path");
+import * as babel from "@babel/core";
+import * as fs from "fs";
+import md5 from "md5";
+import * as path from "path";
 
 import { debounce } from "@matchlighter/common_library/limit";
 
@@ -153,6 +153,7 @@ export const watchFile = (file: string, callback: (file: string) => void, config
         await callback(file);
     })
 
+    // TODO Looks like we may only be allowed one watch per file per process, so we may need to do a caching/tracking mechanism
     return fs.watch(file, throttled_callback);
 }
 
@@ -269,7 +270,7 @@ export function patch<T, K extends keyof T>(target: T, key: K, patcher: (origina
 }
 
 import { eachLine } from "line-reader";
-import * as objectHash from "object-hash";
+import objectHash from "object-hash";
 
 export function read_lines(file: string, options: LineReaderOptions, iteratee: (line: string, last: boolean) => void) {
     return new Promise((resolve, reject) => {

@@ -1,5 +1,5 @@
 
-import smc = require('source-map');
+import * as smc from 'source-map';
 
 interface SourceMapEntry {
     counter: number;

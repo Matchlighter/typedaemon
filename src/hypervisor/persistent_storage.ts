@@ -1,4 +1,4 @@
-import path = require("path");
+import * as path from "path";
 import { FileHandle, open, rename, writeFile } from "fs/promises";
 
 import { AsyncLock } from "../common/async_lock";

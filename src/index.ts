@@ -1,7 +1,7 @@
 
 import './reload_lock';
 
-export { Configuration } from "./hypervisor/config"
+export type { Configuration } from "./hypervisor/config"
 
 export * from "./plugins"
 

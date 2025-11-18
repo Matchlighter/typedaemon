@@ -5,7 +5,7 @@ import * as fs from "fs";
 import * as json5 from 'json5';
 import * as Module from "module";
 import * as VM from "vm2";
-import path = require("path");
+import * as path from "path";
 
 import { loadTsConfig } from "load-tsconfig";
 import { createMatchPath } from 'tsconfig-paths';

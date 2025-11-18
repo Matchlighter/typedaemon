@@ -1,9 +1,9 @@
 
-import fs = require("fs")
-import path = require("path")
-import deep_eql = require("deep-eql")
-import chalk = require("chalk")
-import moment = require("moment-timezone")
+import * as fs from "fs";
+import * as path from "path";
+import deep_eql from "deep-eql";
+import chalk from "chalk";
+import moment from "moment-timezone";
 import { AsyncLocalStorage } from "async_hooks"
 import { TypedEmitter } from "tiny-typed-emitter"
 import { whyIsNodeStillRunning } from 'why-is-node-still-running'

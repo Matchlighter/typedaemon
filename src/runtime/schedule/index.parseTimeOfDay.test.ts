@@ -1,4 +1,4 @@
-import moment = require("moment-timezone");
+import moment from "moment-timezone";
 import { parseTimeOfDay, parseDuration } from "./index";
 
 // Mock the current module to avoid dependencies on hypervisor

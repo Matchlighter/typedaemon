@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import yargs = require('yargs/yargs');
+import { default as yargs } from 'yargs';
 import { hideBin } from 'yargs/helpers'
 
-import path = require('path');
-import chalk = require('chalk');
+import * as path from 'path';
+import chalk from 'chalk';
 
 export class CliError extends Error {
 

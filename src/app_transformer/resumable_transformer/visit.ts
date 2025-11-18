@@ -9,7 +9,7 @@
 "use strict";
 
 
-import * as assert from "assert";
+import assert from "assert";
 
 import { hoist } from "./hoist";
 import { Emitter } from "./emit";
