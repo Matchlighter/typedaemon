@@ -39,6 +39,10 @@ export interface Configuration {
         plugins_file?: string;
     };
 
+    sentry?: {
+        dsn: string;
+    }
+
     /**
      * Override parts of the TypeDaemon-default `tsconfig.json` file
      */

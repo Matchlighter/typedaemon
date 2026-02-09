@@ -4,6 +4,10 @@ import { getVisitor } from "./visit";
 export default createMacro(({ references, babel, state, config }) => {
     for (let [key, refs] of Object.entries(references)) {
         refs.forEach(ref => {
+            // Allow for parametric macro decorators
+            if (ref.parentPath.type == "CallExpression") {
+                ref = ref.parentPath;
+            }
             // Transform the decorated method
             if (ref.parentPath.type == "Decorator") {
                 const methodPath = ref.parentPath.parentPath;

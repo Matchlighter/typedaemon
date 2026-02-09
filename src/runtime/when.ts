@@ -1,9 +1,7 @@
 
+import { current } from "../hypervisor/current";
 import { notePluginAnnotation } from "../plugins/base";
 import { appmobx } from "../plugins/mobx";
-import { current } from "../hypervisor/current";
-import { on } from "events";
-import { ControlledPromise } from "@matchlighter/common_library/promises";
 
 interface RepeatConfig {
     /** The interval (in seconds) between repeats */
@@ -29,9 +27,6 @@ interface WhenOptions {
 
     /** Indicates that the `for`/`repeat` timer should be maintained across restarts */
     resume?: boolean | ResumeConfig;
-
-    /** Indicates a timeout when used as `await when()` */
-    timeout?: number;
 }
 
 interface WhenDecorator<S> {
@@ -191,10 +186,6 @@ export function when<S>(
     }
 
     const dec: WhenDecorator<S> = (target, context?) => {
-        if (options?.timeout) {
-            throw new Error("Cannot use `timeout:` option with decorator usage of `when`");
-        }
-
         if (context) {
             if (opts.resume) opts.resume.id ??= `decorated-method:${context.name}`;
             notePluginAnnotation(target, (self) => {

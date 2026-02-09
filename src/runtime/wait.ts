@@ -3,6 +3,8 @@ import { appmobx } from "../plugins/mobx";
 import { ResumablePromise } from "./resumable";
 import { ResumableMethod } from "./resumable/resumable_method";
 import { SerializeContext } from "./resumable/resumable_promise";
+import { _parseTDFormatInternal, parseDuration } from "./schedule";
+import { sleep, sleep_until } from "./sleep";
 
 interface WaitOptions {
     /** Indicates a timeout when used as `await wait()` */
@@ -10,13 +12,28 @@ interface WaitOptions {
     for?: number;
 }
 
-export function wait(expr: (() => boolean) | string, options: WaitOptions = {}) {
-    return new StateWaiter(expr, options);
+export function wait(time: string): ResumablePromise<any>;
+export function wait(seconds: number): ResumablePromise<any>;
+export function wait(expr: (() => boolean), options: WaitOptions): ResumablePromise<any>;
+export function wait(a, b?) {
+    if (typeof a == 'function') {
+        return new StateWaiter(a, b || {});
+    } else if (typeof a == 'number') {
+        return sleep(a * 1000);
+    } else if (typeof a == 'string') {
+        if (a.match(/[:\/]|sun|AM|PM/)) {
+            const p = _parseTDFormatInternal(a, {});
+            return sleep_until(p.nextAfter(Date.now()).toDate());
+        } else {
+            return sleep(parseDuration(a));
+        }
+    }
 }
 
 class StateWaiter extends ResumablePromise<void> {
     constructor(private expr: (() => boolean) | string, private options: WaitOptions = {}) {
         super();
+        this.options ??= {};
     }
 
     static {
@@ -54,20 +71,25 @@ class StateWaiter extends ResumablePromise<void> {
         }
     }
 
+    isCancellable(): boolean {
+        return true;
+    }
+
     private _initialized = false;
 
     then<TResult1 = void, TResult2 = never>(onfulfilled?: (value: void) => TResult1 | PromiseLike<TResult1>, onrejected?: (reason: any) => TResult2 | PromiseLike<TResult2>, resumable?: ResumablePromise<any> | boolean): Promise<TResult1 | TResult2> {
-        if (!this._initialized && resumable instanceof ResumableMethod) {
+        if (!this._initialized && resumable !== true) {
             this._initialized = true;
+            const strexec_context = resumable instanceof ResumableMethod ? resumable : undefined;
             // TODO: `for` should support a string
             if (!this.options.for) {
-                appmobx.when(() => this.evaluate_expression(resumable), {
+                appmobx.when(() => this.evaluate_expression(strexec_context), {
                     timeout: this.options.timeout ? this.options.timeout * 1000 : undefined,
                 }).then(this._resolve, this._reject);
             } else {
                 let tmr: any;
 
-                const reaction = appmobx.reaction(() => this.evaluate_expression(resumable), (value, reaction) => {
+                const reaction = appmobx.reaction(() => this.evaluate_expression(strexec_context), (value, reaction) => {
                     if (value) {
                         tmr ??= setTimeout(() => {
                             reaction.dispose();

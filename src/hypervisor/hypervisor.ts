@@ -1,33 +1,36 @@
 
-import * as fs from "fs";
-import * as path from "path";
-import deep_eql from "deep-eql";
+import * as Sentry from "@sentry/node";
+import "./sentry";
+
+import { AsyncLocalStorage } from "async_hooks";
 import chalk from "chalk";
+import deep_eql from "deep-eql";
+import * as fs from "fs";
 import moment from "moment-timezone";
-import { AsyncLocalStorage } from "async_hooks"
-import { TypedEmitter } from "tiny-typed-emitter"
-import { whyIsNodeStillRunning } from 'why-is-node-still-running'
+import * as path from "path";
+import { TypedEmitter } from "tiny-typed-emitter";
+import { whyIsNodeStillRunning } from 'why-is-node-still-running';
 
-import { MultiMap } from "@matchlighter/common_library/data/multimap"
-import { deep_get } from "@matchlighter/common_library/deep/index"
+import { MultiMap } from "@matchlighter/common_library/data/multimap";
+import { deep_get } from "@matchlighter/common_library/deep/index";
 
-import { LifecycleHelper } from "../common/lifecycle_helper"
-import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile } from "../common/util"
+import { LifecycleHelper } from "../common/lifecycle_helper";
+import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile } from "../common/util";
 
-import { saveGeneratedTsconfig } from "../common/generate_tsconfig"
-import { Plugin } from "../plugins/base"
-import { Application } from "../runtime/application"
-import { internal_sleep } from "../util"
-import { AppLifecycle, ApplicationInstance } from "./application_instance"
-import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config"
-import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app"
-import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin"
-import { CrossCallStore } from "./cross_call"
-import { current } from "./current"
-import { ExtendedLoger, LogLevel, ORIGINAL_CONSOLE, createDomainLogger, setFallbackLogger } from "./logging"
-import { AppNamespace } from "./managed_apps"
-import { SharedStorages } from "./persistent_storage"
-import { PluginInstance } from "./plugin_instance"
+import { saveGeneratedTsconfig } from "../common/generate_tsconfig";
+import { Plugin } from "../plugins/base";
+import { Application } from "../runtime/application";
+import { internal_sleep } from "../util";
+import { AppLifecycle, ApplicationInstance } from "./application_instance";
+import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config";
+import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
+import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
+import { CrossCallStore } from "./cross_call";
+import { current } from "./current";
+import { ExtendedLoger, LogLevel, ORIGINAL_CONSOLE, createDomainLogger, setFallbackLogger } from "./logging";
+import { AppNamespace } from "./managed_apps";
+import { SharedStorages } from "./persistent_storage";
+import { PluginInstance } from "./plugin_instance";
 
 export const CurrentHypervisor = new AsyncLocalStorage<Hypervisor>()
 
@@ -134,6 +137,12 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
             await saveGeneratedTsconfig(this)
         })
 
+        if (this.currentConfig.sentry?.dsn) {
+            Sentry.init({
+                dsn: this.currentConfig.sentry.dsn,
+            });
+        }
+
         process.on('SIGINT', async () => {
             if (this.sigint_count == 0) {
                 this.logMessage("info", "SIGINT received. Shutting down...");
@@ -183,6 +192,11 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
                 console.error(err, err?.stack, origin)
                 // this.shutdown();
             }
+            Sentry.captureException(err, {
+                tags: {
+                    application: app?.id,
+                }
+            });
         })
 
         process.on("unhandledRejection", (err: any, origin) => {
@@ -202,6 +216,11 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
                 console.error(err, err?.stack, origin)
                 // this.shutdown();
             }
+            Sentry.captureException(err, {
+                tags: {
+                    application: app?.id,
+                }
+            });
         })
 
         this.logMessage("info", "Starting Plugins");
