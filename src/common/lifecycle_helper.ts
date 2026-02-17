@@ -1,3 +1,4 @@
+import { captureExceptionWithSourceMaps } from "../hypervisor/sentry";
 
 type Cleaner = () => void;
 
@@ -141,6 +142,7 @@ class OrderedLifecycleHelper extends BaseLifecycleHelper {
                     await c();
                 } catch (ex) {
                     console.error("Disposer failed:", ex);
+                    captureExceptionWithSourceMaps(ex);
                 }
             }
         }

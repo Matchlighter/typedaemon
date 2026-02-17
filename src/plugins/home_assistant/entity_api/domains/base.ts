@@ -57,7 +57,7 @@ export class EntityClass<T, S extends Record<string, any[]>, O = {}> extends TDA
 export type EntityClassNewParams<E extends EntityClass<any, any>> = [string, EntityClassOptions<E>?, ((entity: E) => void)?];
 
 export type EntityClassConstructor<E extends EntityClass<any, any, any>> = {
-    new(...params: EntityClassNewParams<E>): E
+    new(id: string, options?: EntityClassOptions<E>, builder?: (entity: E) => void): E
 }
 
 export type EntityClassType<T extends EntityClass<any, any>> = T extends EntityClass<infer S, any, any> ? S : never;

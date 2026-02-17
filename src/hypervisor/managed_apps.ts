@@ -1,5 +1,5 @@
-import chalk from "chalk";
 import { AsyncLocalStorage } from "async_hooks";
+import chalk from "chalk";
 import { ListenerSignature, TypedEmitter } from "tiny-typed-emitter";
 import { ConditionalKeys, Merge } from "type-fest";
 
@@ -248,7 +248,7 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
             try {
                 await instance._start();
             } catch (ex) {
-                this.logMessage("error", `${this.name} '${id}' failed while starting up: `, ex)
+                this.logMessage("error", `${this.name} '${id}' failed while starting up: `, ex.message);
                 // We're intentionally forgoing immediate shutdown and cleanup - this allows the app's config watcher to remain active and restart the app
             }
             this._startupPromise = null;
@@ -285,7 +285,7 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
                 }
                 await instance._shutdown();
             } catch (ex) {
-                this.logMessage("error", `${this.name} '${id}' failed while shutting down: `, ex);
+                this.logMessage("error", `${this.name} '${id}' failed while shutting down: `, ex.message);
                 throw ex;
             } finally {
                 this.shutdownPromises.delete(prom)

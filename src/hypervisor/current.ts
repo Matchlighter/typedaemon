@@ -2,6 +2,7 @@ import { ApplicationInstance } from "./application_instance";
 import { CurrentHypervisor } from "./hypervisor";
 import { BaseInstance, CurrentInstanceStack } from "./managed_apps";
 import { PluginInstance } from "./plugin_instance";
+import { implementCurrent } from "./safe_current";
 
 export const current = {
     get applicationStack() { return CurrentInstanceStack.getStore() },
@@ -26,3 +27,5 @@ export const current = {
         return null;
     },
 }
+
+implementCurrent(current);

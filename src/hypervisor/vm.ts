@@ -227,8 +227,8 @@ export async function createApplicationVM(app: ApplicationInstance) {
                 filename,
             })
 
-            // TODO Fix memory leak
-            registerSourceMap(filename, result.map);
+            const sourceMapCleanup = registerSourceMap(filename, result.map);
+            app.cleanups.append(sourceMapCleanup);
 
             const transpiled = result.code + `;\n` + STD_APPEND;
             return transpiled;

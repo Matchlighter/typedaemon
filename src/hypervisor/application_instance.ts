@@ -1,12 +1,12 @@
 
-import { exists } from 'fs-extra';
-import { AsyncReturnType } from 'type-fest';
-import * as path from 'path';
 import chalk from 'chalk';
 import deepEqual from 'deep-eql';
-import * as fs from 'fs';
-import md5 from 'md5';
 import extract_comments from 'extract-comments';
+import * as fs from 'fs';
+import { exists } from 'fs-extra';
+import md5 from 'md5';
+import * as path from 'path';
+import { AsyncReturnType } from 'type-fest';
 
 import { debounce } from "@matchlighter/common_library/limit";
 
@@ -21,6 +21,7 @@ import { BaseInstance, InstanceLogConfig } from './managed_apps';
 import { RequireRestart, configChangeHandler } from './managed_config_events';
 import { installDependencies } from './packages';
 import { PersistentStorage } from './persistent_storage';
+import { captureExceptionWithSourceMaps } from './sentry';
 import { createApplicationVM, determineModuleContext } from './vm';
 
 export interface ApplicationMetadata {
@@ -310,7 +311,13 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             if (ex instanceof ShuttingDown) return;
 
             if (!ex[MessagingHandled]) {
-                this.logClientMessage("error", `Failed while starting up: `, ex, ex?.stack);
+                this.logClientMessage("error", `Failed while starting up: `, ex);
+
+                captureExceptionWithSourceMaps(ex, {
+                    tags: {
+                        application: this.id,
+                    }
+                });
             }
 
             // There's "dead" and "mostly dead" - we go for "mostly dead" so that watchers are kept live and can trigger a restart

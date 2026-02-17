@@ -151,8 +151,10 @@ export function hoist(funPath: NodePath<Function>, contextId) {
     Identifier: {
       exit: function (path) {
         if (vars[path.node.name]) {
-          // Not a top-level reference; Ignore
-          if (path.parentPath.type == "MemberExpression" && path.parentPath.node.property == path.node) {
+          // Not a top-level reference; Ignore property access (but not computed member access)
+          if (path.parentPath.type == "MemberExpression" && 
+              path.parentPath.node.property == path.node && 
+              !path.parentPath.node.computed) {
             // console.log("IGNORING", path.node.name, path.parentPath.node)
             return
           }

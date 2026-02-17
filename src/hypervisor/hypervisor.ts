@@ -1,6 +1,6 @@
 
 import * as Sentry from "@sentry/node";
-import "./sentry";
+import { captureExceptionWithSourceMaps } from "./sentry";
 
 import { AsyncLocalStorage } from "async_hooks";
 import chalk from "chalk";
@@ -192,11 +192,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
                 console.error(err, err?.stack, origin)
                 // this.shutdown();
             }
-            Sentry.captureException(err, {
-                tags: {
-                    application: app?.id,
-                }
-            });
+            captureExceptionWithSourceMaps(err);
         })
 
         process.on("unhandledRejection", (err: any, origin) => {
@@ -216,11 +212,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
                 console.error(err, err?.stack, origin)
                 // this.shutdown();
             }
-            Sentry.captureException(err, {
-                tags: {
-                    application: app?.id,
-                }
-            });
+            captureExceptionWithSourceMaps(err);
         })
 
         this.logMessage("info", "Starting Plugins");

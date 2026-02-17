@@ -38,9 +38,17 @@ export function mapStackTrace(err: Error | string[]) {
 
     const errors = stack.map((line) => {
         try {
-            const [left, _trace, right] = line.split(/[ ()]/g);
-            // let _trace = line.split('(').pop();
-            // _trace = trim(_trace, ')');
+            // Extract the part between the last '(' and ')'
+            const lastParenIndex = line.lastIndexOf('(');
+            const lastCloseParenIndex = line.lastIndexOf(')');
+            
+            if (lastParenIndex === -1 || lastCloseParenIndex === -1 || lastParenIndex >= lastCloseParenIndex) {
+                return line; // Can't parse this line
+            }
+            
+            const left = line.substring(0, lastParenIndex);
+            const _trace = line.substring(lastParenIndex + 1, lastCloseParenIndex);
+            const right = line.substring(lastCloseParenIndex + 1);
 
             const bits = _trace.split(':');
             const trace = {
