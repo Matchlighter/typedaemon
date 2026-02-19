@@ -12,6 +12,11 @@ import { Application } from "./application";
 
 // TODO Autoclean @persistent entries
 
+const DEFAULT_POLICY: PersistentEntryOptions = {
+    min_time_to_disk: 1,
+    max_time_to_disk: 3,
+}
+
 /**
  * Mark a property as persistent - it's value will be saved to disk and restored when the app starts
  */
@@ -31,7 +36,7 @@ export const persistent = optional_config_decorator([{}], (options?: Partial<Per
                 set(value) {
                     const hva = this[HyperWrapper];
                     access.set.call(this, value);
-                    hva.persistedStorage.setValue(key, value, { max_time_to_disk: 3, min_time_to_disk: 1, ...options })
+                    hva.persistedStorage.setValue(key, value, { ...DEFAULT_POLICY, ...options })
                 },
             }
         })
@@ -41,13 +46,13 @@ export const persistent = optional_config_decorator([{}], (options?: Partial<Per
 const create_api = (storage: PersistentStorage) => {
     return {
         set(key: string, value: any, options?: Partial<PersistentEntryOptions>) {
-            return storage.setValue(key, value, { min_time_to_disk: 1, max_time_to_disk: 3, ...options });
+            return storage.setValue(key, value, { ...DEFAULT_POLICY, ...options });
         },
         get(key: string) {
             return storage.getValue(key);
         },
         delete(key: string, options?: Partial<PersistentEntryOptions>) {
-            return storage.setValue(key, undefined, { min_time_to_disk: 1, max_time_to_disk: 3, ...options });
+            return storage.setValue(key, undefined, { ...DEFAULT_POLICY, ...options });
         },
     }
 }
@@ -57,15 +62,19 @@ export const persistence = {
 
     set(key: string, value: any, options?: Partial<PersistentEntryOptions>) {
         const ps = current.application.persistedStorage;
-        return ps.setValue(key, value, { min_time_to_disk: 1, max_time_to_disk: 3, ...options });
+        return ps.setValue(key, value, { ...DEFAULT_POLICY, ...options });
     },
     get(key: string) {
         const ps = current.application.persistedStorage;
         return ps.getValue(key);
     },
+    has(key: string) {
+        const ps = current.application.persistedStorage;
+        return ps.hasKey(key);
+    },
     delete(key: string, options?: Partial<PersistentEntryOptions>) {
         const ps = current.application.persistedStorage;
-        return ps.setValue(key, undefined, { min_time_to_disk: 1, max_time_to_disk: 3, ...options });
+        return ps.setValue(key, undefined, { ...DEFAULT_POLICY, ...options });
     },
 
     get shared() {

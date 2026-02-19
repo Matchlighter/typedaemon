@@ -1,6 +1,5 @@
 
 import { action, computed, observable } from "mobx";
-import { Constructor } from "type-fest";
 
 import { ClassAccessorDecorator, ClassGetterDecorator, ClassMethodDecorator } from "@matchlighter/common_library/decorators/20223fills";
 import { optional_config_decorator } from "@matchlighter/common_library/decorators/utils";
@@ -9,26 +8,39 @@ import { funcOrNew } from "../../common/alternative_calls";
 import { chainedDecorators, dec_once } from "../../common/decorators";
 import { current } from "../../hypervisor/current";
 import { logPluginClientMessage } from "../../hypervisor/logging";
-import { persistent } from "../../runtime/persistence";
+import { persistence } from "../../runtime/persistence";
 import { Annotable, assert_application_context, client_call_safe, getOrCreateLocalData, notePluginAnnotation } from "../base";
+import { appmobx } from "../mobx";
 import { ButtonOptions, HassBoolean, InputButton, InputEntity, InputOptions, InputSelect, NumberInputOptions, TDEntity } from "./entity_api";
 import { trackAutocleanEntity } from "./entity_api/auto_cleaning";
 import { domain_entities } from "./entity_api/domains";
 import { EntityClass, EntityClassConstructor, EntityClassOptions, EntityClassType } from "./entity_api/domains/base";
-import type { TDButton } from "./entity_api/domains/button";
-import type { TDScene } from "./entity_api/domains/scene";
 import { EntityStore } from "./entity_api/store";
 import { HomeAssistantPlugin } from "./plugin";
+
+import type { TDBinarySensor } from "./entity_api/domains/binary_sensor";
+import type { TDButton } from "./entity_api/domains/button";
+import type { TDDeviceTracker } from "./entity_api/domains/device_tracker";
+import type { TDImage } from "./entity_api/domains/image";
+import type { TDNumber } from "./entity_api/domains/number";
+import type { TDScene } from "./entity_api/domains/scene";
+import type { TDSelect } from "./entity_api/domains/select";
+import type { TDSensor } from "./entity_api/domains/sensor";
+import type { TDSwitch } from "./entity_api/domains/switch";
+import type { TDText } from "./entity_api/domains/text";
 
 export interface EntityRegistrationOptions {
     /** If `true`, entity will be added to the auto-clean registry - if it's not registered again on the next app start up, it will be removed from HA */
     auto_clean?: boolean,
+
+    /** TD Helper; If `true`, the entity's state will be persisted across app restarts using the persistence API */
+    persist_state?: boolean,
 }
 
 function separateRegistrationOptions<O extends {}>(opts: O & EntityRegistrationOptions) {
     const entity_options = opts;
     const registration_options = {};
-    for (let k of ['auto_clean'] satisfies (keyof EntityRegistrationOptions)[]) {
+    for (let k of ['auto_clean', 'persist_state'] satisfies (keyof EntityRegistrationOptions)[]) {
         if (k in entity_options) {
             registration_options[k] = entity_options[k];
             delete entity_options[k];
@@ -48,6 +60,8 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
     // ========= Shared Entity Helpers ========= //
     /** Register the entity */
+    async function registerEntity<T extends EntityClass<any, any>>(entity: T, options?: EntityRegistrationOptions): Promise<T>
+    async function registerEntity<T extends TDEntity<any>>(entity: T, options?: Omit<EntityRegistrationOptions, 'persist_state'>): Promise<T>
     async function registerEntity(entity: TDEntity<any>, options?: EntityRegistrationOptions) {
         const store = _entity_store();
         await store.registerEntity(entity);
@@ -55,6 +69,22 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         if (options?.auto_clean) {
             trackAutocleanEntity(store, entity);
         }
+
+        if (options?.persist_state) {
+            const ent = entity as EntityClass<any, any>;
+            const pkey = `entity_state:${entity.uuid}`;
+
+            if (persistence.has(pkey)) {
+                const p = persistence.get(pkey) as any;
+                ent.setState(p?.state, p?.attrs);
+            }
+
+            appmobx.reaction(() => ({ state: ent.state, attrs: ent.state_attrs }), (x) => {
+                persistence.set(pkey, x);
+            });
+        }
+
+        return entity;
     }
 
     /** Register the Entity and (if created via decorator) add it to the auto-remove registry */
@@ -162,13 +192,12 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
     function _basicRWDecorator<E extends EntityClass<any, any>>(
         ecls: EntityClassConstructor<E>,
-        _options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string, persist_state?: boolean },
+        _options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string },
         init_callback: RWInitCallback<E>,
     ) {
-        const { persist_state, ...options } = _options
+        const { ...options } = _options
         return chainedDecorators([
             dec_once(observable),
-            persist_state ? persistent : null,
             dec_once({ loud: true, key: "@ha.entity" }, (access, context: DecoratorContext) => {
                 // TODO Allow values to be objects and interpret as state & attrs (probably implement in getState() and getExtraAttributes() overrides)
                 _linkFieldEntityClass(ecls, options as any, context, (self, ent) => {
@@ -184,7 +213,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     // function basicRWApi<E extends EntityClass<any, any>>(entCls: EntityClassConstructor<E>, autoinit_callback: RWInitCallback<E>) {
     function basicRWApi<E extends EntityClass<any, any>>(entCls: EntityClassConstructor<E>, autoinit_callback: RWInitCallback<E>) {
         return funcOrNew(
-            (options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string, persist_state?: boolean }) => _basicRWDecorator(entCls, options, autoinit_callback),
+            (options: EntityClassOptions<E> & EntityRegistrationOptions & { id?: string }) => _basicRWDecorator(entCls, options, autoinit_callback),
             entCls,
         )
     }
@@ -296,42 +325,42 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
         ...domain_entities,
 
         /** Create a `sensor` entity and update it whenever the decorated getter/accessor is updated */
-        sensor: stateOnlyApi(domain_entities.sensor),
+        sensor: stateOnlyApi<TDSensor>(domain_entities.sensor),
 
         /** Create a `binary_sensor` entity and update it whenever the decorated getter/accessor is updated */
-        binary_sensor: stateOnlyApi(domain_entities.binary_sensor),
+        binary_sensor: stateOnlyApi<TDBinarySensor>(domain_entities.binary_sensor),
 
         // /** Create a `weather` entity and update it whenever the decorated getter/accessor is updated */
         // weather: stateOnlyDecorator<{}, {}>("weather"), // TODO Not supported by MQTT
 
         /** Create a `device_tracker` entity and update it whenever the decorated getter/accessor is updated */
-        device_tracker: stateOnlyApi(domain_entities.device_tracker),
+        device_tracker: stateOnlyApi<TDDeviceTracker>(domain_entities.device_tracker),
 
         /** Create a `image` entity and update it whenever the decorated getter/accessor is updated */
-        image: stateOnlyApi(domain_entities.image),
+        image: stateOnlyApi<TDImage>(domain_entities.image),
 
         // /** Create a `person` entity and update it whenever the decorated getter/accessor is updated */
         // person: stateOnlyDecorator<{}, string>("person"), // TODO Not supported by MQTT
 
         /** Create a `switch` entity and update it whenever the decorated getter/accessor is updated */
-        switch: basicRWApi(domain_entities.switch, (app, entity, set) => {
+        switch: basicRWApi<TDSwitch>(domain_entities.switch, (app, entity, set) => {
             entity.handle_command = (v) => {
                 set(v == "ON");
             }
         }),
 
         /** Create a `select` entity and update it whenever the decorated getter/accessor is updated */
-        select: basicRWApi(domain_entities.select, (app, entity, set) => {
+        select: basicRWApi<TDSelect>(domain_entities.select, (app, entity, set) => {
             entity.handle_command = set;
         }),
 
         /** Create a `number` entity and update it whenever the decorated getter/accessor is updated */
-        number: basicRWApi(domain_entities.number, (app, entity, set) => {
+        number: basicRWApi<TDNumber>(domain_entities.number, (app, entity, set) => {
             entity.handle_command = set;
         }),
 
         /** Create a `text` entity and update it whenever the decorated getter/accessor is updated */
-        text: basicRWApi(domain_entities.text, (app, entity, set) => {
+        text: basicRWApi<TDText>(domain_entities.text, (app, entity, set) => {
             entity.handle_command = set;
         }),
 

@@ -5,7 +5,7 @@ import { TDAbstractEntity, TDAbstractEntityOptions } from "../general";
 export const KEEP_ATTRS = Symbol("Keep Attrs")
 
 export class EntityClass<T, S extends Record<string, any[]>, O = {}> extends TDAbstractEntity<T> {
-    constructor(id: string, options?: TDAbstractEntityOptions & O, builder?: (s: EntityClass<any, any>) => void) {
+    constructor(id: string, options?: TDAbstractEntityOptions & O) {
         super(id, options);
     }
 
@@ -19,9 +19,9 @@ export class EntityClass<T, S extends Record<string, any[]>, O = {}> extends TDA
         return this.state_attrs;
     }
 
-    on<K extends keyof S>(event: K, handler: (...params: S[K]) => void) {
+    // on<K extends keyof S>(event: K, handler: (...params: S[K]) => void) {
 
-    }
+    // }
 
     handle_command(payload: any) {
         // TODO
@@ -53,11 +53,8 @@ export class EntityClass<T, S extends Record<string, any[]>, O = {}> extends TDA
     }
 }
 
-// export type EntityClassNewParams<E extends EntityClass<any, any>> = ConstructorParameters<typeof EntityClass<any, any, EntityClassOptions<E>>>;
-export type EntityClassNewParams<E extends EntityClass<any, any>> = [string, EntityClassOptions<E>?, ((entity: E) => void)?];
-
 export type EntityClassConstructor<E extends EntityClass<any, any, any>> = {
-    new(id: string, options?: EntityClassOptions<E>, builder?: (entity: E) => void): E
+    new(id: string, options?: EntityClassOptions<E>): E
 }
 
 export type EntityClassType<T extends EntityClass<any, any>> = T extends EntityClass<infer S, any, any> ? S : never;
