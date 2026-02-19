@@ -112,8 +112,8 @@ jobs:
           # context: .
           # file: ./Dockerfile
 
-          cache-from: type=registry,ref=${{ needs.determine-version.outputs.image }}:cache-${{ needs.determine-version.outputs.channel }}
-          cache-to: type=registry,ref=${{ needs.determine-version.outputs.image }}:cache-${{ needs.determine-version.outputs.channel }},mode=max
+          cache-from: type=registry,ref=${{ needs.determine-version.outputs.image }}:cache-${{ needs.determine-version.outputs.channel }}-${{ env.PLATFORM_PAIR }}
+          cache-to: type=registry,ref=${{ needs.determine-version.outputs.image }}:cache-${{ needs.determine-version.outputs.channel }}-${{ env.PLATFORM_PAIR }},mode=max
 
           build-args: |
             BUILD_VERSION=${{ needs.determine-version.outputs.version }}
