@@ -29,12 +29,12 @@ export interface AppConfiguration {
 
     dependencies?: any;
 
-    config: any;
+    config?: any;
 }
 
 export const defaultAppConfig: AppConfiguration = {
     source: null,
-    export: "default",
+    export: null,
     logging: {},
     config: {},
 }

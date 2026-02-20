@@ -246,38 +246,49 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             this.appModule = module;
 
             this.cleanups.append(() => this._vm.removeAllListeners?.());
-            const mainExport = module[this.options.export || 'default'];
-            const metadata: ApplicationMetadata = (typeof mainExport == 'object' && mainExport) || mainExport.metadata || module.metadata || { applicationClass: mainExport, ...module, ...mainExport };
 
             // Abort if the app started shutting down
             this.assert_not_shutdown();
 
-            this.transitionState("starting")
-
-            // Instanciate App instance
-            const AppClass = metadata.applicationClass;
-            try {
-                this._instance = new AppClass(this);
-            } catch (ex) {
-                this.handle_client_startup_error(ex);
-            }
-
-            resumable.register_context("APPLICATION", this._instance, true);
+            this.transitionState("starting");
 
             this.resumableStore = new ResumableStore({
                 file: path.join(this.operating_directory, ".resumable_state.json"),
-            }, {
-                "APPLICATION": this._instance,
-            })
+            }, {});
 
-            this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
+            if (this.options.export || module[this.options.export || 'default']) {
+                const mainExport = module[this.options.export || 'default'];
 
-            // Invoke App initialize method
-            try {
-                // TODO Timeout or cancel during restart
-                await this.invoke(() => this.instance.initialize?.());
-            } catch (ex) {
-                this.handle_client_startup_error(ex);
+                if (!mainExport) {
+                    throw new Error(`Export '${this.options.export || 'default'}' not found in entry module!`)
+                }
+
+                const metadata: ApplicationMetadata = (typeof mainExport == 'object' && mainExport) || mainExport?.metadata || module.metadata || { applicationClass: mainExport, ...module, ...mainExport };
+
+                // Instanciate App instance
+                const AppClass = metadata.applicationClass;
+                try {
+                    this._instance = new AppClass(this);
+                } catch (ex) {
+                    this.handle_client_startup_error(ex);
+                }
+
+                resumable.register_context("APPLICATION", this._instance, true);
+                this.resumableStore.context["APPLICATION"] = this._instance;
+
+                this.cleanups.append(() => this.invoke(() => this.instance.shutdown?.()));
+
+                // Invoke App initialize method
+                try {
+                    // TODO Timeout or cancel during restart
+                    await this.invoke(() => this.instance.initialize?.());
+                } catch (ex) {
+                    this.handle_client_startup_error(ex);
+                }
+            } else {
+                // "Script" mode where AppClass is not required and the module itself is the instance.
+                // Would be more limited but nice for simple use cases
+                this._instance = {} as any;
             }
 
             // Abort if the app started shutting down

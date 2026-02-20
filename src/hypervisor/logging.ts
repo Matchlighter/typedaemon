@@ -56,11 +56,14 @@ export function cleanAndMapStacktrace(err: Error) {
     const working_directory = current.hypervisor?.working_directory || '';
     const clean_stack = [];
 
-    let found = false;
-    for (let line of [...stack].reverse()) {
-        found ||= line.includes(working_directory);
-        if (!found) continue;
-        clean_stack.unshift(line);
+    // Filter out TD-internal frames unless TD is set to debug logging, in which case we want to see everything
+    if (current.hypervisor?.currentConfig?.logging?.system != 'debug') {
+        let found = false;
+        for (let line of [...stack].reverse()) {
+            found ||= line.includes(working_directory);
+            if (!found) continue;
+            clean_stack.unshift(line);
+        }
     }
 
     const mapped = mapStackTrace(clean_stack);
