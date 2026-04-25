@@ -231,6 +231,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
         }, 30000);
 
         this._synced_store = new HAMobXStore(this._ha_api);
+        this._synced_store.enableEntityIndex();
 
         this._ha_api.subscribeMessage(() => {
             lastEvent = Date.now();
