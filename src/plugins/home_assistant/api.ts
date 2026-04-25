@@ -3,13 +3,15 @@ import { HassEntity, HassEvent, MessageBase, StateChangedEvent } from "home-assi
 
 import "@matchlighter/common_library/decorators/20223fills";
 
-import { HomeAssistantPlugin } from "./plugin";
 import { escapeRegExp } from "../../common/util";
 import { current } from "../../hypervisor/current";
-import { callback_or_decorator2 } from "../util";
 import { assert_application_context, bind_callback_env, makeApiExport, notePluginAnnotation } from "../base";
+import { callback_or_decorator2 } from "../util";
 import { _entitySubApi } from "./api_entities";
 import { TDDevice } from "./entity_api";
+import { domain_entities } from "./entity_api/domains";
+import { EntityClassOptions } from "./entity_api/domains/base";
+import { HomeAssistantPlugin } from "./plugin";
 
 export interface FullState<V> {
     state: V;
@@ -131,7 +133,7 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
 
     const subscribe_state = callback_or_decorator2((f: (new_state: HassEntity, old_state: HassEntity, entity_id: string) => void, entity: string | string[] | RegExp) => {
         f = bind_callback_env(f);
-        
+
         // TODO: Support labels
 
         let match: (evt: StateChangedEvent) => boolean;
@@ -227,7 +229,19 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
 
         _getEntityStore: _entity_store,
 
+        get hass_config() { return _plugin().ha_config },
+
         get states() { return _plugin().state },
+
+        get entities() { return _plugin().entities },
+        get devices() { return _plugin().devices },
+        get floors() { return _plugin().floors },
+        get areas() { return _plugin().areas },
+        get labels() { return _plugin().labels },
+
+        searchEntities: ((...args) => {
+            return _plugin()._synced_store.searchEntities(...args);
+        }) as HomeAssistantPlugin['_synced_store']['searchEntities'],
 
         subscribe_message,
         subscribe_events,
@@ -273,7 +287,12 @@ homeAssistantApi.defaultPluginId = "home_assistant";
 export type HomeAssistantApi = ReturnType<typeof homeAssistantApi>;
 
 // TODO Re-Export types
-export type { HassEntity, HassEntities, HassEvent, HassService, HassServiceTarget } from "home-assistant-js-websocket";
-export type { HassBoolean } from "./entity_api/input"
+export type { HassEntities, HassEntity, HassEvent, HassService, HassServiceTarget } from "home-assistant-js-websocket";
+export type { HassBoolean } from "./entity_api/input";
+
+export type { EntityClass, EntityClassConstructor, EntityClassOptions } from "./entity_api/domains/base";
+export type EntityDomain = keyof typeof domain_entities;
+export type EntityClassForDomain<D extends EntityDomain> = D extends keyof typeof domain_entities ? InstanceType<typeof domain_entities[D]> : never;
+export type EntityOptionsForDomain<D extends EntityDomain> = EntityClassOptions<EntityClassForDomain<D>>;
 
 export const api = makeApiExport(homeAssistantApi)

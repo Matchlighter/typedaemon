@@ -165,11 +165,15 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     //     // TODO
     // }
 
-    private _synced_store: HAMobXStore;
+    _synced_store: HAMobXStore;
 
     get ha_config() { return this._synced_store.ha_config }
+
     get state() { return this._synced_store.get("state") }
+
+    get entities() { return this._synced_store.get("entity") }
     get devices() { return this._synced_store.get("device") }
+    get floors() { return this._synced_store.get("floor") }
     get areas() { return this._synced_store.get("area") }
     get labels() { return this._synced_store.get("label") }
 

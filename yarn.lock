@@ -1547,10 +1547,10 @@
     type-fest "^3.6.1"
     underscore "^1.9.1"
 
-"@matchlighter/ha-mobx-store@^0.2.9":
-  version "0.2.9"
-  resolved "https://registry.yarnpkg.com/@matchlighter/ha-mobx-store/-/ha-mobx-store-0.2.9.tgz#d7a483114b24926c2c4f1e2aa28b82b1b1265bf4"
-  integrity sha512-TnZWVe7SdxpbEhXKlDN7/Wz2YMxUhVyG83yBK4oSutewsEDyCimC5YYFkmlU2Pu/9BwX7enq5X1QXvcdQp+P1w==
+"@matchlighter/ha-mobx-store@^0.4.0":
+  version "0.4.0"
+  resolved "https://registry.yarnpkg.com/@matchlighter/ha-mobx-store/-/ha-mobx-store-0.4.0.tgz#7e8a8413909bcecadfe260929471e53a4fd3796f"
+  integrity sha512-4weSSOWssmJxC6t7PBFFazwaD91OKEhXQd53i8V3crPNuVs9lrCDc0XaNsMTojf4mjg/SLAIYD/IvOZDH+SJ2g==
   dependencies:
     "@matchlighter/common_library" "^1.6.14"
 

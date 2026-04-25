@@ -10,6 +10,7 @@
     "target": "ES2022",
     "useDefineForClassFields": true,
     "esModuleInterop": true,
+    "strict": false,
 
     "resolveJsonModule": true,
     "skipLibCheck": true,
@@ -22,6 +23,7 @@
   ],
   "exclude": [
     "**/*.spec.ts",
+    "**/*.test.ts",
     ".git",
     "node_modules",
     "vendor",

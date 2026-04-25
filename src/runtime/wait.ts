@@ -7,14 +7,14 @@ import { _parseTDFormatInternal, parseDuration } from "./schedule";
 import { sleep, sleep_until } from "./sleep";
 
 interface WaitOptions {
-    /** Indicates a timeout when used as `await wait()` */
+    /** Indicates a timeout when used as `await wait(condition)` */
     timeout?: number;
     for?: number;
 }
 
 export function wait(time: string): ResumablePromise<any>;
 export function wait(seconds: number): ResumablePromise<any>;
-export function wait(expr: (() => boolean), options: WaitOptions): ResumablePromise<any>;
+export function wait(expr: (() => boolean), options?: WaitOptions): ResumablePromise<any>;
 export function wait(a, b?) {
     if (typeof a == 'function') {
         return new StateWaiter(a, b || {});
