@@ -11,6 +11,22 @@ import { InstallOpts, installDependencies } from "../hypervisor/packages";
 
 const INSTALL_MODE: 'download' | 'copy' | 'link' = 'copy';
 
+async function stripToTypeFiles(dir: string) {
+    for (const entry of await fse.readdir(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            await stripToTypeFiles(full);
+        } else if (!entry.name.endsWith('.d.ts') && entry.name !== 'package.json') {
+            await fse.rm(full);
+        }
+    }
+    // Remove empty directories left behind
+    const remaining = await fse.readdir(dir);
+    if (remaining.length === 0) {
+        await fse.rmdir(dir);
+    }
+}
+
 export async function syncDevEnv(wdir: string | UtilityHypervisor) {
     let hv: UtilityHypervisor;
     if (typeof wdir == "string") {
@@ -57,6 +73,8 @@ export async function syncDevEnv(wdir: string | UtilityHypervisor) {
         } else {
             await fse.copy(TD_MODULES_PATH, nmpath);
         }
+        console.log("Stripping non-type files from node_modules");
+        await stripToTypeFiles(nmpath);
     } else if (INSTALL_MODE == 'link') {
         if (await fse.exists(nmpath)) {
             await fse.rm(nmpath, { recursive: true });
