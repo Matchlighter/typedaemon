@@ -16,6 +16,8 @@ const hasOwn = Op.hasOwnProperty;
 
 const ContinueSentinel = Symbol("continue");
 
+const isTemporaryName = (name: string) => name.charAt(0) === "t" && !isNaN(+name.slice(1));
+
 export class Executor<T> {
     constructor(generator, readonly options: ExecutorOptions) {
         this.self = options.self;
@@ -352,15 +354,21 @@ export class Executor<T> {
         }
 
         if (!skipTempReset) {
-            for (const name in this) {
-                // Not sure about the optimal order of these conditions:
-                if (name.charAt(0) === "t" &&
-                    hasOwn.call(this, name) &&
-                    !isNaN(+name.slice(1))) {
-                    this[name] = undefined;
-                }
+            for (const name of Object.keys(this.temporaries)) {
+                this[name] = undefined;
             }
         }
+    }
+
+    /** Compiler-generated temporaries (`_context.tN`) - part of the execution state, alongside `state` */
+    get temporaries() {
+        const temps: Record<string, any> = {};
+        for (const name in this) {
+            if (isTemporaryName(name) && hasOwn.call(this, name)) {
+                temps[name] = this[name];
+            }
+        }
+        return temps;
     }
 
     static _wrapped_async = (innerFn, options) => {

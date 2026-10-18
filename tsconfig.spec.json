@@ -5,6 +5,11 @@
   },
   "include": [
     "./src/**/*.spec.ts",
-    "./src/**/*.test.ts"
+    "./src/**/*.test.ts",
+    "./test/**/*.ts"
+  ],
+  // Override the base config's exclusion of test files
+  "exclude": [
+    "node_modules"
   ]
 }

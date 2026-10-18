@@ -3,7 +3,7 @@ import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weak
 
 import { AsyncLocalStorage } from "async_hooks";
 import { Executor } from "../regen_executor";
-import { deep_pojso } from "../../common/util";
+import { serializable } from "../../common/util";
 import { CancellableResumablePromise, ResumablePromise, SerializeContext } from "./resumable_promise";
 
 const RESUMABLE_CONTEXT_ID = Symbol("resumable_serialized_id");
@@ -49,6 +49,7 @@ ResumablePromise.defineClass<ResumableMethod<any>>({
         }
 
         Object.assign(executor, {
+            ...data.temporaries,
             state: data.state,
             arg: data.arg,
             sent: data.sent,
@@ -132,6 +133,7 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
             started: exc._started,
 
             state: exc.state,
+            temporaries: exc.temporaries,
             arg: exc.arg,
             sent: exc.sent,
             actionType: exc.actionType,
@@ -149,7 +151,8 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
 
     protected can_suspend() {
         if (!super.can_suspend()) return false;
-        if (deep_pojso(this.executor.state)) return false;
+        const exc = this.executor;
+        if (!serializable(exc.state, []) || !serializable(exc.temporaries, [])) return false;
         // TODO: Also check if arg is serializable
         return true;
     }
