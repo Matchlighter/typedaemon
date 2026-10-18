@@ -16,6 +16,24 @@ export interface SubscribeOptions extends mqtt.IClientSubscribeOptions {
     format?: 'json' | boolean;
 }
 
+type RawMessageHandler = (topic: string, payload: Buffer, packet: mqtt.IPublishPacket) => void;
+
+// A single "message" listener per connection fans out to all subscriptions.
+// Attaching one listener per subscription trips Node's MaxListeners warning once an app has >10 subscriptions.
+const connectionHandlers = new WeakMap<mqtt.MqttClient, Set<RawMessageHandler>>();
+
+function connectionHandlerSet(conn: mqtt.MqttClient) {
+    let handlers = connectionHandlers.get(conn);
+    if (!handlers) {
+        handlers = new Set();
+        connectionHandlers.set(conn, handlers);
+        conn.on("message", (topic, payload, packet) => {
+            for (const handler of handlers) handler(topic, payload, packet);
+        });
+    }
+    return handlers;
+}
+
 export function mqttApi(plugin_instace: MqttPlugin) {
     // NB Each application has it's own connection to the broker.
     // Otherwise we'd either need to NEVER usubscribe anything, OR we'd need to implement subscription counting logic... that takes wildcards into account.
@@ -49,9 +67,10 @@ export function mqttApi(plugin_instace: MqttPlugin) {
                 client_call_safe(handler, rtopic, spayload);
             }
         }
-        conn.on("message", wrappedHandler);
+        const handlers = connectionHandlerSet(conn);
+        handlers.add(wrappedHandler);
         return () => {
-            conn.off("message", wrappedHandler);
+            handlers.delete(wrappedHandler);
         }
     }
 
@@ -70,7 +89,7 @@ export function mqttApi(plugin_instace: MqttPlugin) {
                 f['_td_mqtt_dispose'] = listen(topic, options, (...args) => f.call(self, ...args));
             })
         } else {
-            listen(topic, options, callback);
+            return listen(topic, options, callback);
         }
     }
 
