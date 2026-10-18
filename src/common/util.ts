@@ -20,6 +20,9 @@ export const TD_IMAGE_CHANNEL = TD_PACKAGE_JSON.image_channel;
 
 export const TD_VERSION_PRECISE = `${TD_IMAGE_CHANNEL || "local"}-${TD_IMAGE_VERSION || TD_VERSION}`;
 
+/** Directory where TypeDaemon keeps its internal state for a given working directory */
+export const operationsDirectory = (working_directory: string) => path.resolve(working_directory, ".typedaemon");
+
 // Deep ReadOnly
 export type DeepReadonly<T> =
     T extends (infer R)[] ? DeepReadonlyArray<R> :

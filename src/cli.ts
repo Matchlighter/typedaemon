@@ -5,9 +5,7 @@ import { hideBin } from 'yargs/helpers'
 import * as path from 'path';
 import chalk from 'chalk';
 
-export class CliError extends Error {
-
-}
+import { CliError } from './common/cli_helpers';
 
 const cli = yargs(hideBin(process.argv));
 cli.parserConfiguration({
