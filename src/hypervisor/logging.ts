@@ -9,7 +9,7 @@ import moment from "moment-timezone";
 require('winston-daily-rotate-file');
 
 import { mapStackTrace } from "../app_transformer/source_maps";
-import { pojso } from "../common/util";
+import { has_default_to_string, pojso } from "../common/util";
 import { current } from "./current";
 import { HyperWrapper } from "./managed_apps";
 import { PluginInstance } from "./plugin_instance";
@@ -260,7 +260,7 @@ export function createDomainLogger(opts: LoggerOptions) {
                 const cleanTrace = cleanAndMapStacktrace(b);
                 return cleanTrace?.join('\n') || b.message;
             };
-            if (typeof b == 'object' && pojso(b)) return inspect(b);
+            if (typeof b == 'object' && (pojso(b) || has_default_to_string(b))) return inspect(b);
             return String(b);
         })
 

@@ -67,6 +67,12 @@ export function pojso(value: any) {
     )
 }
 
+/** Whether `String(value)` would just yield the `[object Tag]` fallback (eg class instances without a `toString`) */
+export function has_default_to_string(value: object) {
+    // Compare results instead of functions so objects from other realms (eg the app sandbox) are handled
+    return String(value) === Object.prototype.toString.call(value);
+}
+
 export function deep_pojso(value: any) {
     const proto = Object.getPrototypeOf(value)
     if (typeof value == "function") return false;
