@@ -118,6 +118,7 @@ ENTRYPOINT [ "/init" ]
 COPY ./docker/rootfs /
 
 RUN mkdir /var/run/sshd
+EXPOSE 7722
 
 WORKDIR /opt/typedaemon
 

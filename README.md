@@ -35,6 +35,8 @@ TypeDaemon runs completely in Docker, but apps/config are expected to be edited 
 
 You can execute an arbitrary command in-container with `./td exec CMD`. You can easily gain an in-container shell with `./td shell`.
 
+The container also runs an SSH server on port `7722` (key auth only, as `root`, using the key at `.typedaemon/connection_key`). This can be used to connect from outside the host, eg with VS Code Remote-SSH, provided the port is published (or the container uses host networking).
+
 ### Syncing the Dev Environment
 TypeDaemon tries to abstract the need for you to learn how JS packaging and NPM work. It does this by generating the appropriate configs and automagically downloading appropriate typings and support files. This process occurs automatically upon first startup and when TypeDaemon detects that it was updated, but you can also manually trigger this by running `./td dev_env`
 

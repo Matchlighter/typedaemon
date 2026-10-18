@@ -76,4 +76,6 @@ sed -i "s/GatewayPorts.*/GatewayPorts\\ yes/" "${SSH_CONFIG_PATH}"
 # Allow TCP forewarding
 sed -i "s/AllowTcpForwarding.*/AllowTcpForwarding\\ yes/" "${SSH_CONFIG_PATH}"
 
-echo "ListenAddress 127.0.0.1" >> "${SSH_CONFIG_PATH}"
+# sshd listens on all interfaces (port 7722) so it can be reached from outside the container.
+# Only key auth is allowed - the authorized key is `.typedaemon/connection_key`
+echo "PasswordAuthentication no" >> "${SSH_CONFIG_PATH}"
