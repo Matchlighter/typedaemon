@@ -1,5 +1,5 @@
 
-import { HassEntity, HassEvent, MessageBase, StateChangedEvent } from "home-assistant-js-websocket";
+import { Context, HassEntity, HassEvent, MessageBase, StateChangedEvent } from "home-assistant-js-websocket";
 
 import "@matchlighter/common_library/decorators/20223fills";
 
@@ -24,6 +24,32 @@ type WebhookPayload<T = any> = {
     headers: Record<string, string>,
     params: Record<string, string>,
 }
+
+export interface ActionField {
+    name?: string;
+    description?: string;
+    required?: boolean;
+    example?: any;
+    default?: any;
+    /** An HA selector config, eg `{ text: {} }` or `{ entity: { domain: "light" } }` */
+    selector?: Record<string, any>;
+}
+
+export interface ActionOptions {
+    name?: string;
+    description?: string;
+    /** Describes the accepted fields in the HA UI. Not validated by HA. */
+    fields?: Record<string, ActionField>;
+}
+
+export interface ActionCall<T = any> {
+    data: T;
+    context: Context;
+    /** Whether the caller requested response data */
+    return_response: boolean;
+}
+
+type ActionResponse = Record<string, any> | void;
 
 export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
     const _plugin = () => plugin_instace;
@@ -208,6 +234,37 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
         return webhook_executor;
     }
 
+    /**
+     * Register a custom Home Assistant Action (Service) as `typedaemon.<id>`. The handler is invoked whenever HA calls the action.
+     * If the caller requests response data, the object returned by the handler is passed back to HA. Thrown errors are raised in HA.
+     *
+     * Only one handler may be registered for each id across all TypeDaemon connections.
+     *
+     * Requires the TypeDaemon integration (`custom_components/typedaemon`) to be installed in HA
+     */
+    const action = callback_or_decorator2((f: (data: any, call: ActionCall) => ActionResponse | Promise<ActionResponse>, id: string, options?: ActionOptions) => {
+        type ActionCallMessage = ActionCall & { call_id: string };
+
+        const handle_call = bind_callback_env(async ({ call_id, ...call }: ActionCallMessage) => {
+            const pl = _plugin();
+            try {
+                const response = await f(call.data, call);
+                await pl.request("typedaemon/action/response", { call_id, response: response || null });
+            } catch (ex) {
+                await pl.request("typedaemon/action/response", { call_id, error: String(ex?.message ?? ex) });
+                throw ex;
+            }
+        });
+
+        return _sync_subscribe({
+            type: "typedaemon/action/register",
+            service: id,
+            name: options?.name,
+            description: options?.description,
+            fields: options?.fields,
+        }, handle_call)
+    });
+
     const _mqttApi = () => _plugin().mqttApi();
 
     return {
@@ -247,6 +304,7 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
         subscribe_events,
         subscribe_state,
         webhook,
+        action,
 
         mqtt: {
             get api() { return _mqttApi() },

@@ -38,6 +38,22 @@ You can execute an arbitrary command in-container with `./td exec CMD`. You can 
 ### Syncing the Dev Environment
 TypeDaemon tries to abstract the need for you to learn how JS packaging and NPM work. It does this by generating the appropriate configs and automagically downloading appropriate typings and support files. This process occurs automatically upon first startup and when TypeDaemon detects that it was updated, but you can also manually trigger this by running `./td dev_env`
 
+### Home Assistant Integration
+Some features (currently just custom Actions) require the TypeDaemon companion integration to be installed in Home Assistant:
+1. Copy [`custom_components/typedaemon`](custom_components/typedaemon) to `custom_components/typedaemon` in your HA config directory
+2. Restart Home Assistant
+3. Add the TypeDaemon integration via Settings > Devices & Services > Add Integration
+
+Apps can then register Actions callable from HA as `typedaemon.<id>`:
+```ts
+@ha.action("announce", { description: "Announce a message", fields: { message: { required: true, selector: { text: {} } } } })
+async announce(data: { message: string }) {
+    ...
+    // Optionally return an object to be used as the Action's response data
+    return { announced: true };
+}
+```
+
 ## Where thar be Dragons
 
 ### Using the edge/dev Version
