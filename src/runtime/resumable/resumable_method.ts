@@ -155,7 +155,7 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
         if (!super.can_suspend()) return false;
         const exc = this.executor;
         if (!serializable(exc.state, []) || !serializable(exc.temporaries, []) || !serializable(exc.completions, [])) return false;
-        // TODO: Also check if arg is serializable
+        if (!serializable(exc.arg, []) || !serializable(this.scope.parameters, [])) return false;
         return true;
     }
 

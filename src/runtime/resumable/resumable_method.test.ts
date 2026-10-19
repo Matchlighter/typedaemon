@@ -101,6 +101,12 @@ export class Worker {
     }
 
     @resumable
+    async takesCallback(cb) {
+        await Deferred.get("b");
+        return this.finish(cb());
+    }
+
+    @resumable
     async versioned() {
         await Deferred.get("b");
         return this.finish("v1");
@@ -388,6 +394,14 @@ describe("@resumable", () => {
                 const w2 = await bootWorker();
                 await flushMicrotasks();
                 expect(w2.events).toEqual([]);
+            });
+
+            it("does not suspend methods called with non-serializable parameters", async () => {
+                const w = await bootWorker();
+                new Deferred("b");
+                w.takesCallback(() => "called");
+
+                expect(await shutdownWithTimeout()).toBeNull();
             });
 
             it("does not suspend methods holding non-serializable locals", async () => {
