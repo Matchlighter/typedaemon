@@ -3,7 +3,7 @@
 export XDG_CONFIG_HOME="$TYPEDAEMON_CONFIG/.typedaemon/config"
 tailcat_bin="$TYPEDAEMON_MODULE/skel/bin/tailcat"
 
-if [ ! -f "$TYPEDAEMON_CONFIG/.typedaemon/enable_tailcat" ] || [ ! -x "$tailcat_bin" ]; then
+if ! tailcat_enabled || [ ! -x "$tailcat_bin" ]; then
     exec sleep infinity
 fi
 

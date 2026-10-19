@@ -71,10 +71,10 @@ set_param() {
 
 set_param TD_CONNECTION_MODE SSH
 
-# tailcat: opt-in with an `enable_tailcat` file. It reaches sshd with no open port, via a saved key so the address is stable
+# tailcat: opt-in (see tailcat_enabled). It reaches sshd with no open port, via a saved key so the address is stable
 export XDG_CONFIG_HOME="$TYPEDAEMON_CONFIG/.typedaemon/config"
 tailcat_bin="$TYPEDAEMON_MODULE/skel/bin/tailcat"
-if [ -f "$TYPEDAEMON_CONFIG/.typedaemon/enable_tailcat" ] && [ -x "$tailcat_bin" ]; then
+if tailcat_enabled && [ -x "$tailcat_bin" ]; then
     if ! grep -q "^TD_TAILCAT_ADDR=" "$params" || [ ! -f "$XDG_CONFIG_HOME/tailcat/keys/default.private.json" ]; then
         addr="$(umask 077; "$tailcat_bin" genkey --key=default --fixed-region --force 2>/dev/null | tail -n 1)"
         case "$addr" in

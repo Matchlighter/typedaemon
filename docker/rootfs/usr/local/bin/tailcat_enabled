@@ -1,0 +1,4 @@
+#!/bin/sh
+# Succeeds if tailcat is enabled: the `tailcat` option of the Home Assistant add-on, or TYPEDAEMON_TAILCAT=true when running plain Docker
+[ "$TYPEDAEMON_TAILCAT" = "true" ] && exit 0
+[ -f /data/options.json ] && [ "$(jq -r '.tailcat // false' /data/options.json)" = "true" ]
