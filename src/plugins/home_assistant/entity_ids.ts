@@ -2,7 +2,7 @@ import { comparer, reaction, untracked } from "mobx";
 import parse_duration from "parse-duration";
 
 import { saveGeneratedTypes } from "../../common/generate_tsconfig";
-import { SlidingWindowLimiter } from "../../common/rate_window";
+import { SlidingWindowCounter } from "../../common/rate_window";
 import { HyperWrapper } from "../../hypervisor/managed_apps";
 import type { HassServiceTarget } from "home-assistant-js-websocket";
 
@@ -86,9 +86,12 @@ export interface EntityTypesConfig {
     /** Only include entities with at least one of these labels (by label ID or name) */
     labels?: string[];
 
+    /** Minimum time between regenerations. Duration string (eg `"30s"`) or milliseconds. Default `"30s"` */
+    min_interval?: string | number;
+
     /**
-     * Limit how often types are regenerated. Past the limit, generation is suspended (until the plugin restarts
-     * or its config changes) and an error is raised. Defaults to 3 per 15 minutes.
+     * Guard against entity churn: if more than `count` regenerations occur within `window`, a warning is raised and
+     * generation is paused until the rate drops. Defaults to 10 per `"15m"`.
      */
     rate_limit?: {
         count?: number;
@@ -96,7 +99,7 @@ export interface EntityTypesConfig {
         window?: string | number;
     };
 
-    /** Create a Home Assistant persistent notification if generation is suspended. Default `true` */
+    /** Create a Home Assistant persistent notification while generation is paused. Default `true` */
     notify?: boolean;
 }
 
@@ -169,6 +172,8 @@ export function generateEntityTypes(entities: EntityIdEntry[]) {
 
 const ISSUE_KEY = "entity_types";
 
+const toMs = (d: string | number) => typeof d == "number" ? d : parse_duration(d);
+
 /**
  * Keep the generated entity types in sync with Home Assistant's entities.
  *
@@ -179,43 +184,67 @@ export function syncEntityTypes(plugin: HomeAssistantPlugin, config: EntityTypes
     const notification_id = `typedaemon_entity_types_${instance.id}`;
     const notify = config.notify ?? true;
 
+    const max_count = config.rate_limit?.count ?? 10;
     const window = config.rate_limit?.window ?? "15m";
-    const limiter = new SlidingWindowLimiter(
-        config.rate_limit?.count ?? 3,
-        typeof window == "number" ? window : parse_duration(window),
-    );
+    const counter = new SlidingWindowCounter(toMs(window));
+
+    let pending: EntityIdEntry[] = null;
+    let paused = false;
+    let resume_timer: ReturnType<typeof setTimeout>;
+
+    const callService = (service: string, data: any) => plugin.callService(service, data).catch((ex) => {
+        instance.logMessage("warn", `Failed to call ${service}:`, ex);
+    });
 
     instance.clearIssue(ISSUE_KEY);
-    if (notify) plugin.callService("persistent_notification.dismiss", { notification_id }).catch(() => { });
+    if (notify) callService("persistent_notification.dismiss", { notification_id });
 
-    let initial = true;
+    /** Write the latest entities, unless regenerations are over the rate limit */
+    const flush = async () => {
+        clearTimeout(resume_timer);
+
+        if (counter.count() > max_count) {
+            if (!paused) {
+                paused = true;
+                const message = `Home Assistant entities changed more than ${max_count} times within ${window}; entity type generation (plugin "${instance.id}") is paused until the rate drops`;
+                instance.logMessage("warn", message);
+                instance.raiseIssue(ISSUE_KEY, "warn", message);
+                if (notify) callService("persistent_notification.create", { notification_id, title: "TypeDaemon", message });
+            }
+            resume_timer = setTimeout(flush, counter.timeUntilAtMost(max_count));
+            return;
+        }
+
+        if (paused) {
+            paused = false;
+            instance.logMessage("info", `Entity change rate has dropped; resuming entity type generation`);
+            instance.clearIssue(ISSUE_KEY);
+            if (notify) callService("persistent_notification.dismiss", { notification_id });
+        }
+
+        if (!pending) return;
+        const entities = pending;
+        pending = null;
+        try {
+            await saveGeneratedTypes(instance.hypervisor, `ha_entities.${instance.id}`, generateEntityTypes(entities));
+        } catch (ex) {
+            instance.logMessage("warn", `Failed to write entity types:`, ex);
+        }
+    }
+
     const dispose = reaction(
         () => plugin._synced_store.isInitialized ? collectEntities(plugin, config) : null,
-        async (entities) => {
+        (entities) => {
             if (!entities) return;
-
-            // The first write (on startup) is free; it's repeated regeneration that we limit
-            if (!initial && !limiter.tryAcquire()) {
-                dispose();
-                const message = `Home Assistant entities changed more than ${limiter.count} times within ${window}; entity type generation is suspended until the "${instance.id}" plugin restarts or its config changes`;
-                instance.logMessage("error", message);
-                instance.raiseIssue(ISSUE_KEY, "error", message);
-                if (notify) {
-                    plugin.callService("persistent_notification.create", { notification_id, title: "TypeDaemon", message }).catch((ex) => {
-                        instance.logMessage("warn", `Failed to create notification:`, ex);
-                    });
-                }
-                return;
-            }
-            initial = false;
-
-            try {
-                await saveGeneratedTypes(instance.hypervisor, `ha_entities.${instance.id}`, generateEntityTypes(entities));
-            } catch (ex) {
-                instance.logMessage("warn", `Failed to write entity types:`, ex);
-            }
+            counter.record();
+            pending = entities;
+            flush();
         },
-        { fireImmediately: true, delay: 5_000, equals: comparer.structural },
+        { fireImmediately: true, delay: toMs(config.min_interval ?? "30s"), equals: comparer.structural },
     );
-    return dispose;
+
+    return () => {
+        dispose();
+        clearTimeout(resume_timer);
+    };
 }

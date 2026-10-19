@@ -1,17 +1,30 @@
 
 /**
- * Allow at most `count` events per sliding `window` (ms)
+ * Count events within a sliding `window` (ms)
  */
-export class SlidingWindowLimiter {
-    constructor(readonly count: number, readonly window: number) { }
+export class SlidingWindowCounter {
+    constructor(readonly window: number) { }
 
     private events: number[] = [];
 
-    /** Record an event if the limit allows it. Returns `false` (recording nothing) if the limit has been reached */
-    tryAcquire(now = Date.now()) {
+    private prune(now: number) {
         this.events = this.events.filter(t => t > now - this.window);
-        if (this.events.length >= this.count) return false;
+    }
+
+    record(now = Date.now()) {
+        this.prune(now);
         this.events.push(now);
-        return true;
+    }
+
+    count(now = Date.now()) {
+        this.prune(now);
+        return this.events.length;
+    }
+
+    /** Time (ms) until at most `n` events remain in the window, assuming no new events */
+    timeUntilAtMost(n: number, now = Date.now()) {
+        this.prune(now);
+        if (this.events.length <= n) return 0;
+        return this.events[this.events.length - n - 1] + this.window - now;
     }
 }
