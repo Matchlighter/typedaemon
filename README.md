@@ -44,7 +44,7 @@ Some features (currently just custom Actions) require the TypeDaemon companion i
 2. Restart Home Assistant
 3. Add the TypeDaemon integration via Settings > Devices & Services > Add Integration
 
-Apps can then register Actions callable from HA as `typedaemon.<id>`:
+Apps can then register Actions callable from HA as `typedaemon.<app uuid>_<id>` (names are slugified; pass `app_prefix: false` in the options to register as `typedaemon.<id>` instead - names are then global across apps):
 ```ts
 @ha.action("announce", { description: "Announce a message", fields: { message: { required: true, selector: { text: {} } } } })
 async announce(data: { message: string }) {

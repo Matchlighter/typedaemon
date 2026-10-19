@@ -1,4 +1,5 @@
 const mockApplication = {
+    uuid: "My-App",
     invoke: (fn: Function, ...args: any[]) => fn(...args),
     logClientMessage: jest.fn(),
     cleanups: {
@@ -43,17 +44,26 @@ const call_payload = (data = {}) => ({
 });
 
 describe("ha.action", () => {
-    it("registers the action with HA", () => {
+    it("registers the action with HA, prefixed with the app uuid", () => {
         const { api, plugin } = setup();
         api.action("my_action", { name: "My Action", fields: { x: { selector: { text: {} } } } })(() => { });
 
         expect(plugin._ha_api.subscribeMessage).toHaveBeenCalledWith(expect.any(Function), {
             type: "typedaemon/action/register",
-            service: "my_action",
+            service: "my_app_my_action",
             name: "My Action",
             description: undefined,
             fields: { x: { selector: { text: {} } } },
         }, { resubscribe: true });
+    });
+
+    it("skips the app prefix with app_prefix: false, slugifying the name", () => {
+        const { api, plugin } = setup();
+        api.action("My Äction!", { app_prefix: false })(() => { });
+
+        const message = plugin._ha_api.subscribeMessage.mock.calls[0][1];
+        expect(message.service).toBe("my_action");
+        expect(message).not.toHaveProperty("app_prefix");
     });
 
     it("responds with the handler result", async () => {

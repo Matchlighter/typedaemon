@@ -3,7 +3,7 @@ import { Context, HassEntity, HassEvent, MessageBase, StateChangedEvent } from "
 
 import "@matchlighter/common_library/decorators/20223fills";
 
-import { escapeRegExp } from "../../common/util";
+import { escapeRegExp, slugify } from "../../common/util";
 import { current } from "../../hypervisor/current";
 import { assert_application_context, bind_callback_env, makeApiExport, notePluginAnnotation } from "../base";
 import { callback_or_decorator2 } from "../util";
@@ -36,6 +36,8 @@ export interface ActionField {
 }
 
 export interface ActionOptions {
+    /** If `false`, the action is registered as `typedaemon.<id>` instead of `typedaemon.<app uuid>_<id>`. Default `true` */
+    app_prefix?: boolean;
     name?: string;
     description?: string;
     /** Describes the accepted fields in the HA UI. Not validated by HA. */
@@ -235,10 +237,11 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
     }
 
     /**
-     * Register a custom Home Assistant Action (Service) as `typedaemon.<id>`. The handler is invoked whenever HA calls the action.
+     * Register a custom Home Assistant Action (Service) as `typedaemon.<app uuid>_<id>` (or `typedaemon.<id>` with `app_prefix: false`),
+     * slugified to a valid HA service name. The handler is invoked whenever HA calls the action.
      * If the caller requests response data, the object returned by the handler is passed back to HA. Thrown errors are raised in HA.
      *
-     * Only one handler may be registered for each id across all TypeDaemon connections.
+     * Only one handler may be registered for each service name across all TypeDaemon connections.
      *
      * Requires the TypeDaemon integration (`custom_components/typedaemon`) to be installed in HA
      */
@@ -258,7 +261,7 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
 
         return _sync_subscribe({
             type: "typedaemon/action/register",
-            service: id,
+            service: slugify(options?.app_prefix === false ? id : `${current.application.uuid}_${id}`),
             name: options?.name,
             description: options?.description,
             fields: options?.fields,
