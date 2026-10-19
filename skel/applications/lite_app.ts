@@ -12,6 +12,11 @@ import { test } from "@td"
 
 console.log("APP EXECUTED");
 
+// Exporting a `Config` type gets `config` in `typedaemon_config.ts` type-checked
+export type Config = {
+    some_option: string;
+}
+
 export default class MyApp {
     constructor() {
         console.log("APP CONSTRUCTED")

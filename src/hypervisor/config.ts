@@ -5,7 +5,7 @@ import { TsConfigJson } from "type-fest";
 
 import { merger } from "@matchlighter/common_library/data/config"
 
-import { AppConfiguration } from "./config_app";
+import { AppConfiguration, AppEntryConfiguration } from "./config_app";
 import { convertTypescript } from "../common/util";
 import { parseYaml } from "../common/ha_yaml";
 import { requireFromString } from "./vm";
@@ -62,7 +62,7 @@ export interface Configuration {
 
     plugins?: Record<string, PluginConfiguration>,
 
-    apps: Record<string, AppConfiguration>,
+    apps: Record<string, AppEntryConfiguration>,
 }
 
 export const defaultConfig: Configuration = {

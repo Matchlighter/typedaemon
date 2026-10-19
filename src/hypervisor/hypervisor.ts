@@ -23,7 +23,7 @@ import { Application } from "../runtime/application";
 import { internal_sleep } from "../util";
 import { AppLifecycle, ApplicationInstance } from "./application_instance";
 import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config";
-import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
+import { AppConfigMerger, AppConfiguration, AppEntryConfiguration, defaultAppConfig } from "./config_app";
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
 import { CrossCallStore } from "./cross_call";
 import { current } from "./current";
@@ -132,10 +132,13 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         this.getAndWatchConfigEntry("logging", (v) => this.updateLogConfiguration(v));
         this.getAndWatchConfigEntry("location.timezone", (tz: string) => moment.tz.setDefault(tz || undefined));
 
-        this.getAndWatchConfigEntry("tsconfig", async (v) => {
+        const writeTsconfig = async () => {
             this.logMessage("debug", "Writing generated tsconfig.json");
             await saveGeneratedTsconfig(this)
-        })
+        }
+        this.getAndWatchConfigEntry("tsconfig", writeTsconfig)
+        // App sources feed the generated app registry
+        this.watchConfigEntry("apps", writeTsconfig)
 
         if (this.currentConfig.sentry?.dsn) {
             Sentry.init({
@@ -385,7 +388,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
                     appcfg.watch = { config: false, source: false }
                 }
 
-                cfg.apps[ak] = appcfg;
+                cfg.apps[ak] = appcfg as AppEntryConfiguration;
             }
 
             // console.debug("Loaded Config", cfg)

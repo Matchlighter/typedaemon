@@ -7,7 +7,8 @@ import * as mobx from 'mobx'
 // TypeDaemon uses MobX to make things automatically react when values change
 // Read more about MobX here: https://mobx.js.org/README.html
 
-export default class MyApp extends Application {
+// The type argument to `Application` is used to type-check this app's `config` in `typedaemon_config.ts`
+export default class MyApp extends Application<{ some_option: string }> {
 
     // Make a property automatically persist to disk, surviving restarts
     @persistence.property
