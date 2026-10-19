@@ -8,9 +8,11 @@ import { merger } from "@matchlighter/common_library/data/config";
 import { Configuration } from "../hypervisor/config";
 import { Hypervisor } from "../hypervisor/hypervisor";
 import { TYPE_ALIASES } from "../hypervisor/vm";
-import { TD_DEVELOPER_MODE, TYPEDAEMON_PATH } from "./util";
+import { TD_DEVELOPER_MODE, TYPEDAEMON_PATH, resolveSourceFile } from "./util";
 
 const tsconfigMerger = merger<TsConfigJson>({
+    // Concatenate, so user-provided `include`s extend (rather than replace) the ones we need
+    include: (upper, lower) => [...upper || [], ...lower || []],
     compilerOptions: merger({
         paths: (upper, lower) => {
             const mrg = { ...upper }
@@ -28,17 +30,12 @@ const tsconfigMerger = merger<TsConfigJson>({
 
 const APP_REGISTRY_FILE = "gen.apps.d.ts";
 
-const EXPORTS_CONFIG_TYPE = /^\s*export\s+(?:type|interface|class)\s+Config\b/m;
+const EXPORTS_CONFIG_TYPE = /^\s*export\s+(?:(?:type|interface|class)\s+Config\b|(?:type\s+)?\{[^}]*\bConfig\b[^}]*\})/m;
 
 async function appExportsConfigType(hv: Hypervisor, source: string) {
-    const abs = path.resolve(hv.working_directory, source);
-    for (const file of [abs, path.join(abs, "index.ts")]) {
-        try {
-            if (!(await fs.promises.stat(file)).isFile()) continue;
-            return EXPORTS_CONFIG_TYPE.test(await fs.promises.readFile(file, "utf8"));
-        } catch { }
-    }
-    return false;
+    const file = await resolveSourceFile(path.resolve(hv.working_directory, source));
+    if (!file) return false;
+    return EXPORTS_CONFIG_TYPE.test(await fs.promises.readFile(file, "utf8"));
 }
 
 /**
@@ -47,10 +44,12 @@ async function appExportsConfigType(hv: Hypervisor, source: string) {
  */
 export async function generateAppRegistry(hv: Hypervisor) {
     const entries: string[] = [];
-    const sources = new Set(Object.values(hv.currentConfig.apps || {}).map(a => a?.source).filter(Boolean));
+    // Keyed on the `source` as the user wrote it (`source` itself is rewritten to an absolute path during normalization)
+    const sources = new Set(Object.values(hv.currentConfig.apps || {}).map(a => a?.declared_source).filter(Boolean));
     for (const source of sources) {
-        // Sources are relative to the working directory; the generated file lives one level down in `.typedaemon`
-        const specifier = "../" + path.posix.normalize(source).replace(/\.[cm]?[jt]sx?$/, "");
+        const specifier = path.relative(hv.operations_directory, path.resolve(hv.working_directory, source))
+            .split(path.sep).join("/")
+            .replace(/\.[cm]?[jt]sx?$/, "");
         const mod = `import(${JSON.stringify(specifier)})`;
         // `export type`s aren't visible on `typeof import()`, so reference an explicit `Config` directly
         const type = await appExportsConfigType(hv, source) ? `${mod}.Config` : `AppConfigOf<typeof ${mod}>`;
@@ -66,6 +65,19 @@ export async function generateAppRegistry(hv: Hypervisor) {
         `}`,
         "",
     ].join("\n");
+}
+
+/** Write the app registry, skipping the write (and a TS server reload) if nothing changed */
+export async function saveAppRegistry(hv: Hypervisor) {
+    const registry_file = path.join(hv.operations_directory, APP_REGISTRY_FILE);
+    const registry = await generateAppRegistry(hv);
+    const existing = await fs.promises.readFile(registry_file, "utf8").catch((ex) => {
+        if (ex.code == "ENOENT") return null;
+        throw ex;
+    });
+    if (existing === registry) return;
+    await fse.mkdirp(hv.operations_directory);
+    await fs.promises.writeFile(registry_file, registry);
 }
 
 export async function saveGeneratedTsconfig(hv: Hypervisor) {
@@ -110,9 +122,4 @@ export async function saveGeneratedTsconfig(hv: Hypervisor) {
     await fse.mkdirp(hv.operations_directory);
     await fs.promises.writeFile(path.join(hv.operations_directory, "gen.tsconfig.json"), JSON.stringify(tscfg, null, 4));
 
-    const registry_file = path.join(hv.operations_directory, APP_REGISTRY_FILE);
-    const registry = await generateAppRegistry(hv);
-    // Avoid needless rewrites (and TS server reloads) when apps reload without a source change
-    const existing = await fs.promises.readFile(registry_file, "utf8").catch(() => null);
-    if (existing !== registry) await fs.promises.writeFile(registry_file, registry);
 }

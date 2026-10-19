@@ -6,6 +6,9 @@ import { LogLevel } from "./logging";
 export interface AppConfiguration {
     source: string;
 
+    /** @internal The `source` as written in the config; `source` is replaced by the resolved path during normalization */
+    declared_source?: string;
+
     human_name?: string;
 
     /** Only needed if using named, non-default export */
@@ -43,16 +46,15 @@ export interface AppRegistry {}
 /**
  * Extract the config type of an app module.
  *
- * Prefers the `Config` type exported by the module (the generated registry references it directly, since type aliases
- * aren't visible on `typeof import()`), otherwise infers `C` from a default-exported `Application<C>` subclass, else `any`.
+ * Infers `C` from a default-exported `Application<C>` subclass, else `any`. (A module's exported `Config` type can't be
+ * seen from `typeof import()`, so the generated registry references that directly when present.)
  */
 export type AppConfigOf<M> =
-    M extends { Config: infer C } ? C :
     M extends { default: abstract new (...args: any[]) => Application<infer C> } ? C :
     any;
 
 type AppConfigurationFor<K extends keyof AppRegistry> =
-    Omit<AppConfiguration, "source" | "config"> & {
+    Omit<AppConfiguration, "source" | "declared_source" | "config"> & {
         source: K;
         /** Partial since a config may be built up from defaults and/or overridden at runtime */
         config?: Partial<AppRegistry[K]>;

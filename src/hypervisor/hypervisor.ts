@@ -17,13 +17,13 @@ import { deep_get } from "@matchlighter/common_library/deep/index";
 import { LifecycleHelper } from "../common/lifecycle_helper";
 import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile } from "../common/util";
 
-import { saveGeneratedTsconfig } from "../common/generate_tsconfig";
+import { saveAppRegistry, saveGeneratedTsconfig } from "../common/generate_tsconfig";
 import { Plugin } from "../plugins/base";
 import { Application } from "../runtime/application";
 import { internal_sleep } from "../util";
 import { AppLifecycle, ApplicationInstance } from "./application_instance";
-import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config";
-import { AppConfigMerger, AppConfiguration, AppEntryConfiguration, defaultAppConfig } from "./config_app";
+import { ConfigMerger, Configuration, NormalizedConfiguration, defaultConfig, readConfigFile } from "./config";
+import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
 import { CrossCallStore } from "./cross_call";
 import { current } from "./current";
@@ -59,7 +59,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
 
     protected cleanupTasks = new LifecycleHelper();
 
-    private _currentConfig: Configuration;
+    private _currentConfig: NormalizedConfiguration;
     get currentConfig() {
         return this._currentConfig as DeepReadonly<typeof this._currentConfig>;
     }
@@ -132,13 +132,15 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         this.getAndWatchConfigEntry("logging", (v) => this.updateLogConfiguration(v));
         this.getAndWatchConfigEntry("location.timezone", (tz: string) => moment.tz.setDefault(tz || undefined));
 
-        const writeTsconfig = async () => {
+        this.getAndWatchConfigEntry("tsconfig", async (v) => {
             this.logMessage("debug", "Writing generated tsconfig.json");
             await saveGeneratedTsconfig(this)
-        }
-        this.getAndWatchConfigEntry("tsconfig", writeTsconfig)
-        // App sources feed the generated app registry
-        this.watchConfigEntry("apps", writeTsconfig)
+        })
+
+        this.getAndWatchConfigEntry("apps", async () => {
+            this.logMessage("debug", "Writing generated app registry");
+            await saveAppRegistry(this)
+        })
 
         if (this.currentConfig.sentry?.dsn) {
             Sentry.init({
@@ -379,6 +381,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
                     }
                 }, raw_cfg);
 
+                appcfg.declared_source = raw_cfg.source;
                 const sourcePath = path.resolve(this.working_directory, raw_cfg.source);
                 // TODO Allow sourcePath to be GitHub URL
                 const resolved = await resolveSourceFile(sourcePath);
@@ -388,7 +391,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
                     appcfg.watch = { config: false, source: false }
                 }
 
-                cfg.apps[ak] = appcfg as AppEntryConfiguration;
+                cfg.apps[ak] = appcfg;
             }
 
             // console.debug("Loaded Config", cfg)

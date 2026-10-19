@@ -65,7 +65,12 @@ export interface Configuration {
     apps: Record<string, AppEntryConfiguration>,
 }
 
-export const defaultConfig: Configuration = {
+/** A `Configuration` after the hypervisor has normalized it (app entries have defaults applied and `source` resolved) */
+export type NormalizedConfiguration = Omit<Configuration, "apps"> & {
+    apps: Record<string, AppConfiguration>;
+}
+
+export const defaultConfig: NormalizedConfiguration = {
     daemon: {
         watch: {
             config: true,
@@ -84,7 +89,7 @@ export const defaultConfig: Configuration = {
     apps: {},
 }
 
-export const ConfigMerger = merger<Configuration>({
+export const ConfigMerger = merger<NormalizedConfiguration>({
     daemon: merger({
         watch: merger(),
     }),
