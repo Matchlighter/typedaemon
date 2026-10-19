@@ -28,8 +28,6 @@ const tsconfigMerger = merger<TsConfigJson>({
     }),
 })
 
-const APP_REGISTRY_FILE = "gen.apps.d.ts";
-
 const EXPORTS_CONFIG_TYPE = /^\s*export\s+(?:(?:type|interface|class)\s+Config\b|(?:type\s+)?\{[^}]*\bConfig\b[^}]*\})/m;
 
 async function appExportsConfigType(hv: Hypervisor, source: string) {
@@ -69,17 +67,23 @@ export async function generateAppRegistry(hv: Hypervisor) {
     ].join("\n");
 }
 
-/** Write the app registry, skipping the write (and a TS server reload) if nothing changed */
-export async function saveAppRegistry(hv: Hypervisor) {
-    const registry_file = path.join(hv.operations_directory, APP_REGISTRY_FILE);
-    const registry = await generateAppRegistry(hv);
-    const existing = await fs.promises.readFile(registry_file, "utf8").catch((ex) => {
+/**
+ * Write a generated `.d.ts` (named `gen.<name>.d.ts`) into the operations directory, where the generated tsconfig picks it up.
+ * Skips the write (and a TS server reload) if nothing changed.
+ */
+export async function saveGeneratedTypes(hv: Hypervisor, name: string, content: string) {
+    const file = path.join(hv.operations_directory, `gen.${name}.d.ts`);
+    const existing = await fs.promises.readFile(file, "utf8").catch((ex) => {
         if (ex.code == "ENOENT") return null;
         throw ex;
     });
-    if (existing === registry) return;
+    if (existing === content) return;
     await fse.mkdirp(hv.operations_directory);
-    await fs.promises.writeFile(registry_file, registry);
+    await fs.promises.writeFile(file, content);
+}
+
+export async function saveAppRegistry(hv: Hypervisor) {
+    await saveGeneratedTypes(hv, "apps", await generateAppRegistry(hv));
 }
 
 export async function saveGeneratedTsconfig(hv: Hypervisor) {
@@ -117,8 +121,8 @@ export async function saveGeneratedTsconfig(hv: Hypervisor) {
             "resolveJsonModule": true,
             "paths": paths,
         },
-        // Dot-directories are skipped by default; pull in the app registry and keep the default of including everything else
-        "include": ["../**/*", `./${APP_REGISTRY_FILE}`],
+        // Dot-directories are skipped by default; pull in generated types and keep the default of including everything else
+        "include": ["../**/*", "./gen.*.d.ts"],
     }
     tscfg = tsconfigMerger.mergeConfigs(tscfg, { compilerOptions: { paths: cfg.path_maps || {} } }, cfg.tsconfig || {});
     await fse.mkdirp(hv.operations_directory);
