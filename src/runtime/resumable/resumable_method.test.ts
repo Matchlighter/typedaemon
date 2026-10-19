@@ -26,6 +26,31 @@ export class Worker {
     }
 
     @resumable
+    async forIn(obj) {
+        const seen = [];
+        for (const k in obj) {
+            const v = await Deferred.get("k" + k);
+            seen.push(k + "=" + v);
+        }
+        return this.finish(seen.join(","));
+    }
+
+    @resumable
+    async awaitsReturnThroughFinally() {
+        return this.finish(await this.returnsThroughFinally());
+    }
+
+    @resumable
+    async returnsThroughFinally() {
+        try {
+            return "ret";
+        } finally {
+            await Deferred.get("b");
+            this.events.push("cleanup");
+        }
+    }
+
+    @resumable
     async counter(n) {
         let total = 0;
         for (let i = 0; i < n; i++) {
@@ -231,10 +256,7 @@ describe("@resumable", () => {
             expect(w2.events).toEqual([3]);
         });
 
-        // Regenerator hoists `this.finish` into a temporary (to preserve evaluation order) _before_ the await; the owner
-        //   instance isn't serializable, so the method can't suspend. Needs a transformer-level fix (eg. re-deriving
-        //   such references instead of storing them).
-        it.skip("resumes when the callee of an awaited argument is a method on the owner (`this.m(await x)`)", async () => {
+        it("resumes when the callee of an awaited argument is a method on the owner (`this.m(await x)`)", async () => {
             const w1 = await bootWorker();
             new Deferred("b");
             w1.callsWithAwait();
@@ -244,6 +266,33 @@ describe("@resumable", () => {
             Deferred.get("b").resolve(2);
             await flushMicrotasks();
             expect(w2.events).toEqual([2]);
+        });
+
+        it("resumes `for...in` loops mid-iteration", async () => {
+            const w1 = await bootWorker();
+            new Deferred("ka");
+            new Deferred("kb");
+            Deferred.get("ka").resolve(1);
+            w1.forIn({ a: 0, b: 0 });
+            await flushMicrotasks();
+            await h.shutdown();
+
+            const w2 = await bootWorker();
+            Deferred.get("kb").resolve(2);
+            await flushMicrotasks();
+            expect(w2.events).toEqual(["a=1,b=2"]);
+        });
+
+        it("keeps a pending `return` while suspended inside its `finally`", async () => {
+            const w1 = await bootWorker();
+            new Deferred("b");
+            w1.awaitsReturnThroughFinally();
+            await h.shutdown();
+
+            const w2 = await bootWorker();
+            Deferred.get("b").resolve(null);
+            await flushMicrotasks();
+            expect(w2.events).toEqual(["cleanup", "ret"]);
         });
 
         it("delivers rejections to try/catch/finally after resuming", async () => {

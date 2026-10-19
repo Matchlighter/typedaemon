@@ -51,6 +51,7 @@ ResumablePromise.defineClass<ResumableMethod<any>>({
         Object.assign(executor, {
             ...data.temporaries,
             state: data.state,
+            ...(data.completions && { completions: data.completions }),
             arg: data.arg,
             sent: data.sent,
             actionType: data.actionType,
@@ -134,6 +135,7 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
 
             state: exc.state,
             temporaries: exc.temporaries,
+            completions: exc.completions,
             arg: exc.arg,
             sent: exc.sent,
             actionType: exc.actionType,
@@ -152,7 +154,7 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
     protected can_suspend() {
         if (!super.can_suspend()) return false;
         const exc = this.executor;
-        if (!serializable(exc.state, []) || !serializable(exc.temporaries, [])) return false;
+        if (!serializable(exc.state, []) || !serializable(exc.temporaries, []) || !serializable(exc.completions, [])) return false;
         // TODO: Also check if arg is serializable
         return true;
     }

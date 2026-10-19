@@ -360,6 +360,20 @@ export class Executor<T> {
         }
     }
 
+    /**
+     * Pending completion (`return`/`break`/`throw`...) of each try entry. Part of the execution state: it's what a `finally` block
+     * resumes with after running (eg. a `return` waiting on a `finally` that awaits).
+     */
+    get completions(): { type: string, arg?: any }[] {
+        return this.tryEntries.map(entry => ({ ...entry.completion }));
+    }
+
+    set completions(records) {
+        records.forEach((record, i) => {
+            this.tryEntries[i].completion = { ...record };
+        });
+    }
+
     /** Compiler-generated temporaries (`_context.tN`) - part of the execution state, alongside `state` */
     get temporaries() {
         const temps: Record<string, any> = {};
@@ -373,6 +387,13 @@ export class Executor<T> {
 
     static _wrapped_async = (innerFn, options) => {
         return new Executor(innerFn, options);
+    }
+
+    /** Enumerable keys for `for...in` (own and inherited), in reverse so that the transformed loop can `pop()` them in order */
+    static keys = (object: any): string[] => {
+        const keys: string[] = [];
+        for (const key in Object(object)) keys.push(key);
+        return keys.reverse();
     }
 
     static _awrap = (value) => {

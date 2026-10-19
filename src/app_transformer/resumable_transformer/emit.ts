@@ -541,9 +541,10 @@ export class Emitter {
         head = this.loc();
         after = this.loc();
 
-        let keyIterNextFn = self.makeTempVar();
+        // Remaining keys, as a plain array (not an iterator closure) so that it can be persisted when suspending
+        let keysTmpVar = self.makeTempVar();
         self.emitAssign(
-          keyIterNextFn,
+          keysTmpVar,
           t.callExpression(
             util.runtimeProperty("keys"),
             [self.explodeExpression(path.get("right"))]
@@ -552,26 +553,16 @@ export class Emitter {
 
         self.mark(head);
 
-        let keyInfoTmpVar = self.makeTempVar();
         self.jumpIf(
-          t.memberExpression(
-            t.assignmentExpression(
-              "=",
-              keyInfoTmpVar,
-              t.callExpression(t.cloneDeep(keyIterNextFn), [])
-            ),
-            t.identifier("done"),
-            false
-          ),
+          t.unaryExpression("!", t.memberExpression(t.cloneDeep(keysTmpVar), t.identifier("length"), false)),
           after
         );
 
         self.emitAssign(
           stmt.left,
-          t.memberExpression(
-            t.cloneDeep(keyInfoTmpVar),
-            t.identifier("value"),
-            false
+          t.callExpression(
+            t.memberExpression(t.cloneDeep(keysTmpVar), t.identifier("pop"), false),
+            []
           )
         );
 
@@ -986,13 +977,19 @@ export class Emitter {
             // expression, then we must be careful that the object of the
             // member expression still gets bound to `this` for the call.
 
-            let newObject = self.explodeViaTempVar(
-              // Assign the exploded callee.object expression to a temporary
-              // variable so that we can use it twice without reevaluating it.
-              self.makeTempVar(),
-              calleePath.get("object"),
-              hasLeapingChildren
-            );
+            // `this` (or its `_this` alias) can't change across a yield, so it needs no temporary. Skipping one matters here
+            //   because temporaries are persisted when suspending, and the owner instance isn't serializable.
+            let objectPath = calleePath.get("object");
+            let newObject = (t.isThisExpression(objectPath.node) ||
+              (t.isIdentifier(objectPath.node) && objectPath.scope.getBinding(objectPath.node.name)?.constant))
+              ? objectPath.node
+              : self.explodeViaTempVar(
+                // Assign the exploded callee.object expression to a temporary
+                // variable so that we can use it twice without reevaluating it.
+                self.makeTempVar(),
+                objectPath,
+                hasLeapingChildren
+              );
 
             let newProperty = calleePath.node.computed
               ? self.explodeViaTempVar(null, calleePath.get("property"), hasLeapingChildren)
