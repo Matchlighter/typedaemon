@@ -1537,7 +1537,7 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
-"@matchlighter/common_library@^1.6.14", "@matchlighter/common_library@^1.6.3":
+"@matchlighter/common_library@^1.6.14":
   version "1.6.14"
   resolved "https://registry.yarnpkg.com/@matchlighter/common_library/-/common_library-1.6.14.tgz#149f0d99baa21005ebe94edece1c0d510124836b"
   integrity sha512-k5D9mfcftAOvQlF06+bBPSu62R3h1IAki1NOEC4f6rLWZJEFlroS3U6o0md0DiYeUe1B6T8wxn7/fW2qb3h8Mg==
@@ -1545,6 +1545,17 @@
     classnames "^2.2.6"
     jsonpath "^1.0.2"
     type-fest "^3.6.1"
+    underscore "^1.9.1"
+
+"@matchlighter/common_library@^1.6.37":
+  version "1.6.37"
+  resolved "https://registry.yarnpkg.com/@matchlighter/common_library/-/common_library-1.6.37.tgz#6494b87d8a589d637e9509cb65907f31b739e957"
+  integrity sha512-oMIKMSQ+ZoJGHiCV5nWw5drswQsOdGvSgGbJ1MauMC1heido/YTZ3eijen8wuBxgt8YcZeWyYiaiohNwIxUKaQ==
+  dependencies:
+    classnames "^2.2.6"
+    deep-eql "^5.0.2"
+    jsonpath "^1.0.2"
+    type-fest "^5.1.0"
     underscore "^1.9.1"
 
 "@matchlighter/ha-mobx-store@^0.4.0":
@@ -3046,6 +3057,11 @@ deep-eql@^4.1.3:
   integrity sha512-SUwdGfqdKOwxCPeVYjwSyRpJ7Z+fhpwIAtmCUdZIWZ/YP5R9WAsyuSgpLVDi9bjWoN2LXHNss/dk3urXtdQxGg==
   dependencies:
     type-detect "^4.0.0"
+
+deep-eql@^5.0.2:
+  version "5.0.2"
+  resolved "https://registry.yarnpkg.com/deep-eql/-/deep-eql-5.0.2.tgz#4b756d8d770a9257300825d52a2c2cff99c3a341"
+  integrity sha512-h5k/5U50IJJFpzfL6nO9jaaumfjO/f2NjK/oYB2Djzm4p9L+3T9qWpZqZ2hAbLPuuYq9wrU08WQyBTL5GbPk5Q==
 
 deep-is@~0.1.3:
   version "0.1.4"
@@ -5468,6 +5484,11 @@ synckit@^0.11.8:
   dependencies:
     "@pkgr/core" "^0.2.9"
 
+tagged-tag@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/tagged-tag/-/tagged-tag-1.0.0.tgz#a0b5917c2864cba54841495abfa3f6b13edcf4d6"
+  integrity sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==
+
 test-exclude@^6.0.0:
   version "6.0.0"
   resolved "https://registry.yarnpkg.com/test-exclude/-/test-exclude-6.0.0.tgz#04a8698661d805ea6fa293b6cb9e63ac044ef15e"
@@ -5613,6 +5634,13 @@ type-fest@^4.5.0:
   version "4.26.1"
   resolved "https://registry.yarnpkg.com/type-fest/-/type-fest-4.26.1.tgz#a4a17fa314f976dd3e6d6675ef6c775c16d7955e"
   integrity sha512-yOGpmOAL7CkKe/91I5O3gPICmJNLJ1G4zFYVAsRHg7M64biSnPtRj0WNQt++bRkjYOqjWXrhnUw1utzmVErAdg==
+
+type-fest@^5.1.0:
+  version "5.10.0"
+  resolved "https://registry.yarnpkg.com/type-fest/-/type-fest-5.10.0.tgz#bf0131fdf662889c94c409d37402e364fb2016f7"
+  integrity sha512-NoSdpq/WEiAg5sjmBkmV/hfxv6HJH4NqPNrqjtSO5CwRmpsDfaf4begxW34KdJykH/l1yHtwBWQkCRdoXO8mPA==
+  dependencies:
+    tagged-tag "^1.0.0"
 
 type-is@~1.6.18:
   version "1.6.18"

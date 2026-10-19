@@ -119,12 +119,11 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         }, { tags: ["watcher"] });
     }
 
-    // Per-instance limiter - the `@debounce` decorator shares one limiter across all instances of the class,
-    //   which would cause only the last app depending on a changed file to restart
-    private restartAfterSourceChange = debounce({ timeToStability: 2000, unref: true }, () => {
+    @debounce({ timeToStability: 2000, unref: true })
+    private restartAfterSourceChange() {
         this.logMessage("info", `Source dependency updated. Restarting`)
         this.namespace.reinitializeInstance(this);
-    });
+    }
 
     lifecycle_hooks: Partial<Record<LifecycleHookType, (() => void)[]>> = {};
 
