@@ -1,7 +1,11 @@
-import { comparer, reaction } from "mobx";
+import { comparer, reaction, untracked } from "mobx";
+import parse_duration from "parse-duration";
 
 import { saveGeneratedTypes } from "../../common/generate_tsconfig";
+import { SlidingWindowLimiter } from "../../common/rate_window";
 import { HyperWrapper } from "../../hypervisor/managed_apps";
+import type { HassServiceTarget } from "home-assistant-js-websocket";
+
 import type { HomeAssistantPlugin } from "./plugin";
 
 /**
@@ -18,6 +22,15 @@ export type HassEntityIds = [KnownHassEntityIds] extends [never] ? string : Know
 
 /** Known entity IDs of domain `D` (any `D.*` until entity types have been generated) */
 export type HassEntityIdsOf<D extends string> = [KnownHassEntityIds] extends [never] ? `${D}.${string}` : Extract<KnownHassEntityIds, `${D}.${string}`>;
+
+/** An entity ID; known IDs are suggested, but any string is accepted (eg for entities excluded from generation) */
+export type HassEntityIdLike = HassEntityIds | (string & {});
+
+/** A record keyed by entity ID. Known IDs are suggested (with their generated docs), but any string may be used */
+/** `HassServiceTarget`, with entity IDs suggested */
+export type HassEntityServiceTarget = Omit<HassServiceTarget, "entity_id"> & { entity_id?: HassEntityIdLike | HassEntityIdLike[] };
+
+export type HassEntityRecord<V> = { readonly [K in keyof HassEntityIdRegistry]: V } & { readonly [entity_id: string]: V };
 
 export type HassAlarmControlPanelIds = HassEntityIdsOf<"alarm_control_panel">;
 export type HassAutomationIds = HassEntityIdsOf<"automation">;
@@ -72,36 +85,73 @@ export type HassZoneIds = HassEntityIdsOf<"zone">;
 export interface EntityTypesConfig {
     /** Only include entities with at least one of these labels (by label ID or name) */
     labels?: string[];
+
+    /**
+     * Limit how often types are regenerated. Past the limit, generation is suspended (until the plugin restarts
+     * or its config changes) and an error is raised. Defaults to 3 per 15 minutes.
+     */
+    rate_limit?: {
+        count?: number;
+        /** Duration string (eg `"15m"`) or milliseconds */
+        window?: string | number;
+    };
+
+    /** Create a Home Assistant persistent notification if generation is suspended. Default `true` */
+    notify?: boolean;
 }
 
 interface EntityIdEntry {
     entity_id: string;
-    name?: string;
+    /** JSDoc lines */
+    docs: string[];
+}
+
+function describeEntity(plugin: HomeAssistantPlugin, entity_id: string, reg?: HomeAssistantPlugin["entities"][string]) {
+    // Attributes are read untracked, so that state changes don't trigger a recompute (they're picked up on the next one)
+    const attrs = untracked(() => plugin.state[entity_id]?.attributes) || {};
+    const name = attrs.friendly_name || reg?.name || reg?.original_name;
+
+    const docs: string[] = [];
+    if (name) docs.push(`**${name}**`, "");
+    const details: [string, any][] = [
+        ["Area", reg?.area?.name],
+        ["Device", reg?.device && (reg.device.name_by_user || reg.device.name)],
+        ["Integration", reg?.platform],
+        ["Labels", reg?.labels?.map(l => l.name).join(", ")],
+        ["Device class", attrs.device_class],
+        ["Unit", attrs.unit_of_measurement],
+    ];
+    for (const [k, v] of details) {
+        if (v) docs.push(`- ${k}: ${v}`);
+    }
+    return docs;
 }
 
 /** List the entities to include in the generated types, sorted by entity ID */
 export function collectEntities(plugin: HomeAssistantPlugin, config: EntityTypesConfig): EntityIdEntry[] {
     let entity_ids = Object.values(plugin.state).map(s => s.entity_id);
+    const registry = new Map(Object.values(plugin.entities).map(e => [e.entity_id, e]));
 
     if (config.labels?.length) {
         const wanted = new Set(config.labels);
         const label_ids = new Set(Object.values(plugin.labels).filter(l => wanted.has(l.label_id) || wanted.has(l.name)).map(l => l.label_id));
-        const labelled = new Set(Object.values(plugin.entities).filter(e => e.label_ids?.some(l => label_ids.has(l))).map(e => e.entity_id));
-        entity_ids = entity_ids.filter(id => labelled.has(id));
+        entity_ids = entity_ids.filter(id => registry.get(id)?.label_ids?.some(l => label_ids.has(l)));
     }
 
-    // Names come from the entity registry (rather than state attributes) so that state changes don't trigger a recompute
-    const registry = new Map(Object.values(plugin.entities).map(e => [e.entity_id, e]));
-    return entity_ids.sort().map(entity_id => {
-        const reg = registry.get(entity_id);
-        return { entity_id, name: reg?.name || reg?.original_name };
-    });
+    return entity_ids.sort().map(entity_id => ({
+        entity_id,
+        docs: describeEntity(plugin, entity_id, registry.get(entity_id)),
+    }));
 }
 
 export function generateEntityTypes(entities: EntityIdEntry[]) {
     const lines: string[] = [];
-    for (const { entity_id, name } of entities) {
-        if (name) lines.push(`        /** ${String(name).replaceAll("*/", "*\\/")} */`);
+    for (const { entity_id, docs } of entities) {
+        if (docs.length) {
+            lines.push(`        /**`);
+            for (const d of docs) lines.push(`         * ${String(d).replaceAll("*/", "*\\/")}`.trimEnd());
+            lines.push(`         */`);
+        }
         lines.push(`        ${JSON.stringify(entity_id)}: true;`);
     }
     return [
@@ -117,6 +167,8 @@ export function generateEntityTypes(entities: EntityIdEntry[]) {
     ].join("\n");
 }
 
+const ISSUE_KEY = "entity_types";
+
 /**
  * Keep the generated entity types in sync with Home Assistant's entities.
  *
@@ -124,10 +176,39 @@ export function generateEntityTypes(entities: EntityIdEntry[]) {
  */
 export function syncEntityTypes(plugin: HomeAssistantPlugin, config: EntityTypesConfig) {
     const instance = plugin[HyperWrapper];
-    return reaction(
+    const notification_id = `typedaemon_entity_types_${instance.id}`;
+    const notify = config.notify ?? true;
+
+    const window = config.rate_limit?.window ?? "15m";
+    const limiter = new SlidingWindowLimiter(
+        config.rate_limit?.count ?? 3,
+        typeof window == "number" ? window : parse_duration(window),
+    );
+
+    instance.clearIssue(ISSUE_KEY);
+    if (notify) plugin.callService("persistent_notification.dismiss", { notification_id }).catch(() => { });
+
+    let initial = true;
+    const dispose = reaction(
         () => plugin._synced_store.isInitialized ? collectEntities(plugin, config) : null,
         async (entities) => {
             if (!entities) return;
+
+            // The first write (on startup) is free; it's repeated regeneration that we limit
+            if (!initial && !limiter.tryAcquire()) {
+                dispose();
+                const message = `Home Assistant entities changed more than ${limiter.count} times within ${window}; entity type generation is suspended until the "${instance.id}" plugin restarts or its config changes`;
+                instance.logMessage("error", message);
+                instance.raiseIssue(ISSUE_KEY, "error", message);
+                if (notify) {
+                    plugin.callService("persistent_notification.create", { notification_id, title: "TypeDaemon", message }).catch((ex) => {
+                        instance.logMessage("warn", `Failed to create notification:`, ex);
+                    });
+                }
+                return;
+            }
+            initial = false;
+
             try {
                 await saveGeneratedTypes(instance.hypervisor, `ha_entities.${instance.id}`, generateEntityTypes(entities));
             } catch (ex) {
@@ -136,4 +217,5 @@ export function syncEntityTypes(plugin: HomeAssistantPlugin, config: EntityTypes
         },
         { fireImmediately: true, delay: 5_000, equals: comparer.structural },
     );
+    return dispose;
 }

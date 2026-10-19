@@ -6,7 +6,6 @@ import {
     ERR_HASS_HOST_REQUIRED,
     ERR_INVALID_AUTH,
     ERR_INVALID_HTTPS_TO_HTTP,
-    HassServiceTarget,
     MessageBase,
     createConnection as _createConnection,
     callService,
@@ -25,7 +24,7 @@ import { internal_sleep } from '../../util';
 import { Plugin, get_plugin, handle_client_error } from '../base';
 import { MqttPlugin } from '../mqtt/plugin';
 import { HomeAssistantApi, homeAssistantApi } from './api';
-import { EntityTypesConfig, syncEntityTypes } from './entity_ids';
+import { EntityTypesConfig, HassEntityServiceTarget, syncEntityTypes } from './entity_ids';
 
 // @ts-ignore
 global.WebSocket ||= ws.WebSocket
@@ -156,7 +155,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
         return this._ha_api.sendMessage({ type, ...parameters });
     }
 
-    async callService(serviceStr: string, data: any, target?: HassServiceTarget) {
+    async callService(serviceStr: string, data: any, target?: HassEntityServiceTarget) {
         const [domain, service] = serviceStr.split('.')
         return await callService(this._ha_api, domain, service, data, target);
     }
