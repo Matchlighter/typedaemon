@@ -35,20 +35,39 @@ if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
   root_dir="$(dirname $config_dir)"
   key_file="$(mktemp)"
   socket="$(find_config_path -S .typedaemon/ssh_sock)"
-  proxy_cmd=""
 
-  if [ -x "$(command -v socat)" ]; then
-    proxy_cmd="socat - UNIX-CLIENT:$socket"
-  # elif [ -x "$(command -v nc)" ]; then
-  #   proxy_cmd="nc -U $socket"
-  else
-    socat_dist="$local_bin/socat"
-    if [ -x "$socat_dist" ]; then
-      proxy_cmd="$socat_dist - UNIX-CLIENT:$socket"
+  ssh_args=(-q -o StrictHostKeyChecking=no -i "$key_file")
+  [ -t 0 ] && ssh_args=(-t "${ssh_args[@]}")
+
+  # Direct TCP (eg remote dev) is used when TD_SSH_HOST=host:port is set and the local socket isn't connectable
+  socket_ok=false
+  if [ -S "$socket" ]; then
+    # A stale socket file (container stopped) still exists, so test the connection where possible
+    if [ -x "$(command -v socat)" ]; then
+      socat -u /dev/null UNIX-CONNECT:"$socket" > /dev/null 2>&1 && socket_ok=true
     else
-      echo "socat or netcat must be installed"
-      exit 1
+      socket_ok=true
     fi
+  fi
+
+  if [ -n "$TD_SSH_HOST" ] && ! $socket_ok; then
+    ssh_args+=(-o UserKnownHostsFile=/dev/null -p "${TD_SSH_HOST##*:}" "root@${TD_SSH_HOST%:*}")
+  else
+    if [ -x "$(command -v socat)" ]; then
+      proxy_cmd="socat - UNIX-CLIENT:$socket"
+    # elif [ -x "$(command -v nc)" ]; then
+    #   proxy_cmd="nc -U $socket"
+    else
+      socat_dist="$local_bin/socat"
+      if [ -x "$socat_dist" ]; then
+        proxy_cmd="$socat_dist - UNIX-CLIENT:$socket"
+      else
+        echo "socat or netcat must be installed"
+        exit 1
+      fi
+    fi
+    ssh_args+=(-o ProxyCommand="$proxy_cmd" root@td)
+    ssh-keygen -f "${HOME}/.ssh/known_hosts" -R "td" > /dev/null 2> /dev/null
   fi
 
   # SSH has a lot of bloat for this use case. I wanted to find something simpler, but nothing I could find "just worked" as well at runtime
@@ -58,24 +77,16 @@ if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
 
   mapped_path="$($local_bin/mappath.py "$root_dir" "$PWD")"
 
-  ssh-keygen -f "${HOME}/.ssh/known_hosts" -R "td" > /dev/null 2> /dev/null
-
-  if [ -t 0 ] ; then
-    dasht="-t"
-  fi
-
-  # ssh_base="ssh $dasht -q -o StrictHostKeyChecking=no -i $key_file -o ProxyCommand=\"$proxy_cmd\" root@td "'cd $TYPEDAEMON_CONFIG/'$mapped_path';'
-
   if [ "$1" = "shell" ]; then
-    exec "ssh" $dasht -q -o StrictHostKeyChecking=no -i $key_file -o ProxyCommand="$proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "$SHELL" -l'
+    exec ssh "${ssh_args[@]}" 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "$SHELL" -l'
   elif [ "$1" = "run" ]; then
     >&2 echo "TypeDaemon is configured to run in Docker and cannot be started with 'td run'"
     exit 1
   elif [ "$1" = "exec" ]; then
     shift
-    exec "ssh" $dasht -q -o StrictHostKeyChecking=no -i $key_file -o ProxyCommand="$proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec' "$@"
+    exec ssh "${ssh_args[@]}" 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec' "$@"
   else
-    exec "ssh" $dasht -q -o StrictHostKeyChecking=no -i $key_file -o ProxyCommand="$proxy_cmd" root@td 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "td"' "$@"
+    exec ssh "${ssh_args[@]}" 'cd $TYPEDAEMON_CONFIG/'$mapped_path'; exec "td"' "$@"
   fi
 elif [ "$TD_CONNECTION_MODE" = "DOCKER" ]; then
   exec docker run --rm -it -v $PWD:/config typedaemon td "$@"

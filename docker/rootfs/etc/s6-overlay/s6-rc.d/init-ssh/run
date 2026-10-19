@@ -45,7 +45,9 @@ if [ ! -f "$key_file" ]; then
 fi
 
 cat "$key_file.pub" > "${SSH_AUTHORIZED_KEYS_PATH}"
-chmod 777 "$key_file"
+# Readable only by the owner of the config dir (the host user running `td`)
+chown --reference="$TYPEDAEMON_CONFIG" "$key_file"
+chmod 600 "$key_file"
 mkdir -p /root/.ssh
 cp "${SSH_AUTHORIZED_KEYS_PATH}" "/root/.ssh/authorized_keys"
 
@@ -61,21 +63,19 @@ echo "TD_CONNECTION_MODE=SSH" > "$TYPEDAEMON_CONFIG/.typedaemon/connection_param
 # SFTP access
 # sed -i '/Subsystem sftp/s/^#//g' "${SSH_CONFIG_PATH}"
 
-# Change Port
-sed -i "s/#Port\\ .*/Port\\ 7722/" "${SSH_CONFIG_PATH}"
+# Set (or append, if absent) a directive in sshd_config. Stock sshd_config ships these commented-out
+set_sshd_option() {
+    if grep -qE "^#?[[:space:]]*$1[[:space:]]" "${SSH_CONFIG_PATH}"; then
+        sed -i -E "s|^#?[[:space:]]*$1[[:space:]].*|$1 $2|" "${SSH_CONFIG_PATH}"
+    else
+        echo "$1 $2" >> "${SSH_CONFIG_PATH}"
+    fi
+}
 
-# Allow specified user to log in
-sed -i "s/PermitRootLogin\\ .*/PermitRootLogin\\ yes/" "${SSH_CONFIG_PATH}"
-
-# Enable Agent forwarding
-sed -i "s/AllowAgentForwarding.*/AllowAgentForwarding\\ yes/" "${SSH_CONFIG_PATH}"
-
-# Allow remote port forwarding
-sed -i "s/GatewayPorts.*/GatewayPorts\\ yes/" "${SSH_CONFIG_PATH}"
-
-# Allow TCP forewarding
-sed -i "s/AllowTcpForwarding.*/AllowTcpForwarding\\ yes/" "${SSH_CONFIG_PATH}"
-
-# sshd listens on all interfaces (port 7722) so it can be reached from outside the container.
-# Only key auth is allowed - the authorized key is `.typedaemon/connection_key`
-echo "PasswordAuthentication no" >> "${SSH_CONFIG_PATH}"
+set_sshd_option Port 7722
+set_sshd_option PermitRootLogin yes
+set_sshd_option AllowAgentForwarding yes
+set_sshd_option GatewayPorts yes
+set_sshd_option AllowTcpForwarding yes
+# sshd listens on all interfaces (port 7722), so only key auth is allowed - the authorized key is `.typedaemon/connection_key`
+set_sshd_option PasswordAuthentication no
