@@ -25,7 +25,6 @@ import { internal_sleep } from '../../util';
 import { Plugin, get_plugin, handle_client_error } from '../base';
 import { MqttPlugin } from '../mqtt/plugin';
 import { HomeAssistantApi, homeAssistantApi } from './api';
-import './store_inspection';
 
 // @ts-ignore
 global.WebSocket ||= ws.WebSocket
