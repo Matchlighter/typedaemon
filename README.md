@@ -35,7 +35,12 @@ TypeDaemon runs completely in Docker, but apps/config are expected to be edited 
 
 You can execute an arbitrary command in-container with `./td exec CMD`. You can easily gain an in-container shell with `./td shell`.
 
-The container also runs an SSH server on port `7722` (key auth only, as `root`, using the key at `.typedaemon/connection_key`, which is only readable by the owner of the config dir). `td` normally reaches it through a local unix socket. To connect from another machine (eg VS Code Remote-SSH), publish the port (the Home Assistant add-on has it disabled until you set a host port) and set `TD_SSH_HOST=host:port` in the environment or in your copy of `.typedaemon/connection_params`. `td` uses it whenever the local socket can't be connected to.
+The container also runs an SSH server on port `7722` (key auth only, as `root`, using the key at `.typedaemon/connection_key`, which is only readable by the owner of the config dir). `td` reads `.typedaemon/connection_params` and tries these routes in order, using the first that works:
+1. **Local socket** (`.typedaemon/ssh_sock`) - automatic when `td` runs on the container's host. Needs `socat`.
+2. **Direct TCP** - set `TD_SSH_HOST=host:port` (in the environment or `connection_params`) and publish port `7722` (the Home Assistant add-on has it disabled until you set a host port).
+3. **[tailcat](https://github.com/tailscale/tailcat)** - remote access with no open port. Create an empty `.typedaemon/enable_tailcat` file and restart; TypeDaemon generates a saved key and writes `TD_TAILCAT_ADDR` to `connection_params`. Anyone with that address can reach sshd (which still requires the login key), so treat it as a secret. `td` needs the `tailcat` binary on `PATH` (or in `.typedaemon/bin`).
+
+To use TCP/tailcat from another machine, copy `.typedaemon/connection_params` and `.typedaemon/connection_key` along with the `td` script. TypeDaemon only rewrites `TD_CONNECTION_MODE` and `TD_TAILCAT_ADDR` in `connection_params`; other lines are kept.
 
 ### Syncing the Dev Environment
 TypeDaemon tries to abstract the need for you to learn how JS packaging and NPM work. It does this by generating the appropriate configs and automagically downloading appropriate typings and support files. This process occurs automatically upon first startup and when TypeDaemon detects that it was updated, but you can also manually trigger this by running `./td dev_env`

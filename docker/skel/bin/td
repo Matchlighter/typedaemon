@@ -15,15 +15,6 @@ find_config_file() {
   find_config_path -f "$1"
 }
 
-# TODO Supply a statically-linked socat in .typedaemon/bin
-function findexec() {
-    if [ -x "$(command -v $1)" ]; then
-        echo "$(which "$1")"
-    else
-        echo "$(find_config_file "./typedaemon/bin/$1")"
-    fi
-}
-
 conn_params="$(find_config_file .typedaemon/connection_params)"
 
 source "$conn_params"
@@ -36,39 +27,49 @@ if [ "$TD_CONNECTION_MODE" = "SSH" ]; then
   key_file="$(mktemp)"
   socket="$(find_config_path -S .typedaemon/ssh_sock)"
 
-  ssh_args=(-q -o StrictHostKeyChecking=no -i "$key_file")
+  ssh_args=(-q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$key_file")
   [ -t 0 ] && ssh_args=(-t "${ssh_args[@]}")
 
-  # Direct TCP (eg remote dev) is used when TD_SSH_HOST=host:port is set and the local socket isn't connectable
-  socket_ok=false
-  if [ -S "$socket" ]; then
-    # A stale socket file (container stopped) still exists, so test the connection where possible
-    if [ -x "$(command -v socat)" ]; then
-      socat -u /dev/null UNIX-CONNECT:"$socket" > /dev/null 2>&1 && socket_ok=true
-    else
-      socket_ok=true
-    fi
-  fi
+  # A binary from PATH, else the one TypeDaemon shipped in .typedaemon/bin
+  find_bin() {
+    command -v "$1" || { [ -x "$local_bin/$1" ] && echo "$local_bin/$1"; }
+  }
 
-  if [ -n "$TD_SSH_HOST" ] && ! $socket_ok; then
-    ssh_args+=(-o UserKnownHostsFile=/dev/null -p "${TD_SSH_HOST##*:}" "root@${TD_SSH_HOST%:*}")
-  else
-    if [ -x "$(command -v socat)" ]; then
-      proxy_cmd="socat - UNIX-CLIENT:$socket"
-    # elif [ -x "$(command -v nc)" ]; then
-    #   proxy_cmd="nc -U $socket"
-    else
-      socat_dist="$local_bin/socat"
-      if [ -x "$socat_dist" ]; then
-        proxy_cmd="$socat_dist - UNIX-CLIENT:$socket"
-      else
-        echo "socat or netcat must be installed"
-        exit 1
-      fi
-    fi
-    ssh_args+=(-o ProxyCommand="$proxy_cmd" root@td)
-    ssh-keygen -f "${HOME}/.ssh/known_hosts" -R "td" > /dev/null 2> /dev/null
-  fi
+  # Each `via_*` adds the ssh args needed to reach sshd and succeeds, or fails if that route is unavailable
+  tried=()
+
+  # Local unix socket - the container's host
+  via_socket() {
+    [ -S "$socket" ] || { tried+=("socket (.typedaemon/ssh_sock not found)"); return 1; }
+    local socat; socat="$(find_bin socat)" || { tried+=("socket (socat not installed)"); return 1; }
+    # A stale socket file remains after the container stops, so test the connection
+    "$socat" -u /dev/null UNIX-CONNECT:"$socket" > /dev/null 2>&1 || { tried+=("socket (container not accepting connections)"); return 1; }
+    ssh_args+=(-o ProxyCommand="$socat - UNIX-CLIENT:$socket" root@td)
+  }
+
+  # Direct TCP to a published port 7722 - TD_SSH_HOST=host:port
+  via_tcp() {
+    [ -n "$TD_SSH_HOST" ] || return 1
+    local host="${TD_SSH_HOST%:*}" port="${TD_SSH_HOST##*:}"
+    host="${host#[}"; host="${host%]}"
+    local limit=""; command -v timeout > /dev/null && limit="timeout 3"
+    $limit bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$host" "$port" > /dev/null 2>&1 || { tried+=("tcp $TD_SSH_HOST (unreachable)"); return 1; }
+    ssh_args+=(-p "$port" "root@$host")
+  }
+
+  # tailcat tunnel (no open port) - TD_TAILCAT_ADDR=<tailcat address>
+  via_tailcat() {
+    [ -n "$TD_TAILCAT_ADDR" ] || return 1
+    local tailcat; tailcat="$(find_bin tailcat)" && "$tailcat" --help > /dev/null 2>&1 || { tried+=("tailcat (not installed; see https://github.com/tailscale/tailcat)"); return 1; }
+    ssh_args+=(-o ProxyCommand="$tailcat $TD_TAILCAT_ADDR ${TD_SSH_PORT:-7722}" root@td)
+  }
+
+  via_socket || via_tcp || via_tailcat || {
+    >&2 echo "Unable to connect to TypeDaemon. Tried:"
+    for t in "${tried[@]}"; do >&2 echo "  - $t"; done
+    [ ${#tried[@]} -eq 0 ] && >&2 echo "  (nothing is configured; see $conn_params)"
+    exit 1
+  }
 
   # SSH has a lot of bloat for this use case. I wanted to find something simpler, but nothing I could find "just worked" as well at runtime
 
