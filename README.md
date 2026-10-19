@@ -40,7 +40,8 @@ TypeDaemon tries to abstract the need for you to learn how JS packaging and NPM 
 
 ### Home Assistant Integration
 Some features (currently just custom Actions) require the TypeDaemon companion integration to be installed in Home Assistant:
-1. Copy [`custom_components/typedaemon`](custom_components/typedaemon) to `custom_components/typedaemon` in your HA config directory
+1. Install via [HACS](https://hacs.xyz): HACS > ⋮ > Custom repositories > add `https://github.com/Matchlighter/typedaemon` as type *Integration*, then download *TypeDaemon*.
+   (Manual alternative: copy [`custom_components/typedaemon`](custom_components/typedaemon) to `custom_components/typedaemon` in your HA config directory.)
 2. Restart Home Assistant
 3. Add the TypeDaemon integration via Settings > Devices & Services > Add Integration
 
