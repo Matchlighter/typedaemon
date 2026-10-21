@@ -1,15 +1,5 @@
 // Mock dependencies before importing to avoid circular dependencies
-jest.mock('../../hypervisor/current', () => ({
-    current: {
-        application: {
-            resumableStore: null
-        }
-    }
-}));
-
-jest.mock('../../hypervisor/logging', () => ({
-    logMessage: jest.fn()
-}));
+import "../../../test/helpers/mock_hypervisor";
 
 import { ResumablePromise, SettledPromise, ResumableAllPromise, ResumableAllSettledPromise, PromiseCancelled, CancellableResumablePromise, resumableCallbackFactory } from './resumable_promise';
 

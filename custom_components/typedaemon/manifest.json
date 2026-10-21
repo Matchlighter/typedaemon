@@ -1,0 +1,13 @@
+{
+  "domain": "typedaemon",
+  "name": "TypeDaemon",
+  "codeowners": [
+    "@Matchlighter"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/Matchlighter/typedaemon",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Matchlighter/typedaemon/issues",
+  "version": "0.1.0"
+}

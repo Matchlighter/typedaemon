@@ -35,8 +35,31 @@ TypeDaemon runs completely in Docker, but apps/config are expected to be edited 
 
 You can execute an arbitrary command in-container with `./td exec CMD`. You can easily gain an in-container shell with `./td shell`.
 
+Some other useful commands:
+- `./td repl` - Open a Node REPL inside the running TypeDaemon process. `hypervisor` is available as a global.
+- `./td delete APP` - Remove everything an app left behind (auto-cleaned entities, persistence, logs) after it was removed from the config.
+- `./td clean` - Like `delete`, but for every app that is no longer in the config. Both ask for confirmation unless passed `--yes`.
+- `./td yarn ...` and `./td patch-package ...` - Run `yarn`/`patch-package` in-container in the current directory (eg in an app with its own `package.json`).
+
 ### Syncing the Dev Environment
 TypeDaemon tries to abstract the need for you to learn how JS packaging and NPM work. It does this by generating the appropriate configs and automagically downloading appropriate typings and support files. This process occurs automatically upon first startup and when TypeDaemon detects that it was updated, but you can also manually trigger this by running `./td dev_env`
+
+### Home Assistant Integration
+Some features (currently just custom Actions) require the TypeDaemon companion integration to be installed in Home Assistant:
+1. Install via [HACS](https://hacs.xyz): HACS > ⋮ > Custom repositories > add `https://github.com/Matchlighter/typedaemon` as type *Integration*, then download *TypeDaemon*.
+   (Manual alternative: copy [`custom_components/typedaemon`](custom_components/typedaemon) to `custom_components/typedaemon` in your HA config directory.)
+2. Restart Home Assistant
+3. Add the TypeDaemon integration via Settings > Devices & Services > Add Integration
+
+Apps can then register Actions callable from HA as `typedaemon.<app uuid>_<id>` (names are slugified; pass `app_prefix: false` in the options to register as `typedaemon.<id>` instead - names are then global across apps):
+```ts
+@ha.action("announce", { description: "Announce a message", fields: { message: { required: true, selector: { text: {} } } } })
+async announce(data: { message: string }) {
+    ...
+    // Optionally return an object to be used as the Action's response data
+    return { announced: true };
+}
+```
 
 ## Where thar be Dragons
 
