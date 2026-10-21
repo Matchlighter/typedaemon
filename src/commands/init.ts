@@ -3,10 +3,10 @@ import * as fs from 'fs-extra';
 import { promises as fsp } from 'fs'
 import * as path from "path";
 import * as ejs from "ejs";
-import * as prompts from "prompts";
+import prompts from "prompts";
 import chalk from "chalk";
 
-import { CliError } from "../cli";
+import { CliError } from "../common/cli_helpers";
 import { __package_dir, walk } from "../common/util";
 import { syncDevEnv } from "./dev_env";
 

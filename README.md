@@ -35,6 +35,12 @@ TypeDaemon runs completely in Docker, but apps/config are expected to be edited 
 
 You can execute an arbitrary command in-container with `./td exec CMD`. You can easily gain an in-container shell with `./td shell`.
 
+Some other useful commands:
+- `./td repl` - Open a Node REPL inside the running TypeDaemon process. `hypervisor` is available as a global.
+- `./td delete APP` - Remove everything an app left behind (auto-cleaned entities, persistence, logs) after it was removed from the config.
+- `./td clean` - Like `delete`, but for every app that is no longer in the config. Both ask for confirmation unless passed `--yes`.
+- `./td yarn ...` and `./td patch-package ...` - Run `yarn`/`patch-package` in-container in the current directory (eg in an app with its own `package.json`).
+
 ### Syncing the Dev Environment
 TypeDaemon tries to abstract the need for you to learn how JS packaging and NPM work. It does this by generating the appropriate configs and automagically downloading appropriate typings and support files. This process occurs automatically upon first startup and when TypeDaemon detects that it was updated, but you can also manually trigger this by running `./td dev_env`
 
