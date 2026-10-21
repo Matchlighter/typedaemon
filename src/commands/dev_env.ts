@@ -4,7 +4,7 @@ import * as fse from "fs-extra"
 import * as path from "path";
 import { CommandModule } from "yargs";
 
-import { saveGeneratedTsconfig } from "../common/generate_tsconfig";
+import { saveAppRegistry, saveGeneratedTsconfig } from "../common/generate_tsconfig";
 import { SimpleStore, TD_DEVELOPER_MODE, TD_MODULES_PATH, TD_VERSION, TD_VERSION_PRECISE, __package_dir } from "../common/util";
 import { UtilityHypervisor } from "../hypervisor/hypervisor";
 import { InstallOpts, installDependencies } from "../hypervisor/packages";
@@ -40,6 +40,7 @@ export async function syncDevEnv(wdir: string | UtilityHypervisor) {
 
     console.log("Generating tsconfig.json")
     await saveGeneratedTsconfig(hv);
+    await saveAppRegistry(hv);
 
     console.log("Installing Type Definitions")
     const nmpath = path.join(hv.operations_directory, 'node_modules');

@@ -18,12 +18,12 @@ import { LifecycleHelper } from "../common/lifecycle_helper";
 import { DeepReadonly, fileExists, operationsDirectory, resolveSourceFile, timeoutPromise, watchFile } from "../common/util";
 
 import { controlSocketPath } from "../common/control_socket";
-import { saveGeneratedTsconfig } from "../common/generate_tsconfig";
+import { saveAppRegistry, saveGeneratedTsconfig } from "../common/generate_tsconfig";
 import { Plugin } from "../plugins/base";
 import { Application } from "../runtime/application";
 import { internal_sleep } from "../util";
 import { AppLifecycle, ApplicationInstance } from "./application_instance";
-import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config";
+import { ConfigMerger, Configuration, NormalizedConfiguration, defaultConfig, readConfigFile } from "./config";
 import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
 import { ControlServer } from "./control_server";
@@ -62,7 +62,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
 
     protected cleanupTasks = new LifecycleHelper();
 
-    private _currentConfig: Configuration;
+    private _currentConfig: NormalizedConfiguration;
     get currentConfig() {
         return this._currentConfig as DeepReadonly<typeof this._currentConfig>;
     }
@@ -139,6 +139,11 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         this.getAndWatchConfigEntry("tsconfig", async (v) => {
             this.logMessage("debug", "Writing generated tsconfig.json");
             await saveGeneratedTsconfig(this)
+        })
+
+        this.getAndWatchConfigEntry("apps", async () => {
+            this.logMessage("debug", "Writing generated app registry");
+            await saveAppRegistry(this)
         })
 
         if (this.currentConfig.sentry?.dsn) {
@@ -444,6 +449,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
                     }
                 }, raw_cfg);
 
+                appcfg.declared_source = raw_cfg.source;
                 const sourcePath = path.resolve(this.working_directory, raw_cfg.source);
                 // TODO Allow sourcePath to be GitHub URL
                 const resolved = await resolveSourceFile(sourcePath);

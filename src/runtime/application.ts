@@ -18,7 +18,7 @@ export class Application<C = any> extends BaseInstanceClient<ApplicationInstance
         }
     }
 
-    get config() {
+    get config(): C {
         return this[HyperWrapper].app_config;
     }
 }

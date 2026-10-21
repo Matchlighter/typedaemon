@@ -5,7 +5,7 @@ import { TsConfigJson } from "type-fest";
 
 import { merger } from "@matchlighter/common_library/data/config"
 
-import { AppConfiguration } from "./config_app";
+import { AppConfiguration, AppEntryConfiguration } from "./config_app";
 import { convertTypescript } from "../common/util";
 import { parseYaml } from "../common/ha_yaml";
 import { requireFromString } from "./vm";
@@ -62,10 +62,15 @@ export interface Configuration {
 
     plugins?: Record<string, PluginConfiguration>,
 
-    apps: Record<string, AppConfiguration>,
+    apps: Record<string, AppEntryConfiguration>,
 }
 
-export const defaultConfig: Configuration = {
+/** A `Configuration` after the hypervisor has normalized it (app entries have defaults applied and `source` resolved) */
+export type NormalizedConfiguration = Omit<Configuration, "apps"> & {
+    apps: Record<string, AppConfiguration>;
+}
+
+export const defaultConfig: NormalizedConfiguration = {
     daemon: {
         watch: {
             config: true,
@@ -84,7 +89,7 @@ export const defaultConfig: Configuration = {
     apps: {},
 }
 
-export const ConfigMerger = merger<Configuration>({
+export const ConfigMerger = merger<NormalizedConfiguration>({
     daemon: merger({
         watch: merger(),
     }),

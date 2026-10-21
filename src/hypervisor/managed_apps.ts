@@ -17,6 +17,14 @@ interface LifecycleEvents {
     // stopping: () => void;
     // stopped: () => void;
     lifecycle: (state: AppLifecycle) => void;
+    issues: (issues: ReadonlyMap<string, InstanceIssue>) => void;
+}
+
+/** A standing problem with an instance that needs attention (eg for display in a UI) */
+export interface InstanceIssue {
+    level: "warn" | "error";
+    message: string;
+    since: number;
 }
 
 export const HyperWrapper = Symbol("Hypervisor Application");
@@ -160,6 +168,24 @@ export abstract class BaseInstance<C, A extends BaseInstanceClient<any> = BaseIn
         // this.emit(nstate as any);
     }
     get state() { return this._state }
+
+    private _issues = new Map<string, InstanceIssue>();
+    get issues(): ReadonlyMap<string, InstanceIssue> { return this._issues }
+
+    /** Flag (or update) a standing issue, identified by `key` */
+    raiseIssue(key: string, level: InstanceIssue["level"], message: string) {
+        const existing = this._issues.get(key);
+        if (existing?.level == level && existing.message == message) return;
+        this._issues.set(key, { level, message, since: existing?.since ?? Date.now() });
+        // @ts-ignore
+        this.emit("issues", this._issues);
+    }
+
+    clearIssue(key: string) {
+        if (!this._issues.delete(key)) return;
+        // @ts-ignore
+        this.emit("issues", this._issues);
+    }
 
     protected loggerOptions(): InstanceLogConfig {
         return { tag: '???' }
