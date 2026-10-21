@@ -162,6 +162,12 @@ export function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
+/** Approximates HA's `slugify` - lowercase, with runs of non-alphanumerics collapsed to `_` */
+export function slugify(s: string) {
+    s = s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    return trim(s.replace(/[^a-z0-9]+/g, "_"), "_");
+}
+
 export function trim(s: string, c: string | RegExp) {
     if (c instanceof RegExp) {
         c = c.source;
