@@ -69,10 +69,12 @@ export class ResumableStore {
 
         if (this.tracked_tasks.has(promise)) return;
 
-        const track_promise = promise.finally(() => {
+        const untrack = () => {
             this.tracked_tasks.delete(promise);
             this.checkAllSuspended();
-        }, true);
+        }
+        // NB: Not `finally()` - that re-throws rejections into a Promise nobody handles
+        const track_promise = promise.then(untrack, untrack, true);
 
         this.tracked_tasks.set(promise, {
             resumable: promise,

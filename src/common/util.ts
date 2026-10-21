@@ -67,18 +67,6 @@ export function pojso(value: any) {
     )
 }
 
-export function deep_pojso(value: any) {
-    const proto = Object.getPrototypeOf(value)
-    if (typeof value == "function") return false;
-    if ((typeof value == "object" && !Array.isArray(value)) && proto != null) return false;
-
-    for (let [k, v] of Object.entries(value)) {
-        if (typeof v == 'object' && !deep_pojso(v)) return false;
-    }
-
-    return true;
-}
-
 export function serializable(value: any, serializer_keys: (string | symbol | ((v: any) => boolean))[]) {
     function has_key(obj: any) {
         for (let k of serializer_keys) {
@@ -98,15 +86,16 @@ export function serializable(value: any, serializer_keys: (string | symbol | ((v
         return true;
     }
 
+    if (value === null) return true;
+
     if (typeof value == "object") {
-        const proto = Object.getPrototypeOf(value);
-        if (proto) {
-            return has_key(value);
-        } else {
+        if (pojso(value)) {
             for (let [k, v] of Object.entries(value)) {
                 if (!serializable(v, serializer_keys)) return false;
             }
             return true;
+        } else {
+            return has_key(value);
         }
     }
 

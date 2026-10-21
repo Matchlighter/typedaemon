@@ -16,6 +16,8 @@ const hasOwn = Op.hasOwnProperty;
 
 const ContinueSentinel = Symbol("continue");
 
+const isTemporaryName = (name: string) => name.charAt(0) === "t" && !isNaN(+name.slice(1));
+
 export class Executor<T> {
     constructor(generator, readonly options: ExecutorOptions) {
         this.self = options.self;
@@ -352,19 +354,46 @@ export class Executor<T> {
         }
 
         if (!skipTempReset) {
-            for (const name in this) {
-                // Not sure about the optimal order of these conditions:
-                if (name.charAt(0) === "t" &&
-                    hasOwn.call(this, name) &&
-                    !isNaN(+name.slice(1))) {
-                    this[name] = undefined;
-                }
+            for (const name of Object.keys(this.temporaries)) {
+                this[name] = undefined;
             }
         }
     }
 
+    /**
+     * Pending completion (`return`/`break`/`throw`...) of each try entry. Part of the execution state: it's what a `finally` block
+     * resumes with after running (eg. a `return` waiting on a `finally` that awaits).
+     */
+    get completions(): { type: string, arg?: any }[] {
+        return this.tryEntries.map(entry => ({ ...entry.completion }));
+    }
+
+    set completions(records) {
+        records.forEach((record, i) => {
+            this.tryEntries[i].completion = { ...record };
+        });
+    }
+
+    /** Compiler-generated temporaries (`_context.tN`) - part of the execution state, alongside `state` */
+    get temporaries() {
+        const temps: Record<string, any> = {};
+        for (const name in this) {
+            if (isTemporaryName(name) && hasOwn.call(this, name)) {
+                temps[name] = this[name];
+            }
+        }
+        return temps;
+    }
+
     static _wrapped_async = (innerFn, options) => {
         return new Executor(innerFn, options);
+    }
+
+    /** Enumerable keys for `for...in` (own and inherited), in reverse so that the transformed loop can `pop()` them in order */
+    static keys = (object: any): string[] => {
+        const keys: string[] = [];
+        for (const key in Object(object)) keys.push(key);
+        return keys.reverse();
     }
 
     static _awrap = (value) => {
