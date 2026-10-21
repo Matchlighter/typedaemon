@@ -31,8 +31,12 @@ interface ObjectAction {
     value: any;
 }
 
+/** Marks that the on-disk value of a key is not known (ie. there are unflushed non-SET actions) */
+const UNKNOWN_DISK_VALUE = Symbol("unknown");
+
 interface SetAction {
     action: "SET";
+    /** The value on disk before this SET */
     original_value: any;
 }
 
@@ -73,22 +77,33 @@ export class PersistentStorage {
     }
 
     setValue<T>(key: string, value: T, options: PersistentEntryOptions) {
-        // Short-circuit if the previous SET is being reverted
         const kactions = this.pending_actions[key];
-        if (kactions && kactions.length == 1 && kactions[0].action?.action == "SET" && kactions[0].action.original_value === value) {
-            delete this.pending_actions[key];
-            this.kvstore[key] = value;
-            return;
+
+        let disk_value: any = UNKNOWN_DISK_VALUE;
+        if (!kactions?.length) {
+            disk_value = this.kvstore[key];
+        } else if (kactions.length == 1 && kactions[0].action.action == "SET") {
+            disk_value = kactions[0].action.original_value;
         }
 
-        this.kvstore[key] = value;
+        if (value === undefined) {
+            delete this.kvstore[key];
+        } else {
+            this.kvstore[key] = value;
+        }
+
+        // Short-circuit if the pending SET is being reverted
+        if (kactions?.length && disk_value === value) {
+            delete this.pending_actions[key];
+            return;
+        }
 
         // Clear previous actions - we're overwriting them
         this.pending_actions[key] = [];
 
         this.pushAction(key, options, {
             action: "SET",
-            original_value: this.kvstore[key],
+            original_value: disk_value,
         })
     }
 
@@ -122,23 +137,27 @@ export class PersistentStorage {
     async load() {
         if (!await fileExists(this.file_path)) return;
 
-        let last_error: Error;
+        let corruption: Error;
 
-        await read_lines(this.file_path, {}, (line) => {
-            if (last_error) throw last_error;
-
+        await read_lines(this.file_path, {}, (line, last) => {
             const [cmd, data] = split_once(line, " ");
             try {
                 const pdata = JSON.parse(data);
                 this.execCmd(cmd, pdata);
             } catch (ex) {
-                // Ignore an error if it's the last line
-                last_error = ex;
+                // Ignore an error if it's the last line - it was likely only partially written
+                if (last) return;
+
                 // TODO Behavior?
                 //   Throw and abort starting the application? (Safest data-wise)
                 //   Log and ignore? (Resiliant, but possible data loss)
+                corruption = ex;
+                // NB: Throwing from here would escape line-reader and leave this Promise pending forever
+                return false;
             }
         })
+
+        if (corruption) throw corruption;
     }
 
     private execCmd(cmd: string, pdata: any) {
@@ -150,9 +169,9 @@ export class PersistentStorage {
             this.kvstore = pdata;
         } else if (cmd == "ASPLC") {
             const arr: any[] = this.kvstore[pdata.key] ??= [];
-            let idx = pdata.position ?? -1;
-            if (idx < 0) idx = arr.length - idx + 1;
-            arr.splice(idx, pdata.delete ?? 0, ...pdata.values);
+            // Same semantics as Array.prototype.splice(). Defaults to the end of the array (ie. push/pop)
+            const idx = pdata.position ?? (pdata.delete ? -pdata.delete : arr.length);
+            arr.splice(idx, pdata.delete ?? 0, ...(pdata.values ?? []));
         } else if (cmd == "OSET") {
             const obj: any = this.kvstore[pdata.key] ??= {};
             if (pdata.value === undefined) {
@@ -201,27 +220,25 @@ export class PersistentStorage {
                     this.filehandle = await open(this.file_path, "a");
                 }
 
-                let changed = false;
                 const delkeys = [];
                 const changes = {};
                 const remaining_actions: AnyAction[] = [];
                 for (let [k, actions] of Object.entries(flush_actions)) {
-                    for (let v of actions) {
-                        const action = v.action;
-                        if (action.action == "SET") {
-                            const cv = this.kvstore[k];
-                            if (cv == null) {
-                                delkeys.push(k);
-                            } else {
-                                changed = true;
-                                changes[k] = cv;
-                            }
+                    // A SET is always first (it clears prior actions). It writes the current value, which already
+                    //   includes the effects of any later actions on the key - flushed now or still pending.
+                    if (actions[0]?.action.action == "SET") {
+                        if (k in this.kvstore) {
+                            changes[k] = this.kvstore[k];
                         } else {
-                            remaining_actions.push(action);
+                            delkeys.push(k);
                         }
+                        delete this.pending_actions[k];
+                    } else {
+                        remaining_actions.push(...actions.map(v => v.action));
                     }
                 }
 
+                const changed = Object.keys(changes).length > 0;
                 if (delkeys.length) await this.filehandle.write(`DEL ${JSON.stringify(delkeys)}\n`);
                 if (changed) await this.filehandle.write(`MRG ${JSON.stringify(changes)}\n`);
 
@@ -250,6 +267,8 @@ export class PersistentStorage {
             this.filehandle = null;
             await rename(tmp_file, this.file_path);
 
+            // Everything pending is captured by the full write
+            this.pending_actions = {};
             this.hasBeenModified = false;
         });
     }
@@ -271,7 +290,7 @@ export class PersistentStorage {
                     return;
                 }
                 this.flushToDisk(false);
-            }, Date.now() - this.nextWriteTime)
+            }, this.nextWriteTime - Date.now())
         }
     }
 

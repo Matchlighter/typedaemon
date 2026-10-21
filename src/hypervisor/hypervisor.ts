@@ -15,8 +15,9 @@ import { MultiMap } from "@matchlighter/common_library/data/multimap";
 import { deep_get } from "@matchlighter/common_library/deep/index";
 
 import { LifecycleHelper } from "../common/lifecycle_helper";
-import { DeepReadonly, fileExists, resolveSourceFile, timeoutPromise, watchFile } from "../common/util";
+import { DeepReadonly, fileExists, operationsDirectory, resolveSourceFile, timeoutPromise, watchFile } from "../common/util";
 
+import { controlSocketPath } from "../common/control_socket";
 import { saveGeneratedTsconfig } from "../common/generate_tsconfig";
 import { Plugin } from "../plugins/base";
 import { Application } from "../runtime/application";
@@ -25,12 +26,14 @@ import { AppLifecycle, ApplicationInstance } from "./application_instance";
 import { ConfigMerger, Configuration, defaultConfig, readConfigFile } from "./config";
 import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
+import { ControlServer } from "./control_server";
 import { CrossCallStore } from "./cross_call";
 import { current } from "./current";
 import { ExtendedLoger, LogLevel, ORIGINAL_CONSOLE, createDomainLogger, setFallbackLogger } from "./logging";
 import { AppNamespace } from "./managed_apps";
 import { SharedStorages } from "./persistent_storage";
 import { PluginInstance } from "./plugin_instance";
+import { ReplOptions, startRepl } from "./repl";
 
 export const CurrentHypervisor = new AsyncLocalStorage<Hypervisor>()
 
@@ -55,7 +58,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
     get state() { return this._state }
 
     get working_directory() { return this.options.working_directory }
-    get operations_directory() { return path.resolve(this.working_directory, ".typedaemon") }
+    get operations_directory() { return operationsDirectory(this.working_directory) }
 
     protected cleanupTasks = new LifecycleHelper();
 
@@ -113,6 +116,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
 
     sharedStorages: SharedStorages;
     crossCallStore: CrossCallStore;
+    controlServer: ControlServer;
 
     async start() {
         return await CurrentHypervisor.run(this, () => {
@@ -142,6 +146,8 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
                 dsn: this.currentConfig.sentry.dsn,
             });
         }
+
+        await this.startControlServer();
 
         process.on('SIGINT', async () => {
             if (this.sigint_count == 0) {
@@ -258,6 +264,8 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
 
         this._state = 'shutting_down';
 
+        await this.controlServer?.dispose();
+
         // Shutdown apps
         this.logMessage("info", "Stopping apps");
         await this.appInstances.shutdown();
@@ -318,6 +326,66 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         summarizeInstance: (options) => chalk`{green ${options.export}} from {green ${options.source}}`,
     });
     getApplication(id: string) { return this.appInstances.getInstance(id); }
+
+    get app_environments_directory() { return path.resolve(this.operations_directory, "app_environments") }
+
+    defaultAppOperatingDirectory(id: string) {
+        return path.resolve(this.app_environments_directory, id);
+    }
+
+    /** IDs of apps that left resources behind, but are no longer configured */
+    async findOrphanedApplications() {
+        let entries: fs.Dirent[];
+        try {
+            entries = await fs.promises.readdir(this.app_environments_directory, { withFileTypes: true });
+        } catch (ex) {
+            if (ex.code == "ENOENT") return [];
+            throw ex;
+        }
+        return entries.filter(e => e.isDirectory() && !this.currentConfig.apps?.[e.name]).map(e => e.name);
+    }
+
+    private async assertDestroyable(id: string) {
+        if (!id || path.basename(id) != id || id == "." || id == "..") throw new Error(`Invalid app '${id}'`);
+        if (this.currentConfig.apps?.[id]) throw new Error(`App '${id}' is still configured. Remove it from the config first.`);
+        if (!await fileExists(this.defaultAppOperatingDirectory(id))) throw new Error(`No resources found for app '${id}'`);
+    }
+
+    /** Remove all resources (eg entities, persistence) left behind by an app that is no longer configured */
+    async destroyApplication(id: string) {
+        await this.assertDestroyable(id);
+
+        const { logging } = this.currentConfig;
+        const instance = new ApplicationInstance({ id, hypervisor: this, namespace: this.appInstances }, {
+            ...defaultAppConfig,
+            // The app's own logs are about to be deleted
+            logging: { file: logging.system_file, level: logging.application, system_level: logging.system },
+        });
+
+        this.logMessage("info", `Destroying Application '${id}'`);
+        await instance.destroy_all();
+    }
+
+    private async startControlServer() {
+        const server = this.controlServer = new ControlServer(controlSocketPath(this.working_directory), this.logMessage.bind(this));
+
+        server.handle("repl", (args: ReplOptions, socket) => startRepl(this, socket, args), { stream: true });
+
+        server.handle("apps.destroyable", async ({ ids }: { ids?: string[] } = {}) => {
+            ids ??= await this.findOrphanedApplications();
+            for (let id of ids) await this.assertDestroyable(id);
+            return ids.map(id => ({ id, operating_directory: this.defaultAppOperatingDirectory(id) }));
+        });
+
+        server.handle("apps.destroy", ({ id }: { id: string }) => this.destroyApplication(id));
+
+        try {
+            await server.start();
+        } catch (ex) {
+            // Not critical to running apps - eg Unix socket paths have a short length limit
+            this.logMessage("warn", `Failed to start control socket at ${server.socket_path}. CLI commands that need the Hypervisor will be unavailable:`, ex);
+        }
+    }
 
     private async readAndWatchConfig(file: string) {
         const no_watching = this.options.no_watching;
