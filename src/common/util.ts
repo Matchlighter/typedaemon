@@ -70,6 +70,24 @@ export function pojso(value: any) {
     )
 }
 
+/** Whether `String(value)` would just yield the `[object Tag]` fallback (eg class instances without a `toString`) */
+export function has_default_to_string(value: object) {
+    // Compare results instead of functions so objects from other realms (eg the app sandbox) are handled
+    return String(value) === Object.prototype.toString.call(value);
+}
+
+export function deep_pojso(value: any) {
+    const proto = Object.getPrototypeOf(value)
+    if (typeof value == "function") return false;
+    if ((typeof value == "object" && !Array.isArray(value)) && proto != null) return false;
+
+    for (let [k, v] of Object.entries(value)) {
+        if (typeof v == 'object' && !deep_pojso(v)) return false;
+    }
+
+    return true;
+}
+
 export function serializable(value: any, serializer_keys: (string | symbol | ((v: any) => boolean))[]) {
     function has_key(obj: any) {
         for (let k of serializer_keys) {
