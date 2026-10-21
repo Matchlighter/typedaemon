@@ -116,9 +116,10 @@ export function timeoutPromise<T>(timeout: number, promise: Promise<T>, timeoutA
     return new Promise((accept, reject) => {
         const timer = setTimeout(() => {
             if (timeoutAction) {
-                Promise.resolve(timeoutAction()).then((r) => {
+                // timeoutAction may throw (or reject) to fail the promise with a custom error
+                Promise.resolve().then(timeoutAction).then((r) => {
                     accept(r as any)
-                });
+                }, reject);
             } else {
                 reject(new PromiseTimedout());
             }

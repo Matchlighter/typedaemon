@@ -10,7 +10,7 @@ import { AsyncReturnType } from 'type-fest';
 
 import { debounce } from "@matchlighter/common_library/limit";
 
-import { TYPEDAEMON_PATH, fileExists, trim, watchFile } from '../common/util';
+import { TYPEDAEMON_PATH, fileExists, timeoutPromise, trim, watchFile } from '../common/util';
 import { PluginNotStartedError, flushPluginAnnotations } from '../plugins/base';
 import { Application } from '../runtime/application';
 import { ResumableStore, resumable } from '../runtime/resumable';
@@ -40,6 +40,9 @@ type LifecycleHookType = "started";
 class ShuttingDown extends Error { };
 
 const MessagingHandled = Symbol("MessagingHandled");
+
+/** Max time an Application's `initialize()` may take before startup is considered failed */
+const INITIALIZE_TIMEOUT = 60_000;
 
 export class ApplicationInstance extends BaseInstance<AppConfiguration, Application, {}> {
     get uuid() {
@@ -276,9 +279,12 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
                 // Invoke App initialize method
                 try {
-                    // TODO Timeout or cancel during restart
-                    await this.invoke(() => this.instance.initialize?.());
+                    await timeoutPromise(INITIALIZE_TIMEOUT, Promise.resolve(this.invoke(() => this.instance.initialize?.())), () => {
+                        throw new Error(`initialize() did not complete within ${INITIALIZE_TIMEOUT / 1000}s`);
+                    });
                 } catch (ex) {
+                    // If shutdown began while initialize was pending, don't clobber the stopping/stopped state
+                    this.assert_not_shutdown();
                     this.handle_client_startup_error(ex);
                 }
             } else {
