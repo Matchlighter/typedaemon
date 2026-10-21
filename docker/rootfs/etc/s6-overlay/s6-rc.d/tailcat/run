@@ -1,0 +1,10 @@
+#!/command/with-contenv sh
+# Serves sshd over tailcat when enabled (see init-ssh). Otherwise idles, so s6 does not restart-loop it
+export XDG_CONFIG_HOME="$TYPEDAEMON_CONFIG/.typedaemon/config"
+tailcat_bin="$TYPEDAEMON_MODULE/skel/bin/tailcat"
+
+if ! tailcat_enabled || [ ! -x "$tailcat_bin" ]; then
+    exec sleep infinity
+fi
+
+exec "$tailcat_bin" serve 7722

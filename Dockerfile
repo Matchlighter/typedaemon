@@ -1,5 +1,7 @@
 # ======= Static Binaries ======= #
 FROM alpine:3.20.2 AS static_bin
+ARG TARGETARCH
+ARG TARGETVARIANT
 
 RUN apk --update add build-base bash automake git curl linux-headers openssl-dev
 
@@ -7,6 +9,7 @@ RUN mkdir /build
 ADD docker/static_bin /build
 
 RUN /build/build_socat.sh
+RUN /build/get_tailcat.sh
 
 # ======= TD Package Builder ======= #
 FROM node:25 AS builder
@@ -118,6 +121,7 @@ ENTRYPOINT [ "/init" ]
 COPY ./docker/rootfs /
 
 RUN mkdir /var/run/sshd
+EXPOSE 7722
 
 WORKDIR /opt/typedaemon
 
