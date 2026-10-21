@@ -6,7 +6,6 @@ import {
     ERR_HASS_HOST_REQUIRED,
     ERR_INVALID_AUTH,
     ERR_INVALID_HTTPS_TO_HTTP,
-    HassServiceTarget,
     MessageBase,
     createConnection as _createConnection,
     callService,
@@ -25,6 +24,7 @@ import { internal_sleep } from '../../util';
 import { Plugin, get_plugin, handle_client_error } from '../base';
 import { MqttPlugin } from '../mqtt/plugin';
 import { HomeAssistantApi, homeAssistantApi } from './api';
+import { EntityTypesConfig, HassEntityServiceTarget, syncEntityTypes } from './entity_ids';
 
 // @ts-ignore
 global.WebSocket ||= ws.WebSocket
@@ -115,6 +115,12 @@ export interface HomeAssistantPluginConfig {
     url: string;
     access_token: string;
     mqtt_plugin?: string;
+
+    /**
+     * Generate types of the entity IDs in Home Assistant (`HassEntityIds`, `HassSensorIds`, ...).
+     * Enabled (for all entities) by default; set to `false` to disable.
+     */
+    entity_types?: EntityTypesConfig | false;
 }
 
 export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
@@ -125,8 +131,17 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     }
 
     async shutdown() {
+        this.stopEntityTypes?.();
         this._ha_api?.close();
         clearInterval(this.pingInterval);
+    }
+
+    private stopEntityTypes: () => void;
+    private startEntityTypes() {
+        this.stopEntityTypes?.();
+        this.stopEntityTypes = null;
+        if (this.config.entity_types === false) return;
+        this.stopEntityTypes = syncEntityTypes(this, this.config.entity_types || {});
     }
 
     async request(type: string, parameters: any) {
@@ -140,7 +155,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
         return this._ha_api.sendMessage({ type, ...parameters });
     }
 
-    async callService(serviceStr: string, data: any, target?: HassServiceTarget) {
+    async callService(serviceStr: string, data: any, target?: HassEntityServiceTarget) {
         const [domain, service] = serviceStr.split('.')
         return await callService(this._ha_api, domain, service, data, target);
     }
@@ -232,6 +247,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
 
         this._synced_store = new HAMobXStore(this._ha_api);
         this._synced_store.enableEntityIndex();
+        this.startEntityTypes();
 
         this._ha_api.subscribeMessage(() => {
             lastEvent = Date.now();
@@ -252,6 +268,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     }
 
     configuration_updated(new_config: HomeAssistantPluginConfig, old_config: HomeAssistantPluginConfig) {
+        if (this._synced_store) this.startEntityTypes();
         if (this._ha_api) {
             this._ha_api.options.auth = createLongLivedTokenAuth(this.config.url, this.config.access_token);
             this._ha_api.reconnect();

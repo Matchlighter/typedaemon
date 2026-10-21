@@ -10,6 +10,7 @@ import { callback_or_decorator2 } from "../util";
 import { _entitySubApi } from "./api_entities";
 import { TDDevice } from "./entity_api";
 import { domain_entities } from "./entity_api/domains";
+import type { HassEntityIdLike, HassEntityRecord } from "./entity_ids";
 import { EntityClassOptions } from "./entity_api/domains/base";
 import { HomeAssistantPlugin } from "./plugin";
 
@@ -131,7 +132,7 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
         })
     });
 
-    const subscribe_state = callback_or_decorator2((f: (new_state: HassEntity, old_state: HassEntity, entity_id: string) => void, entity: string | string[] | RegExp) => {
+    const subscribe_state = callback_or_decorator2((f: (new_state: HassEntity, old_state: HassEntity, entity_id: string) => void, entity: HassEntityIdLike | HassEntityIdLike[] | RegExp) => {
         f = bind_callback_env(f);
 
         // TODO: Support labels
@@ -231,9 +232,9 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
 
         get hass_config() { return _plugin().ha_config },
 
-        get states() { return _plugin().state },
+        get states(): HassEntityRecord<HomeAssistantPlugin["state"][string]> { return _plugin().state },
 
-        get entities() { return _plugin().entities },
+        get entities(): HassEntityRecord<HomeAssistantPlugin["entities"][string]> { return _plugin().entities },
         get devices() { return _plugin().devices },
         get floors() { return _plugin().floors },
         get areas() { return _plugin().areas },
