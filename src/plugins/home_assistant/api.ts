@@ -9,6 +9,7 @@ import { assert_application_context, bind_callback_env, makeApiExport, notePlugi
 import { callback_or_decorator2 } from "../util";
 import { _entitySubApi } from "./api_entities";
 import { TDDevice } from "./entity_api";
+import { EventDataFilter, matchEventData } from "./event_filter";
 import { domain_entities } from "./entity_api/domains";
 import { EntityClassOptions } from "./entity_api/domains/base";
 import { HomeAssistantPlugin } from "./plugin";
@@ -144,7 +145,17 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
         return executor;
     }
 
-    const subscribe_events = callback_or_decorator2((f: (event: HassEvent) => void, event_type: string | string[]) => {
+    /**
+     * Subscribe to Home Assistant bus events (eg `zha_event`, `deconz_event`, `call_service`, custom events).
+     *
+     * Optionally filter by `event.data` - every key in `data` must strictly equal the event's value:
+     *
+     * ```ts
+     * @ha.subscribe_events("zha_event", { device_id: "abc123", command: "on" })
+     * remote_on(event: HassEvent) { }
+     * ```
+     */
+    const subscribe_events = callback_or_decorator2((f: (event: HassEvent) => void, event_type: string | string[], data?: EventDataFilter) => {
         f = bind_callback_env(f);
 
         if (!Array.isArray(event_type)) event_type = [event_type];
@@ -153,7 +164,7 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
         // TODO Should we have HA filter the event_type, or do it in the callback?
         //   If we do it in the callback, we end up just using the cached/global subscription instead of creating a second
         return _sync_subscribe({ type: "subscribe_events" }, (evt: HassEvent) => {
-            if (event_types_set.has(evt.event_type) || event_types_set.has('*')) {
+            if ((event_types_set.has(evt.event_type) || event_types_set.has('*')) && matchEventData(data, evt.data)) {
                 f(evt);
             }
         })
@@ -350,6 +361,7 @@ export type HomeAssistantApi = ReturnType<typeof homeAssistantApi>;
 // TODO Re-Export types
 export type { HassEntities, HassEntity, HassEvent, HassService, HassServiceTarget } from "home-assistant-js-websocket";
 export type { HassBoolean } from "./entity_api/input";
+export type { EventDataFilter } from "./event_filter";
 
 export type { EntityClass, EntityClassConstructor, EntityClassOptions } from "./entity_api/domains/base";
 export type EntityDomain = keyof typeof domain_entities;
