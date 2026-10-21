@@ -4,6 +4,9 @@ import * as path from "path";
 import { TD_MODULES_PATH } from "../common/util";
 import { LogLevel, logMessage } from "./logging";
 
+export const YARN_BIN = "yarn";
+export const PATCH_PACKAGE_BIN = path.join(TD_MODULES_PATH, ".bin", "patch-package");
+
 export interface InstallOpts {
     dir: string;
     lockfile?: boolean;
@@ -38,7 +41,7 @@ export async function installDependencies({ dir, ...opts }: InstallOpts, depende
     }
 
     await handle_subproc(
-        execa('yarn', ['install', ...flags], {
+        execa(YARN_BIN, ['install', ...flags], {
             cwd: dir,
             env: {
                 NODE_ENV: "development",
@@ -54,7 +57,7 @@ export async function installDependencies({ dir, ...opts }: InstallOpts, depende
     logMessage("info", "Patching packages")
 
     await handle_subproc(
-        execa(path.join(TD_MODULES_PATH, '.bin', `patch-package`), [], {
+        execa(PATCH_PACKAGE_BIN, [], {
             cwd: dir,
         }),
         {

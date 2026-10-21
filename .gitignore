@@ -40,3 +40,4 @@ TAGS
 dist
 test_setup
 experiments
+__pycache__/

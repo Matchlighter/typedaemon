@@ -10,7 +10,7 @@ import { AsyncReturnType } from 'type-fest';
 
 import { debounce } from "@matchlighter/common_library/limit";
 
-import { TYPEDAEMON_PATH, fileExists, trim, watchFile } from '../common/util';
+import { TYPEDAEMON_PATH, fileExists, timeoutPromise, trim, watchFile } from '../common/util';
 import { PluginNotStartedError, flushPluginAnnotations } from '../plugins/base';
 import { Application } from '../runtime/application';
 import { ResumableStore, resumable } from '../runtime/resumable';
@@ -40,6 +40,9 @@ type LifecycleHookType = "started";
 class ShuttingDown extends Error { };
 
 const MessagingHandled = Symbol("MessagingHandled");
+
+/** Max time an Application's `initialize()` may take before startup is considered failed */
+const INITIALIZE_TIMEOUT = 60_000;
 
 export class ApplicationInstance extends BaseInstance<AppConfiguration, Application, {}> {
     get uuid() {
@@ -180,11 +183,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             // Watch the main entrypoint
             this.markFileDependency(this.entrypoint);
 
-            // Load PersistentStorage
-            this.logMessage("debug", `Loading PersitentStorage`);
-            this.persistedStorage = new PersistentStorage(path.join(this.operating_directory, ".persistence.jkv"));
-            await this.persistedStorage.load();
-            this.cleanups.append(() => this.persistedStorage.dispose());
+            await this.loadPersistedStorage();
 
             //#region Package Installation
             const moduleSource = (await fs.promises.readFile(this.entrypoint)).toString();
@@ -280,9 +279,12 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
                 // Invoke App initialize method
                 try {
-                    // TODO Timeout or cancel during restart
-                    await this.invoke(() => this.instance.initialize?.());
+                    await timeoutPromise(INITIALIZE_TIMEOUT, Promise.resolve(this.invoke(() => this.instance.initialize?.())), () => {
+                        throw new Error(`initialize() did not complete within ${INITIALIZE_TIMEOUT / 1000}s`);
+                    });
                 } catch (ex) {
+                    // If shutdown began while initialize was pending, don't clobber the stopping/stopped state
+                    this.assert_not_shutdown();
                     this.handle_client_startup_error(ex);
                 }
             } else {
@@ -339,17 +341,38 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         }
     }
 
-    /** Cleanup all traces of the application */
+    private async loadPersistedStorage() {
+        this.logMessage("debug", `Loading PersistentStorage`);
+        this.persistedStorage = new PersistentStorage(path.join(this.operating_directory, ".persistence.jkv"));
+        await this.persistedStorage.load();
+        this.cleanups.append(() => this.persistedStorage.dispose());
+    }
+
+    /**
+     * Cleanup all traces of the application. The instance must not have been started.
+     *
+     * The app's own logs are deleted too, so the instance should be configured to log elsewhere (eg the Hypervisor log).
+     */
     async destroy_all() {
-        // TODO We may want to redirect all logs from this method to the Hypervisor so that the deletion logs don't immediately get deleted
-        if (!this.destroyerStore) {
-            if (!await exists(this.operating_directory)) return;
+        if (this.state != "initializing") throw new Error(`Cannot destroy an application that has been started`);
+        if (!await exists(this.operating_directory)) return;
+
+        try {
+            await this.loadPersistedStorage();
+
             this.destroyerStore = new DestroyerStore(this);
             await this.destroyerStore.load();
+            this.cleanups.append(() => this.destroyerStore.dispose());
+
+            await this.invoke(async () => {
+                await this.destroyerStore.destroyApplication();
+            })
+        } finally {
+            // Release anything acquired by the destroyers (eg MQTT connections) and flush storage before deleting it
+            await this._shutdown();
         }
-        await this.invoke(async () => {
-            await this.destroyerStore.destroyApplication();
-        })
+
+        await fs.promises.rm(this.operating_directory, { recursive: true, force: true });
     }
 
     private generateOpPackageJson({ dependencies }) {
@@ -399,7 +422,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         //     return path.dirname(this.entrypoint);
         // }
 
-        return path.resolve(this.hypervisor.operations_directory, "app_environments", this.id);
+        return this.hypervisor.defaultAppOperatingDirectory(this.id);
     }
 
     get source_directory() {

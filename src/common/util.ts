@@ -20,6 +20,9 @@ export const TD_IMAGE_CHANNEL = TD_PACKAGE_JSON.image_channel;
 
 export const TD_VERSION_PRECISE = `${TD_IMAGE_CHANNEL || "local"}-${TD_IMAGE_VERSION || TD_VERSION}`;
 
+/** Directory where TypeDaemon keeps its internal state for a given working directory */
+export const operationsDirectory = (working_directory: string) => path.resolve(working_directory, ".typedaemon");
+
 // Deep ReadOnly
 export type DeepReadonly<T> =
     T extends (infer R)[] ? DeepReadonlyArray<R> :
@@ -67,18 +70,6 @@ export function pojso(value: any) {
     )
 }
 
-export function deep_pojso(value: any) {
-    const proto = Object.getPrototypeOf(value)
-    if (typeof value == "function") return false;
-    if ((typeof value == "object" && !Array.isArray(value)) && proto != null) return false;
-
-    for (let [k, v] of Object.entries(value)) {
-        if (typeof v == 'object' && !deep_pojso(v)) return false;
-    }
-
-    return true;
-}
-
 export function serializable(value: any, serializer_keys: (string | symbol | ((v: any) => boolean))[]) {
     function has_key(obj: any) {
         for (let k of serializer_keys) {
@@ -98,15 +89,16 @@ export function serializable(value: any, serializer_keys: (string | symbol | ((v
         return true;
     }
 
+    if (value === null) return true;
+
     if (typeof value == "object") {
-        const proto = Object.getPrototypeOf(value);
-        if (proto) {
-            return has_key(value);
-        } else {
+        if (pojso(value)) {
             for (let [k, v] of Object.entries(value)) {
                 if (!serializable(v, serializer_keys)) return false;
             }
             return true;
+        } else {
+            return has_key(value);
         }
     }
 
@@ -124,9 +116,10 @@ export function timeoutPromise<T>(timeout: number, promise: Promise<T>, timeoutA
     return new Promise((accept, reject) => {
         const timer = setTimeout(() => {
             if (timeoutAction) {
-                Promise.resolve(timeoutAction()).then((r) => {
+                // timeoutAction may throw (or reject) to fail the promise with a custom error
+                Promise.resolve().then(timeoutAction).then((r) => {
                     accept(r as any)
-                });
+                }, reject);
             } else {
                 reject(new PromiseTimedout());
             }
@@ -168,6 +161,12 @@ export const fileExists = async (file: string) => {
 
 export function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
+}
+
+/** Approximates HA's `slugify` - lowercase, with runs of non-alphanumerics collapsed to `_` */
+export function slugify(s: string) {
+    s = s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    return trim(s.replace(/[^a-z0-9]+/g, "_"), "_");
 }
 
 export function trim(s: string, c: string | RegExp) {

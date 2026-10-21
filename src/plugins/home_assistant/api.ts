@@ -1,14 +1,15 @@
 
-import { HassEntity, HassEvent, MessageBase, StateChangedEvent } from "home-assistant-js-websocket";
+import { Context, HassEntity, HassEvent, MessageBase, StateChangedEvent } from "home-assistant-js-websocket";
 
 import "@matchlighter/common_library/decorators/20223fills";
 
-import { escapeRegExp } from "../../common/util";
+import { escapeRegExp, slugify } from "../../common/util";
 import { current } from "../../hypervisor/current";
 import { assert_application_context, bind_callback_env, makeApiExport, notePluginAnnotation } from "../base";
 import { callback_or_decorator2 } from "../util";
 import { _entitySubApi } from "./api_entities";
 import { TDDevice } from "./entity_api";
+import { EventDataFilter, matchEventData } from "./event_filter";
 import { domain_entities } from "./entity_api/domains";
 import type { HassEntityIdLike, HassEntityRecord } from "./entity_ids";
 import { EntityClassOptions } from "./entity_api/domains/base";
@@ -25,6 +26,34 @@ type WebhookPayload<T = any> = {
     headers: Record<string, string>,
     params: Record<string, string>,
 }
+
+export interface ActionField {
+    name?: string;
+    description?: string;
+    required?: boolean;
+    example?: any;
+    default?: any;
+    /** An HA selector config, eg `{ text: {} }` or `{ entity: { domain: "light" } }` */
+    selector?: Record<string, any>;
+}
+
+export interface ActionOptions {
+    /** If `false`, the action is registered as `typedaemon.<id>` instead of `typedaemon.<app uuid>_<id>`. Default `true` */
+    app_prefix?: boolean;
+    name?: string;
+    description?: string;
+    /** Describes the accepted fields in the HA UI. Not validated by HA. */
+    fields?: Record<string, ActionField>;
+}
+
+export interface ActionCall<T = any> {
+    data: T;
+    context: Context;
+    /** Whether the caller requested response data */
+    return_response: boolean;
+}
+
+type ActionResponse = Record<string, any> | void;
 
 export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
     const _plugin = () => plugin_instace;
@@ -117,7 +146,17 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
         return executor;
     }
 
-    const subscribe_events = callback_or_decorator2((f: (event: HassEvent) => void, event_type: string | string[]) => {
+    /**
+     * Subscribe to Home Assistant bus events (eg `zha_event`, `deconz_event`, `call_service`, custom events).
+     *
+     * Optionally filter by `event.data` - every key in `data` must strictly equal the event's value:
+     *
+     * ```ts
+     * @ha.subscribe_events("zha_event", { device_id: "abc123", command: "on" })
+     * remote_on(event: HassEvent) { }
+     * ```
+     */
+    const subscribe_events = callback_or_decorator2((f: (event: HassEvent) => void, event_type: string | string[], data?: EventDataFilter) => {
         f = bind_callback_env(f);
 
         if (!Array.isArray(event_type)) event_type = [event_type];
@@ -126,7 +165,7 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
         // TODO Should we have HA filter the event_type, or do it in the callback?
         //   If we do it in the callback, we end up just using the cached/global subscription instead of creating a second
         return _sync_subscribe({ type: "subscribe_events" }, (evt: HassEvent) => {
-            if (event_types_set.has(evt.event_type) || event_types_set.has('*')) {
+            if ((event_types_set.has(evt.event_type) || event_types_set.has('*')) && matchEventData(data, evt.data)) {
                 f(evt);
             }
         })
@@ -209,6 +248,38 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
         return webhook_executor;
     }
 
+    /**
+     * Register a custom Home Assistant Action (Service) as `typedaemon.<app uuid>_<id>` (or `typedaemon.<id>` with `app_prefix: false`),
+     * slugified to a valid HA service name. The handler is invoked whenever HA calls the action.
+     * If the caller requests response data, the object returned by the handler is passed back to HA. Thrown errors are raised in HA.
+     *
+     * Only one handler may be registered for each service name across all TypeDaemon connections.
+     *
+     * Requires the TypeDaemon integration (`custom_components/typedaemon`) to be installed in HA
+     */
+    const action = callback_or_decorator2((f: (data: any, call: ActionCall) => ActionResponse | Promise<ActionResponse>, id: string, options?: ActionOptions) => {
+        type ActionCallMessage = ActionCall & { call_id: string };
+
+        const handle_call = bind_callback_env(async ({ call_id, ...call }: ActionCallMessage) => {
+            const pl = _plugin();
+            try {
+                const response = await f(call.data, call);
+                await pl.request("typedaemon/action/response", { call_id, response: response || null });
+            } catch (ex) {
+                await pl.request("typedaemon/action/response", { call_id, error: String(ex?.message ?? ex) });
+                throw ex;
+            }
+        });
+
+        return _sync_subscribe({
+            type: "typedaemon/action/register",
+            service: slugify(options?.app_prefix === false ? id : `${current.application.uuid}_${id}`),
+            name: options?.name,
+            description: options?.description,
+            fields: options?.fields,
+        }, handle_call)
+    });
+
     const _mqttApi = () => _plugin().mqttApi();
 
     return {
@@ -248,6 +319,7 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
         subscribe_events,
         subscribe_state,
         webhook,
+        action,
 
         mqtt: {
             get api() { return _mqttApi() },
@@ -290,6 +362,7 @@ export type HomeAssistantApi = ReturnType<typeof homeAssistantApi>;
 // TODO Re-Export types
 export type { HassEntities, HassEntity, HassEvent, HassService, HassServiceTarget } from "home-assistant-js-websocket";
 export type { HassBoolean } from "./entity_api/input";
+export type { EventDataFilter } from "./event_filter";
 
 export type { EntityClass, EntityClassConstructor, EntityClassOptions } from "./entity_api/domains/base";
 export type EntityDomain = keyof typeof domain_entities;

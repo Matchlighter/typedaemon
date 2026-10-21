@@ -1,5 +1,5 @@
 
-import type { HassEntity } from 'home-assistant-js-websocket'
+import type { HassEntity, HassEvent } from 'home-assistant-js-websocket'
 
 import { Application, get_app, ha, mqtt, persistence, resumable, schedule, sleep, lifecycle, get_plugin, current } from "@td"
 import * as mobx from 'mobx'
@@ -64,6 +64,10 @@ export default class MyApp extends Application<{ some_option: string }> {
     // Run some logic when a Home Assistant entity changes
     @ha.subscribe_state(["binary_sensor.front_door", "binary_sensor.back_door", "binary_sensor.garage_side_door"])
     handle_door_state(new_state: HassEntity, old_state, entity: string) { }
+
+    // Run some logic when a Home Assistant event fires (eg a remote button press), optionally filtered by `event.data`
+    @ha.subscribe_events("zha_event", { device_id: "<device_id>", command: "on" })
+    handle_remote_on(event: HassEvent) { }
 
     // Do something everyday at 4:30AM (Hover over the second `schedule` to see more accepted date formats)
     @schedule.schedule("4:30 AM")
