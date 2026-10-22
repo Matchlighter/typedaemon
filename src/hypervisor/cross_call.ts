@@ -391,7 +391,7 @@ class CrossCallPromise extends ResumablePromise<any> {
         return super.resolve(arg)
     }
     reject(arg: any): void {
-        return super.resolve(arg)
+        return super.reject(arg)
     }
 
     protected do_unsuspend() {
