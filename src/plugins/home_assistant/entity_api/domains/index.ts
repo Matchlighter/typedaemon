@@ -2,6 +2,7 @@
 import { TDBinarySensor } from "./binary_sensor";
 import { TDButton } from "./button";
 import { TDCamera } from "./camera";
+import { TDCover } from "./cover";
 import { TDCustomEntity } from "./custom";
 import { TDDeviceTracker } from "./device_tracker";
 import { TDDeviceTrigger } from "./device_trigger";
@@ -22,6 +23,7 @@ export const domain_entities = {
     binary_sensor: TDBinarySensor,
     button: TDButton,
     camera: TDCamera,
+    cover: TDCover,
     custom: TDCustomEntity,
     device_tracker: TDDeviceTracker,
     device_trigger: TDDeviceTrigger,
