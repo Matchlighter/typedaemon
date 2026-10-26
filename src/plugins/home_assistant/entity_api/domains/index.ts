@@ -16,6 +16,7 @@ import { TDSensor } from "./sensor";
 import { TDSwitch } from "./switch";
 import { TDTag } from "./tag";
 import { TDText } from "./text";
+import { TDUpdate } from "./update";
 
 export const domain_entities = {
     binary_sensor: TDBinarySensor,
@@ -35,4 +36,5 @@ export const domain_entities = {
     switch: TDSwitch,
     tag: TDTag,
     text: TDText,
+    update: TDUpdate,
 }
