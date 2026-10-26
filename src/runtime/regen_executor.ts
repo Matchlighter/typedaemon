@@ -78,6 +78,13 @@ export class Executor<T> {
             reason = new PromiseCancelled(reason);
         }
 
+        // Never started (eg. queued): there is no step to deliver the error to, so settle directly.
+        if (!this._started && !this.done) {
+            this.done = true;
+            this.on_completed?.(false, reason);
+            return;
+        }
+
         this.injectError(reason);
 
         if (this.pending_promise && this.pending_promise.cancel) {
