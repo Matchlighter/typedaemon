@@ -114,7 +114,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         const clear_topics = [
             `homeassistant/${this.domain}/${this.uuid}/config`,
             `${this.mqtt_topic}/status`,
-            this.discovery_data().state_topic,
+            this.mqtt_state_topic,
             // Commands are normally non-retained, but clear in case `retain` was set
             ...this.command_keys().map(k => this.command_topic_for(k)),
         ]
