@@ -12,7 +12,14 @@ import { hookScriptCallback, ResumableScriptStoreManager } from "./resumable";
 import { ScriptOptions, ScriptStateStore } from "./store";
 
 export function script(options: ScriptOptions) {
-    function decorator(f: Function, context?: ClassMethodDecoratorContext) {
+    // Typed generically over the decorated method so TS accepts it on async methods (TS1270).
+    // NB: at runtime a rejected single/queued invocation returns `false`; that can't be expressed
+    // while remaining assignable to the original method type.
+    function decorator<This, Args extends any[], R>(
+        f: (this: This, ...args: Args) => R,
+        context?: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => R>,
+    ): (this: This, ...args: Args) => R & ICancellablePromise;
+    function decorator(f: Function, context?: ClassMethodDecoratorContext): any {
         const sid = context?.name.toString() ?? randomUUID();
 
         let lookupStore: (ukey: string) => ScriptStateStore;
