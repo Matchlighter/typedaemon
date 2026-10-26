@@ -1,5 +1,5 @@
 import { action } from "mobx";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseJsonOrRaw } from "./base";
+import { CommandHandlers, EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseJsonOrRaw } from "./base";
 
 export type AlarmState =
     | "disarmed" | "armed_home" | "armed_away" | "armed_night" | "armed_vacation" | "armed_custom_bypass"
@@ -51,14 +51,6 @@ export class TDAlarmControlPanel extends EntityClass<AlarmState, AlarmServices, 
 
     static { this._defaultAutocleaner(); }
 
-    on_arm_home?: (code?: string) => void;
-    on_arm_away?: (code?: string) => void;
-    on_arm_night?: (code?: string) => void;
-    on_arm_vacation?: (code?: string) => void;
-    on_arm_custom_bypass?: (code?: string) => void;
-    on_disarm?: (code?: string) => void;
-    on_trigger?: (code?: string) => void;
-
     protected discovery_data() {
         const dd = super.discovery_data();
         Object.assign(dd, {
@@ -81,3 +73,6 @@ export class TDAlarmControlPanel extends EntityClass<AlarmState, AlarmServices, 
         this.dispatch(this[`on_${service}`], [code], () => { this.state = state });
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDAlarmControlPanel extends CommandHandlers<AlarmServices> { }

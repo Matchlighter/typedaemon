@@ -1,6 +1,6 @@
 import { action, observable } from "mobx";
 import { omitDiscoveryKeys } from "../general";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
+import { CommandHandlers, EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
 
 export type ClimateMode = "auto" | "off" | "cool" | "heat" | "dry" | "fan_only" | "heat_cool";
 export type ClimateAction = "off" | "heating" | "cooling" | "drying" | "idle" | "fan";
@@ -52,10 +52,10 @@ export interface ClimateOptions extends EntityOptionsCommon, EntityOptionsCommon
 type ClimateServices = {
     turn_on: [];
     turn_off: [];
-    set_hvac_mode: [mode: string];
-    set_temperature: [temperature: number];
-    set_temperature_range: [range: { high?: number, low?: number }];
-    set_humidity: [humidity: number];
+    set_mode: [mode: string];
+    set_target_temperature: [temperature: number];
+    set_target_temperature_range: [range: { high?: number, low?: number }];
+    set_target_humidity: [humidity: number];
     set_fan_mode: [mode: string];
     set_swing_mode: [mode: string];
     set_preset_mode: [mode: string];
@@ -66,7 +66,7 @@ type ClimateServices = {
  * and `turn_on`/`turn_off` are never applied optimistically - report the result via `state`).
  * All other values are published as fields of the JSON state payload.
  * Commands call the matching `on_*` handler; when a handler isn't set the command is applied optimistically.
- * Dual-setpoint commands call `on_set_temperature_range({ high })` / `({ low })` with the one changed bound.
+ * Dual-setpoint commands call `on_set_target_temperature_range({ high })` / `({ low })` with the one changed bound.
  */
 export class TDClimate extends EntityClass<string | undefined, ClimateServices, ClimateOptions> {
     static domain = "climate";
@@ -83,16 +83,6 @@ export class TDClimate extends EntityClass<string | undefined, ClimateServices, 
     @observable accessor swing_mode: string | undefined;
     @observable accessor preset_mode: string | undefined;
     @observable accessor action: ClimateAction | undefined;
-
-    on_turn_on?: () => void;
-    on_turn_off?: () => void;
-    on_set_mode?: (mode: string) => void;
-    on_set_temperature?: (temperature: number) => void;
-    on_set_temperature_range?: (range: { high?: number, low?: number }) => void;
-    on_set_humidity?: (humidity: number) => void;
-    on_set_fan_mode?: (mode: string) => void;
-    on_set_swing_mode?: (mode: string) => void;
-    on_set_preset_mode?: (mode: string) => void;
 
     private has(list: "fan_modes" | "swing_modes" | "preset_modes") { return !!this.options?.[list]?.length }
 
@@ -165,7 +155,7 @@ export class TDClimate extends EntityClass<string | undefined, ClimateServices, 
             if (!list?.includes(payload)) return;
             this.dispatch(handler, [payload], () => { this[prop] = payload });
         };
-        const range = this.on_set_temperature_range;
+        const range = this.on_set_target_temperature_range;
 
         switch (key) {
             case "power_command": {
@@ -178,7 +168,7 @@ export class TDClimate extends EntityClass<string | undefined, ClimateServices, 
                 if (!(o?.modes ?? DEFAULT_MODES).includes(payload)) return;
                 return this.dispatch(this.on_set_mode, [payload], () => { this.state = payload });
             case "temperature_command":
-                return setTemp("target_temperature", this.on_set_temperature);
+                return setTemp("target_temperature", this.on_set_target_temperature);
             case "temperature_high_command":
                 return setTemp("target_temperature_high", range && ((high) => range.call(this, { high })));
             case "temperature_low_command":
@@ -186,7 +176,7 @@ export class TDClimate extends EntityClass<string | undefined, ClimateServices, 
             case "target_humidity_command": {
                 const h = parseNumberPayload(payload, o?.min_humidity ?? DEFAULT_MIN_HUMIDITY, o?.max_humidity ?? DEFAULT_MAX_HUMIDITY);
                 if (h == null) return;
-                return this.dispatch(this.on_set_humidity, [h], () => { this.target_humidity = h });
+                return this.dispatch(this.on_set_target_humidity, [h], () => { this.target_humidity = h });
             }
             case "fan_mode_command": return setChoice(o?.fan_modes, "fan_mode", this.on_set_fan_mode);
             case "swing_mode_command": return setChoice(o?.swing_modes, "swing_mode", this.on_set_swing_mode);
@@ -194,3 +184,6 @@ export class TDClimate extends EntityClass<string | undefined, ClimateServices, 
         }
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDClimate extends CommandHandlers<ClimateServices> { }

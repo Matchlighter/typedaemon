@@ -99,13 +99,13 @@ describe("TDClimate", () => {
         send("temperature_high_command", "25");
         send("temperature_low_command", "18");
         expect(lastState(published)).toMatchObject({ temperature: 21.5, temperature_high: 25, temperature_low: 18 });
-        e.on_set_temperature = jest.fn(); e.on_set_temperature_range = jest.fn();
+        e.on_set_target_temperature = jest.fn(); e.on_set_target_temperature_range = jest.fn();
         send("temperature_command", "22");
-        expect(e.on_set_temperature).toHaveBeenCalledWith(22);
+        expect(e.on_set_target_temperature).toHaveBeenCalledWith(22);
         send("temperature_high_command", "26");
-        expect(e.on_set_temperature_range).toHaveBeenCalledWith({ high: 26 });
+        expect(e.on_set_target_temperature_range).toHaveBeenCalledWith({ high: 26 });
         send("temperature_low_command", "19");
-        expect(e.on_set_temperature_range).toHaveBeenCalledWith({ low: 19 });
+        expect(e.on_set_target_temperature_range).toHaveBeenCalledWith({ low: 19 });
         expect(e.target_temperature).toBe(21.5);
         expect(e.target_temperature_high).toBe(25);
     });
@@ -119,9 +119,9 @@ describe("TDClimate", () => {
         expect(e.target_humidity).toBeUndefined();
         send("target_humidity_command", "45");
         expect(lastState(published)).toMatchObject({ target_humidity: 45 });
-        e.on_set_humidity = jest.fn();
+        e.on_set_target_humidity = jest.fn();
         send("target_humidity_command", "50");
-        expect(e.on_set_humidity).toHaveBeenCalledWith(50);
+        expect(e.on_set_target_humidity).toHaveBeenCalledWith(50);
     });
 
     it("fan/swing/preset: validated, handler else optimistic", async () => {

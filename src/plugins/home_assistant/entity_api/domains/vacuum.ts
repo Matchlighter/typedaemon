@@ -1,6 +1,6 @@
 import { action, observable } from "mobx";
 import { omitDiscoveryKeys } from "../general";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseJsonOrRaw } from "./base";
+import { CommandHandlers, EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseJsonOrRaw } from "./base";
 
 export type VacuumState = "cleaning" | "docked" | "paused" | "idle" | "returning" | "error";
 /** Values HA's MQTT vacuum accepts in `supported_features` */
@@ -46,15 +46,6 @@ export class TDVacuum extends EntityClass<VacuumState, VacuumServices, VacuumOpt
     static { this._defaultAutocleaner(); }
 
     @observable accessor fan_speed: string | undefined;
-
-    on_start?: () => void;
-    on_pause?: () => void;
-    on_stop?: () => void;
-    on_return_to_base?: () => void;
-    on_clean_spot?: () => void;
-    on_locate?: () => void;
-    on_set_fan_speed?: (speed: string) => void;
-    on_send_command?: (command: string, params?: Record<string, any>) => void;
 
     private get has_fan_speeds() { return !!this.options?.fan_speed_list?.length }
 
@@ -104,3 +95,6 @@ export class TDVacuum extends EntityClass<VacuumState, VacuumServices, VacuumOpt
         }
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDVacuum extends CommandHandlers<VacuumServices> { }

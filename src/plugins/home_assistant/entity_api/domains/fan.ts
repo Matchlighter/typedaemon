@@ -1,6 +1,6 @@
 import { action, observable } from "mobx";
 import { useStateValueTemplate } from "../general";
-import { BooleanEntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
+import { CommandHandlers, BooleanEntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
 
 export type FanDirection = "forward" | "reverse";
 
@@ -27,7 +27,7 @@ type FanServices = {
     turn_off: [];
     set_percentage: [percentage: number];
     set_preset_mode: [preset_mode: string];
-    oscillate: [oscillating: boolean];
+    set_oscillating: [oscillating: boolean];
     set_direction: [direction: FanDirection];
 }
 
@@ -48,13 +48,6 @@ export class TDFan extends BooleanEntityClass<FanServices, FanOptions> {
     @observable accessor preset_mode: string | undefined;
     @observable accessor oscillating: boolean | undefined;
     @observable accessor direction: FanDirection | undefined;
-
-    on_turn_on?: () => void;
-    on_turn_off?: () => void;
-    on_set_percentage?: (percentage: number) => void;
-    on_set_preset_mode?: (preset_mode: string) => void;
-    on_set_oscillating?: (oscillating: boolean) => void;
-    on_set_direction?: (direction: FanDirection) => void;
 
     private get has_preset_modes() { return !!this.options?.preset_modes?.length }
 
@@ -124,3 +117,6 @@ export class TDFan extends BooleanEntityClass<FanServices, FanOptions> {
         }
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDFan extends CommandHandlers<FanServices> { }

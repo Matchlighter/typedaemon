@@ -1,6 +1,6 @@
 import { action } from "mobx";
 import { omitDiscoveryKeys } from "../general";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
+import { CommandHandlers, EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
 
 export interface UpdateOptions extends EntityOptionsCommon, EntityOptionsCommonW {
     /** Device class, e.g. `firmware` */
@@ -49,8 +49,6 @@ export class TDUpdate extends EntityClass<string | undefined, UpdateServices, Up
 
     static { this._defaultAutocleaner(); }
 
-    on_install: () => void;
-
     /** Set installed version and all other info at once */
     @action
     setInfo(info: UpdateInfo) {
@@ -87,3 +85,6 @@ export class TDUpdate extends EntityClass<string | undefined, UpdateServices, Up
         if (payload == PAYLOAD_INSTALL) this.dispatch(this.on_install, []);
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDUpdate extends CommandHandlers<UpdateServices> { }

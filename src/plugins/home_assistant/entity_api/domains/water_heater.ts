@@ -1,6 +1,6 @@
 import { action, observable } from "mobx";
 import { omitDiscoveryKeys } from "../general";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
+import { CommandHandlers, EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
 
 export type WaterHeaterMode = "off" | "eco" | "electric" | "gas" | "heat_pump" | "high_demand" | "performance";
 
@@ -28,7 +28,7 @@ export interface WaterHeaterOptions extends EntityOptionsCommon, EntityOptionsCo
 type WaterHeaterServices = {
     turn_on: [];
     turn_off: [];
-    set_temperature: [temperature: number];
+    set_target_temperature: [temperature: number];
     set_mode: [mode: string];
 }
 
@@ -45,11 +45,6 @@ export class TDWaterHeater extends EntityClass<string | undefined, WaterHeaterSe
 
     @observable accessor target_temperature: number | undefined;
     @observable accessor current_temperature: number | undefined;
-
-    on_turn_on?: () => void;
-    on_turn_off?: () => void;
-    on_set_temperature?: (temperature: number) => void;
-    on_set_mode?: (mode: string) => void;
 
     // No primary `command_topic` in HA's water_heater schema
     protected command_keys(): string[] {
@@ -90,7 +85,10 @@ export class TDWaterHeater extends EntityClass<string | undefined, WaterHeaterSe
         } else if (key == "temperature_command") {
             const t = parseNumberPayload(payload, o?.min_temp, o?.max_temp);
             if (t == null) return;
-            this.dispatch(this.on_set_temperature, [t], () => { this.target_temperature = t });
+            this.dispatch(this.on_set_target_temperature, [t], () => { this.target_temperature = t });
         }
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDWaterHeater extends CommandHandlers<WaterHeaterServices> { }

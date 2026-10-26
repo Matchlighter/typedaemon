@@ -1,6 +1,6 @@
 import { action, observable } from "mobx";
 import { useStateValueTemplate } from "../general";
-import { BooleanEntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
+import { CommandHandlers, BooleanEntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
 
 export type HumidifierDeviceClass = "humidifier" | "dehumidifier";
 export type HumidifierAction = "off" | "humidifying" | "drying" | "idle";
@@ -27,7 +27,7 @@ export interface HumidifierOptions extends EntityOptionsCommon, EntityOptionsCom
 type HumidifierServices = {
     turn_on: [];
     turn_off: [];
-    set_humidity: [humidity: number];
+    set_target_humidity: [humidity: number];
     set_mode: [mode: string];
 }
 
@@ -45,11 +45,6 @@ export class TDHumidifier extends BooleanEntityClass<HumidifierServices, Humidif
     @observable accessor mode: string | undefined;
     @observable accessor current_humidity: number | undefined;
     @observable accessor action: HumidifierAction | undefined;
-
-    on_turn_on?: () => void;
-    on_turn_off?: () => void;
-    on_set_target_humidity?: (humidity: number) => void;
-    on_set_mode?: (mode: string) => void;
 
     private get has_modes() { return !!this.options?.modes?.length }
 
@@ -102,3 +97,6 @@ export class TDHumidifier extends BooleanEntityClass<HumidifierServices, Humidif
         }
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDHumidifier extends CommandHandlers<HumidifierServices> { }

@@ -57,9 +57,9 @@ describe("TDWaterHeater", () => {
         send("temperature_command", "80");
         send("temperature_command", "10");
         expect(e.target_temperature).toBe(55.5);
-        e.on_set_temperature = jest.fn();
+        e.on_set_target_temperature = jest.fn();
         send("temperature_command", "60");
-        expect(e.on_set_temperature).toHaveBeenCalledWith(60);
+        expect(e.on_set_target_temperature).toHaveBeenCalledWith(60);
         expect(e.target_temperature).toBe(55.5);
     });
 

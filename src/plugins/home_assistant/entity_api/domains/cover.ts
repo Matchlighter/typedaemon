@@ -1,5 +1,5 @@
 import { action, observable } from "mobx";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload } from "./base";
+import { CommandHandlers, EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload } from "./base";
 
 export type CoverState = "open" | "opening" | "closed" | "closing" | "stopped";
 
@@ -27,12 +27,12 @@ export interface CoverOptions extends EntityOptionsCommon, EntityOptionsCommonW 
 }
 
 type CoverServices = {
-    open_cover: [];
-    close_cover: [];
-    stop_cover: [];
-    set_cover_position: [position: number];
-    set_cover_tilt_position: [tilt: number];
-    stop_cover_tilt: [];
+    open: [];
+    close: [];
+    stop: [];
+    set_position: [position: number];
+    set_tilt: [tilt: number];
+    stop_tilt: [];
 }
 
 /** HA's default `payload_open`/`payload_close`/`payload_stop` */
@@ -57,13 +57,6 @@ export class TDCover extends EntityClass<CoverState, CoverServices, CoverOptions
 
     @observable accessor position: number | undefined;
     @observable accessor tilt: number | undefined;
-
-    on_open?: () => void;
-    on_close?: () => void;
-    on_stop?: () => void;
-    on_set_position?: (position: number) => void;
-    on_set_tilt?: (tilt: number) => void;
-    on_stop_tilt?: () => void;
 
     private get position_open() { return this.options?.position_open ?? 100 }
     private get position_closed() { return this.options?.position_closed ?? 0 }
@@ -124,3 +117,6 @@ export class TDCover extends EntityClass<CoverState, CoverServices, CoverOptions
         }
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDCover extends CommandHandlers<CoverServices> { }
