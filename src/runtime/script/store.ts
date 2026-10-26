@@ -40,9 +40,25 @@ export class ScriptStateStore {
         this.runningScripts.push(script);
     }
 
-    cancelOldest() {
-        const drop_item = this.pendingScripts.shift();
-        drop_item?.cancel(new Error("The Script has been called again, aborting this previous run."));
+    /** Cancel queued (unstarted) runs. Their completion check-ins remove them from the queue. */
+    cancelPending(reason?: any) {
+        for (const item of [...this.pendingScripts]) {
+            item.cancel(reason);
+        }
+    }
+
+    /**
+     * Cancel every queued and running run and stop tracking them, so a new run may start immediately.
+     * Cancellation is cooperative: a running run unwinds at its next step, and may outlive this call
+     * (eg. if it is awaiting something non-cancellable, or swallows the error).
+     */
+    cancelAll(reason?: any) {
+        const items = [...this.pendingScripts, ...this.runningScripts];
+        this.pendingScripts = [];
+        this.runningScripts = [];
+        for (const item of items) {
+            item.cancel(reason);
+        }
     }
 
     refill() {

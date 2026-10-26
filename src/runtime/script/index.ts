@@ -6,7 +6,7 @@ import { current } from "../../hypervisor/current";
 import { notePluginAnnotation } from "../../plugins/base";
 import { Executor } from "../regen_executor";
 import { EXECUTOR_FACTORY, ResumableMethod } from "../resumable/resumable_method";
-import { ICancellablePromise } from "../resumable/resumable_promise";
+import { ICancellablePromise, PromiseCancelled } from "../resumable/resumable_promise";
 
 import { hookScriptCallback, ResumableScriptStoreManager } from "./resumable";
 import { ScriptOptions, ScriptStateStore } from "./store";
@@ -51,12 +51,10 @@ export function script(options: ScriptOptions) {
             const ukey = typeof options.mode_key === "function" ? options.mode_key(args) : context?.name.toString() ?? "-";
             const store = lookupStore(ukey);
 
-            if (store.total_count >= store.limit) {
-                if (store.configuration.mode == "restart") {
-                    store.cancelOldest();
-                } else {
-                    return false;
-                }
+            if (store.configuration.mode == "restart") {
+                store.cancelAll(new PromiseCancelled("The Script has been called again, aborting this previous run."));
+            } else if (store.total_count >= store.limit) {
+                return false;
             }
 
             const executor: Executor<any> = f.call(this, ...args);
@@ -89,12 +87,23 @@ export function script(options: ScriptOptions) {
                     }
                 };
 
-                if (options.shutdown == 'kill') {
-                    // Register cleaner to kill the executor
-                    const cleanups = current.application.cleanups.unorderedGroup("script:killers");
-                    const script_cleaner = async () => {
-                        executor.cancel(new Error("Script killed due to application shutdown"));
-                    };
+                if (options.shutdown == 'kill' || options.shutdown == 'wait') {
+                    let cleanups, script_cleaner: () => Promise<void>;
+                    if (options.shutdown == 'kill') {
+                        // Register cleaner to kill the executor
+                        cleanups = current.application.cleanups.unorderedGroup("script:killers");
+                        script_cleaner = async () => {
+                            executor.cancel(new Error("Script killed due to application shutdown"));
+                        };
+                    } else {
+                        // Register cleaner that holds shutdown until the run completes (no timeout).
+                        // Queued runs are cancelled rather than started - don't begin new work while shutting down.
+                        cleanups = current.application.cleanups.unorderedGroup("script:waiters");
+                        script_cleaner = async () => {
+                            store.cancelPending(new PromiseCancelled("Script cancelled due to application shutdown"));
+                            await complete_promise.then(() => { }, () => { });
+                        };
+                    }
                     cleanups.push(script_cleaner);
 
                     const old_on_completed = executor.on_completed;
@@ -111,7 +120,7 @@ export function script(options: ScriptOptions) {
                     then: (onfulfilled, onrejected) => {
                         return complete_promise.then(onfulfilled, onrejected);
                     },
-                    cancel: (reason?: any) => {
+                    cancel: (reason: any = new PromiseCancelled()) => {
                         executor.cancel(reason);
                     },
                 }
