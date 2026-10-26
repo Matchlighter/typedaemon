@@ -3,6 +3,7 @@ import { TDAlarmControlPanel } from "./alarm_control_panel";
 import { TDBinarySensor } from "./binary_sensor";
 import { TDButton } from "./button";
 import { TDCamera } from "./camera";
+import { TDClimate } from "./climate";
 import { TDCover } from "./cover";
 import { TDCustomEntity } from "./custom";
 import { TDDeviceTracker } from "./device_tracker";
@@ -29,6 +30,7 @@ export const domain_entities = {
     binary_sensor: TDBinarySensor,
     button: TDButton,
     camera: TDCamera,
+    climate: TDClimate,
     cover: TDCover,
     custom: TDCustomEntity,
     device_tracker: TDDeviceTracker,
