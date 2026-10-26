@@ -115,8 +115,8 @@ export const hookScriptCallback = resumableCallbackFactory("script_callback", (s
         store.trackRunning(script);
     }
 
-    p.finally(() => {
-        // If queued present, start the next one
-        store.checkin(script);
-    }, true);
+    // If queued present, start the next one.
+    // (Not `finally`: it would re-throw, leaving an unhandled rejection on this bookkeeping promise. Callers observe the rejection via `script` itself.)
+    const checkin = () => { store.checkin(script); };
+    p.then(checkin, checkin, true);
 })

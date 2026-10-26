@@ -1,10 +1,9 @@
-// Type-level test: the module is imported type-only to avoid hypervisor import cycles at runtime.
-type When = typeof import("./when").when;
-declare const when: When;
+import { typeTest } from "../../test/helpers/types";
+
+declare const when: typeof import("./when").when;
 
 describe("when typing", () => {
-    it("accepts a void/async action callback (checked by tsc)", () => {
-      const check = () => {
+    typeTest("accepts a void/async action callback", () => {
         class A {
             notify() { }
             setup() {
@@ -14,7 +13,10 @@ describe("when typing", () => {
         const f: () => void = when<A>(() => true)(() => { });
         const g: () => void = when<A>(() => true)(async () => { });
         void [A, f, g];
-      };
-      expect(check).toBeDefined();
+    });
+
+    typeTest("rejects a non-function callback", () => {
+        // @ts-expect-error not a callback
+        when<object>(() => true)(123);
     });
 });
