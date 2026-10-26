@@ -11,6 +11,7 @@ jest.mock("execa", () => jest.fn(() => {
 jest.mock("./logging", () => ({ logMessage: jest.fn() }));
 
 import execa from "execa";
+import { logMessage } from "./logging";
 import { installConfigDependencies, YARN_BIN } from "./packages";
 
 const yarnInstalls = () => (execa as any as jest.Mock).mock.calls.filter(c => c[0] == YARN_BIN);
@@ -65,5 +66,51 @@ describe("installConfigDependencies", () => {
 
         expect(yarnInstalls()).toHaveLength(0);
         expect(await readPkg()).toEqual(userPkg);
+    });
+
+    test("retries after a failed install", async () => {
+        (execa as any as jest.Mock).mockImplementationOnce(() => {
+            const proc: any = Promise.resolve({ exitCode: 1, failed: true });
+            proc.stdout = { on: jest.fn() };
+            proc.stderr = { on: jest.fn() };
+            return proc;
+        });
+        await expect(installConfigDependencies(dir, { "lodash": "^4.17.0" })).rejects.toThrow();
+        await fs.promises.mkdir(path.join(dir, "node_modules"), { recursive: true });
+
+        await installConfigDependencies(dir, { "lodash": "^4.17.0" });
+        expect(yarnInstalls()).toHaveLength(2);
+    });
+
+    test("warns and leaves an unparseable package.json alone", async () => {
+        await fs.promises.writeFile(path.join(dir, "package.json"), "{ not json");
+        (logMessage as jest.Mock).mockClear();
+
+        await installConfigDependencies(dir, { "lodash": "^4.17.0" });
+
+        expect(yarnInstalls()).toHaveLength(0);
+        expect(await fs.promises.readFile(path.join(dir, "package.json"), "utf8")).toBe("{ not json");
+        expect((logMessage as jest.Mock).mock.calls.some(c => c[0] == "warn" && /parse/i.test(c[1]))).toBe(true);
+    });
+
+    test("removes managed state when all packages are removed", async () => {
+        await installConfigDependencies(dir, { "lodash": "^4.17.0" });
+        await fs.promises.mkdir(path.join(dir, "node_modules", "lodash"), { recursive: true });
+
+        await installConfigDependencies(dir, {});
+
+        expect(fs.existsSync(path.join(dir, "package.json"))).toBe(false);
+        expect(fs.existsSync(path.join(dir, "node_modules"))).toBe(false);
+    });
+
+    test("removing packages leaves a user-managed config root alone", async () => {
+        const userPkg = { name: "mine" };
+        await fs.promises.writeFile(path.join(dir, "package.json"), JSON.stringify(userPkg));
+        await fs.promises.mkdir(path.join(dir, "node_modules"));
+
+        await installConfigDependencies(dir, undefined);
+
+        expect(await readPkg()).toEqual(userPkg);
+        expect(fs.existsSync(path.join(dir, "node_modules"))).toBe(true);
     });
 });

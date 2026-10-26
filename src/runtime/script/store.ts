@@ -1,4 +1,5 @@
 
+import { logMessage } from "../../hypervisor/logging";
 import { Executor } from "../../runtime/regen_executor";
 import { ResumableMethod } from "../resumable/resumable_method";
 
@@ -48,16 +49,19 @@ export class ScriptStateStore {
     }
 
     /**
-     * Cancel every queued and running run and stop tracking them, so a new run may start immediately.
-     * Cancellation is cooperative: a running run unwinds at its next step, and may outlive this call
-     * (eg. if it is awaiting something non-cancellable, or swallows the error).
+     * Cancel and stop tracking every queued and running run, so a new run may start immediately.
+     * Cancellation is cooperative: a running run may outlive this call.
      */
     cancelAll(reason?: any) {
         const items = [...this.pendingScripts, ...this.runningScripts];
         this.pendingScripts = [];
         this.runningScripts = [];
         for (const item of items) {
-            item.cancel(reason);
+            try {
+                item.cancel(reason);
+            } catch (ex) {
+                logMessage("error", "Failed to cancel script run", ex);
+            }
         }
     }
 

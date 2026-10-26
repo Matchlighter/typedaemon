@@ -412,7 +412,7 @@ export abstract class CancellableResumablePromise<T = any> extends ResumableProm
         return true;
     }
 
-    cancel(reason: any = new PromiseCancelled()) {
+    cancel(reason?: any) {
         super.cancel(reason);
     }
 }

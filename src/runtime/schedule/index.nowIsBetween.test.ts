@@ -95,4 +95,34 @@ describe("nowIsBetween", () => {
     expect(nowIsBetween("sunrise", "sunset", { timezone: tz })).toBe(false);
     expect(nowIsBetween("sunset", "sunrise", { timezone: tz })).toBe(true);
   });
+
+  it("uses today's bounds late in the day", () => {
+    at("2025-11-19T04:30:00Z"); // 23:30 EST
+    expect(nowIsBetween("04:00", "06:00", { timezone: tz })).toBe(false);
+    expect(nowIsBetween("23:00", "23:45", { timezone: tz })).toBe(true);
+    expect(nowIsBetween("sunset", "sunrise", { timezone: tz })).toBe(true);
+    expect(nowIsBetween("sunrise", "sunset", { timezone: tz })).toBe(false);
+  });
+
+  it("uses today's bounds just after midnight", () => {
+    at("2025-11-18T05:10:00Z"); // 00:10 EST
+    expect(nowIsBetween("00:00", "01:00", { timezone: tz })).toBe(true);
+    expect(nowIsBetween("00:30", "01:00", { timezone: tz })).toBe(false);
+    expect(nowIsBetween("sunset", "sunrise", { timezone: tz })).toBe(true);
+  });
+
+  it("treats a midnight bound as today's midnight", () => {
+    at("2025-11-18T05:00:00Z"); // 00:00 EST exactly
+    expect(nowIsBetween("00:00", "01:00", { timezone: tz })).toBe(true);
+    at("2025-11-18T17:00:00Z"); // 12:00 EST
+    expect(nowIsBetween("00:00", "13:00", { timezone: tz })).toBe(true);
+    expect(nowIsBetween("13:00", "00:00", { timezone: tz })).toBe(false);
+  });
+
+  it("honors a timezone embedded in a bound", () => {
+    // 10:00Z == 05:00 EST == 03:00 MST
+    expect(nowIsBetween("02:00 America/Denver", "04:00 America/Denver", { timezone: tz })).toBe(true);
+    at("2025-11-19T06:30:00Z"); // 01:30 EST (Nov 19) == 23:30 MST (Nov 18)
+    expect(nowIsBetween("23:00 America/Denver", "23:59 America/Denver", { timezone: tz })).toBe(true);
+  });
 });

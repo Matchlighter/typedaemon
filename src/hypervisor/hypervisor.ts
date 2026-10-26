@@ -1,5 +1,4 @@
 
-import { installConfigDependencies } from "./packages";
 import * as Sentry from "@sentry/node";
 import { captureExceptionWithSourceMaps } from "./sentry";
 
@@ -32,6 +31,7 @@ import { CrossCallStore } from "./cross_call";
 import { current } from "./current";
 import { ExtendedLoger, LogLevel, ORIGINAL_CONSOLE, createDomainLogger, setFallbackLogger } from "./logging";
 import { AppNamespace } from "./managed_apps";
+import { installConfigDependencies } from "./packages";
 import { SharedStorages } from "./persistent_storage";
 import { PluginInstance } from "./plugin_instance";
 import { ReplOptions, startRepl } from "./repl";
@@ -257,8 +257,8 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         this.crossCallStore = new CrossCallStore(this);
         await this.crossCallStore.load();
 
-        await this.installConfigDependencies();
-        this.watchConfigEntry("dependencies", () => this.installConfigDependencies());
+        await this.syncConfigDependencies();
+        this.watchConfigEntry("dependencies", () => this.syncConfigDependencies());
 
         this.logMessage("info", "Starting Apps");
         this.appInstances.on("instance_lifecycle", (instance, levent) => {
@@ -269,7 +269,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
     }
 
     /** Install pre-installed packages (`dependencies` config) into the config root's node_modules */
-    private async installConfigDependencies() {
+    private async syncConfigDependencies() {
         try {
             await installConfigDependencies(this.working_directory, this.currentConfig.dependencies);
         } catch (ex) {
