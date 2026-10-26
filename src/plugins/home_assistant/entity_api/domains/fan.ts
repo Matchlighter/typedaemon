@@ -58,7 +58,7 @@ export class TDFan extends EntityClass<boolean, FanServices, FanOptions> {
     private get has_preset_modes() { return !!this.options?.preset_modes?.length }
 
     protected command_keys(): string[] {
-        const keys = super.command_keys();
+        const keys = [...super.command_keys()];
         if (this.options?.percentage) keys.push("percentage_command");
         if (this.has_preset_modes) keys.push("preset_mode_command");
         if (this.options?.oscillation) keys.push("oscillation_command");

@@ -69,7 +69,7 @@ export class TDCover extends EntityClass<CoverState, CoverServices, CoverOptions
     private get position_closed() { return this.options?.position_closed ?? 0 }
 
     protected command_keys(): string[] {
-        const keys = super.command_keys();
+        const keys = [...super.command_keys()];
         if (this.options?.position) keys.push("set_position");
         if (this.options?.tilt) keys.push("tilt_command");
         return keys;
