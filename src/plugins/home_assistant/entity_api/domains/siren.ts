@@ -1,5 +1,6 @@
 import { action } from "mobx";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
+import { useStateValueTemplate } from "../general";
+import { BooleanEntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseJsonOrRaw, parseOnOff } from "./base";
 
 export interface SirenOptions extends EntityOptionsCommon, EntityOptionsCommonW {
     /** List of available tones. Enables `tone` support and the `tone` attribute. */
@@ -24,17 +25,15 @@ type SirenServices = {
  * MQTT Siren. Uses HA's default command format: `{"state":"ON","tone":..,"duration":..,"volume_level":..}`
  * (plain `ON`/`OFF` also accepted). Turn-on parameters are exposed as attributes.
  */
-export class TDSiren extends EntityClass<boolean, SirenServices, SirenOptions> {
+export class TDSiren extends BooleanEntityClass<SirenServices, SirenOptions> {
     static domain = "siren";
 
     static { this._defaultAutocleaner(); }
 
     protected discovery_data() {
         const dd = super.discovery_data();
-        // Siren reads its state via state_value_template
-        delete (dd as any).value_template;
+        useStateValueTemplate(dd);
         Object.assign(dd, {
-            state_value_template: "{{ value_json.state }}",
             ...discoveryPassOptions(this.options, [
                 "available_tones",
                 "support_duration",
@@ -44,32 +43,17 @@ export class TDSiren extends EntityClass<boolean, SirenServices, SirenOptions> {
         return dd;
     }
 
-    protected _serializeState(state: boolean) {
-        if (state === true) return "ON";
-        if (state === false) return "OFF";
-        return state;
-    }
-
     @action
     handle_command(payload: any) {
-        let state: unknown = payload;
-        let params: Record<string, any> = {};
-        if (typeof payload == "string" && payload.trim().startsWith("{")) {
-            try {
-                const parsed = JSON.parse(payload);
-                state = parsed.state;
-                params = parsed;
-            } catch { return }
-        } else if (payload && typeof payload == "object") {
-            state = payload.state;
-            params = payload;
-        }
-
-        if (state == "ON") {
+        // JSON `{"state", ...params}` or plain ON/OFF; malformed JSON is ignored
+        const p = parseJsonOrRaw(payload);
+        const params: Record<string, any> = typeof p == "object" ? p : {};
+        const on = parseOnOff(typeof p == "object" ? p.state : p);
+        if (on === true) {
             const attrs: Record<string, any> = {};
             for (const k of TURN_ON_PARAMS) if (params[k] !== undefined) attrs[k] = params[k];
             this.setState(true, attrs);
-        } else if (state == "OFF") {
+        } else if (on === false) {
             this.setState(false);
         }
     }

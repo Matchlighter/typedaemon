@@ -70,8 +70,19 @@ describe("TDVacuum", () => {
             e.on_send_command = jest.fn();
             send("send_command", "dock");
             send("send_command", '{"command":"go_to","x":1}');
-            expect(e.on_send_command).toHaveBeenNthCalledWith(1, "dock", undefined);
+            send("send_command", { command: "spot", y: 2 }); // already JSON-decoded by the subscription
+            expect(e.on_send_command).toHaveBeenNthCalledWith(1, "dock");
             expect(e.on_send_command).toHaveBeenNthCalledWith(2, "go_to", { x: 1 });
+            expect(e.on_send_command).toHaveBeenNthCalledWith(3, "spot", { y: 2 });
+        });
+
+        it("ignores malformed JSON and JSON without a command", async () => {
+            const e = new TDVacuum("uuid:ent1", { send_command: true });
+            const { send } = await discovered(e);
+            e.on_send_command = jest.fn();
+            send("send_command", '{"command":');
+            send("send_command", '{"x":1}');
+            expect(e.on_send_command).not.toHaveBeenCalled();
         });
     });
 });

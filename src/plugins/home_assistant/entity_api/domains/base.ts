@@ -44,6 +44,15 @@ export class EntityClass<T, S extends Record<string, any[]>, O = {}> extends TDA
         return dd;
     }
 
+    /**
+     * Dispatch a command from HA: call `handler` when the app set one, otherwise apply `optimistic` (if given) so HA
+     * reflects the change without the app's involvement.
+     */
+    protected dispatch<A extends any[]>(handler: ((...args: A) => void) | undefined, args: A, optimistic?: () => void) {
+        if (handler) return handler.apply(this, args);
+        optimistic?.();
+    }
+
     @action
     setState(state: T, state_attrs?: any) {
         this.state = state;
@@ -60,10 +69,63 @@ export type EntityClassConstructor<E extends EntityClass<any, any, any>> = {
 export type EntityClassType<T extends EntityClass<any, any>> = T extends EntityClass<infer S, any, any> ? S : never;
 export type EntityClassOptions<T extends EntityClass<any, any>> = T extends EntityClass<any, any, infer O> ? O & TDAbstractEntityOptions : never;
 
-export function discoveryPassOptions<O extends {}>(options: O, keys: (keyof O)[]) {
+/** Copy the given (defined) options into discovery data verbatim */
+export function discoveryPassOptions<O extends {}>(options: O | undefined, keys: (keyof O)[]) {
     const pass: any = {}
-    for (let k of keys) { pass[k] = options[k] }
+    for (let k of keys) {
+        if (options?.[k] !== undefined) pass[k] = options[k];
+    }
     return pass;
+}
+
+/**
+ * `on_<service>` handler properties for a domain's Services map. Merge into the entity class so handler names always
+ * match the services: `export interface TDFan extends CommandHandlers<FanServices> { }`
+ */
+export type CommandHandlers<S extends Record<string, any[]>> = {
+    [K in keyof S & string as `on_${K}`]?: (...args: S[K]) => void;
+}
+
+/** Base for entities whose boolean state is published as HA's default `ON`/`OFF` payloads */
+export class BooleanEntityClass<S extends Record<string, any[]>, O = {}> extends EntityClass<boolean, S, O> {
+    protected _serializeState(state: boolean) {
+        if (state === true) return "ON";
+        if (state === false) return "OFF";
+        return state;
+    }
+}
+
+/** Parse an `ON`/`OFF` (or custom) command payload; `undefined` for anything else */
+export function parseOnOff(payload: unknown, on = "ON", off = "OFF"): boolean | undefined {
+    if (payload == on) return true;
+    if (payload == off) return false;
+    return undefined;
+}
+
+/** Parse a numeric command payload; `undefined` if it isn't a number or falls outside the (optional) inclusive bounds */
+export function parseNumberPayload(payload: unknown, min?: number, max?: number): number | undefined {
+    const n = typeof payload == "number" ? payload : parseFloat(String(payload));
+    if (isNaN(n)) return undefined;
+    if ((min != null && n < min) || (max != null && n > max)) return undefined;
+    return n;
+}
+
+/**
+ * Normalise a command payload that may be a JSON object or a plain string. Returns the object, or the payload as a string.
+ * Payloads that look like a JSON object but fail to parse return `undefined`: callers must ignore the command rather
+ * than misinterpret it. (Subscriptions normally JSON-decode payloads already; this also covers raw strings.)
+ */
+export function parseJsonOrRaw(payload: unknown): Record<string, any> | string | undefined {
+    if (payload == null) return undefined;
+    if (typeof payload == "object" && !(payload instanceof Uint8Array)) return payload as Record<string, any>;
+    const str = String(payload);
+    if (!str.trim().startsWith("{")) return str;
+    try {
+        const parsed = JSON.parse(str);
+        return parsed && typeof parsed == "object" ? parsed : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 export function typedEntityClass<T, const S extends Record<string, any[]>>(domain: string): typeof EntityClass<T, S> {

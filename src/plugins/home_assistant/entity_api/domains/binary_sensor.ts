@@ -1,5 +1,5 @@
 
-import { EntityClass, EntityOptionsCommon, HATemplate, discoveryPassOptions } from "./base";
+import { BooleanEntityClass, EntityOptionsCommon, HATemplate, discoveryPassOptions } from "./base";
 
 type BinarySensorDeviceClass = string;
 
@@ -26,7 +26,7 @@ export interface BinarySensorOptions extends EntityOptionsCommon {
     // payload_on?: string;
 }
 
-export class TDBinarySensor extends EntityClass<boolean, {}, BinarySensorOptions> {
+export class TDBinarySensor extends BooleanEntityClass<{}, BinarySensorOptions> {
     static domain = "binary_sensor";
 
     static { this._defaultAutocleaner(); }
@@ -42,11 +42,5 @@ export class TDBinarySensor extends EntityClass<boolean, {}, BinarySensorOptions
             ]),
         })
         return dd;
-    }
-
-    protected _serializeState(state: boolean) {
-        if (state === true) return "ON";
-        if (state === false) return "OFF";
-        return state;
     }
 }

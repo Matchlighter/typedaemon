@@ -1,4 +1,4 @@
-import { RawStatePayload } from "..";
+import { RawStatePayload, omitDiscoveryKeys } from "..";
 import { EntityClass, EntityOptionsCommon } from "./base";
 
 export interface CameraOptions extends EntityOptionsCommon {
@@ -27,11 +27,9 @@ export class TDCamera extends EntityClass<CameraImage | undefined, {}, CameraOpt
     }
 
     protected discovery_data() {
-        const dd: any = super.discovery_data();
+        const dd = super.discovery_data();
         // Camera's `topic` carries image bytes; HA has no state/command topics for it
-        delete dd.state_topic;
-        delete dd.value_template;
-        delete dd.command_topic;
+        omitDiscoveryKeys(dd, "state_topic", "value_template", "command_topic");
         dd.topic = this.mqtt_image_topic;
         if (this.options?.image_encoding) dd.image_encoding = this.options.image_encoding;
         return dd;

@@ -1,5 +1,6 @@
 import { action, observable } from "mobx";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
+import { omitDiscoveryKeys } from "../general";
+import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
 
 export type WaterHeaterMode = "off" | "eco" | "electric" | "gas" | "heat_pump" | "high_demand" | "performance";
 
@@ -64,42 +65,32 @@ export class TDWaterHeater extends EntityClass<string | undefined, WaterHeaterSe
     protected discovery_data() {
         const dd = super.discovery_data();
         // State is only reported via mode_state_topic
-        delete (dd as any).command_topic;
-        delete (dd as any).state_topic;
-        delete (dd as any).value_template;
-        Object.assign(dd, {
-            mode_state_topic: this.mqtt_state_topic,
-            mode_state_template: "{{ value_json.state }}",
-            temperature_state_topic: this.mqtt_state_topic,
-            temperature_state_template: "{{ value_json.temperature }}",
-            ...discoveryPassOptions(this.options, ["modes", "min_temp", "max_temp", "precision", "temperature_unit", "payload_on", "payload_off"]),
-        });
+        omitDiscoveryKeys(dd, "command_topic", "state_topic", "value_template");
+        Object.assign(dd,
+            this.stateField("mode_state_topic", "mode_state_template", "state"),
+            this.stateField("temperature_state_topic", "temperature_state_template", "temperature"),
+            discoveryPassOptions(this.options, ["modes", "min_temp", "max_temp", "precision", "temperature_unit", "payload_on", "payload_off"]));
         if (this.options?.current_temperature) {
-            Object.assign(dd, {
-                current_temperature_topic: this.mqtt_state_topic,
-                current_temperature_template: "{{ value_json.current_temperature }}",
-            });
+            Object.assign(dd, this.stateField("current_temperature_topic", "current_temperature_template", "current_temperature"));
         }
         return dd;
     }
 
     @action
     handle_command(payload: any, key?: string) {
+        const o = this.options;
         if (key == "power_command") {
-            const handler = payload == (this.options?.payload_on ?? "ON") ? this.on_turn_on
-                : payload == (this.options?.payload_off ?? "OFF") ? this.on_turn_off : undefined;
-            handler?.call(this);
+            // Never optimistic: HA has no power state
+            const on = parseOnOff(payload, o?.payload_on, o?.payload_off);
+            if (on == null) return;
+            this.dispatch(on ? this.on_turn_on : this.on_turn_off, []);
         } else if (key == "mode_command") {
-            if (!(this.options?.modes ?? DEFAULT_MODES).includes(payload)) return;
-            if (this.on_set_mode) return this.on_set_mode(payload);
-            this.state = payload;
+            if (!(o?.modes ?? DEFAULT_MODES).includes(payload)) return;
+            this.dispatch(this.on_set_mode, [payload], () => { this.state = payload });
         } else if (key == "temperature_command") {
-            const t = parseFloat(payload);
-            if (isNaN(t)) return;
-            const { min_temp, max_temp } = this.options ?? {};
-            if ((min_temp != null && t < min_temp) || (max_temp != null && t > max_temp)) return;
-            if (this.on_set_temperature) return this.on_set_temperature(t);
-            this.target_temperature = t;
+            const t = parseNumberPayload(payload, o?.min_temp, o?.max_temp);
+            if (t == null) return;
+            this.dispatch(this.on_set_temperature, [t], () => { this.target_temperature = t });
         }
     }
 }

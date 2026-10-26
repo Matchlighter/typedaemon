@@ -1,5 +1,6 @@
 import { action, observable } from "mobx";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
+import { useStateValueTemplate } from "../general";
+import { BooleanEntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
 
 export type FanDirection = "forward" | "reverse";
 
@@ -38,7 +39,7 @@ const OSCILLATION = { oscillate_on: true, oscillate_off: false } as const;
  * the command is applied optimistically.
  * `percentage`, `preset_mode`, `oscillating` and `direction` are published as fields of the JSON state payload.
  */
-export class TDFan extends EntityClass<boolean, FanServices, FanOptions> {
+export class TDFan extends BooleanEntityClass<FanServices, FanOptions> {
     static domain = "fan";
 
     static { this._defaultAutocleaner(); }
@@ -75,42 +76,24 @@ export class TDFan extends EntityClass<boolean, FanServices, FanOptions> {
         return f;
     }
 
-    protected _serializeState(state: boolean) {
-        if (state === true) return "ON";
-        if (state === false) return "OFF";
-        return state;
-    }
-
     protected discovery_data() {
         const dd = super.discovery_data();
-        // HA's fan uses `state_value_template` (not `value_template`) for the main state
-        Object.assign(dd, { state_value_template: "{{ value_json.state }}" });
-        delete (dd as any).value_template;
+        useStateValueTemplate(dd);
         if (this.options?.percentage) {
-            Object.assign(dd, {
-                percentage_state_topic: this.mqtt_state_topic,
-                percentage_value_template: "{{ value_json.percentage }}",
-                ...discoveryPassOptions(this.options, ["speed_range_min", "speed_range_max"]),
-            });
+            Object.assign(dd,
+                this.stateField("percentage_state_topic", "percentage_value_template", "percentage"),
+                discoveryPassOptions(this.options, ["speed_range_min", "speed_range_max"]));
         }
         if (this.has_preset_modes) {
-            Object.assign(dd, {
-                preset_modes: this.options!.preset_modes,
-                preset_mode_state_topic: this.mqtt_state_topic,
-                preset_mode_value_template: "{{ value_json.preset_mode }}",
-            });
+            Object.assign(dd, { preset_modes: this.options!.preset_modes },
+                this.stateField("preset_mode_state_topic", "preset_mode_value_template", "preset_mode"));
         }
         if (this.options?.oscillation) {
-            Object.assign(dd, {
-                oscillation_state_topic: this.mqtt_state_topic,
-                oscillation_value_template: "{{ 'oscillate_on' if value_json.oscillating else 'oscillate_off' }}",
-            });
+            Object.assign(dd, this.stateField("oscillation_state_topic", "oscillation_value_template", "oscillating",
+                "{{ 'oscillate_on' if value_json.oscillating else 'oscillate_off' }}"));
         }
         if (this.options?.direction) {
-            Object.assign(dd, {
-                direction_state_topic: this.mqtt_state_topic,
-                direction_value_template: "{{ value_json.direction }}",
-            });
+            Object.assign(dd, this.stateField("direction_state_topic", "direction_value_template", "direction"));
         }
         return dd;
     }
@@ -118,29 +101,26 @@ export class TDFan extends EntityClass<boolean, FanServices, FanOptions> {
     @action
     handle_command(payload: any, key?: string) {
         if (key == "command") {
-            if (payload != "ON" && payload != "OFF") return;
-            const handler = payload == "ON" ? this.on_turn_on : this.on_turn_off;
-            if (handler) return handler.call(this);
-            this.state = payload == "ON";
+            const on = parseOnOff(payload);
+            if (on == null) return;
+            this.dispatch(on ? this.on_turn_on : this.on_turn_off, [], () => { this.state = on });
         } else if (key == "percentage_command") {
-            const pct = parseFloat(payload);
-            if (isNaN(pct)) return;
-            if (this.on_set_percentage) return this.on_set_percentage(pct);
-            this.percentage = pct;
-            this.state = pct > 0;
+            const pct = parseNumberPayload(payload);
+            if (pct == null) return;
+            this.dispatch(this.on_set_percentage, [pct], () => {
+                this.percentage = pct;
+                this.state = pct > 0;
+            });
         } else if (key == "preset_mode_command") {
             if (!this.options?.preset_modes?.includes(payload)) return;
-            if (this.on_set_preset_mode) return this.on_set_preset_mode(payload);
-            this.preset_mode = payload;
+            this.dispatch(this.on_set_preset_mode, [payload], () => { this.preset_mode = payload });
         } else if (key == "oscillation_command") {
-            if (!(payload in OSCILLATION)) return;
+            if (!Object.hasOwn(OSCILLATION, payload)) return;
             const osc = OSCILLATION[payload as keyof typeof OSCILLATION];
-            if (this.on_set_oscillating) return this.on_set_oscillating(osc);
-            this.oscillating = osc;
+            this.dispatch(this.on_set_oscillating, [osc], () => { this.oscillating = osc });
         } else if (key == "direction_command") {
             if (payload != "forward" && payload != "reverse") return;
-            if (this.on_set_direction) return this.on_set_direction(payload);
-            this.direction = payload;
+            this.dispatch(this.on_set_direction, [payload], () => { this.direction = payload });
         }
     }
 }

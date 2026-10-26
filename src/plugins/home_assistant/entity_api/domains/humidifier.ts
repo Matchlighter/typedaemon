@@ -1,8 +1,13 @@
 import { action, observable } from "mobx";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
+import { useStateValueTemplate } from "../general";
+import { BooleanEntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
 
 export type HumidifierDeviceClass = "humidifier" | "dehumidifier";
 export type HumidifierAction = "off" | "humidifying" | "drying" | "idle";
+
+/** HA's default `min_humidity` / `max_humidity` for humidifiers */
+const DEFAULT_MIN_HUMIDITY = 0;
+const DEFAULT_MAX_HUMIDITY = 100;
 
 export interface HumidifierOptions extends EntityOptionsCommon, EntityOptionsCommonW {
     /** `humidifier` (default) or `dehumidifier` */
@@ -31,7 +36,7 @@ type HumidifierServices = {
  * set the command is applied optimistically.
  * `target_humidity`, `mode`, `current_humidity` and `action` are published as fields of the JSON state payload.
  */
-export class TDHumidifier extends EntityClass<boolean, HumidifierServices, HumidifierOptions> {
+export class TDHumidifier extends BooleanEntityClass<HumidifierServices, HumidifierOptions> {
     static domain = "humidifier";
 
     static { this._defaultAutocleaner(); }
@@ -62,40 +67,20 @@ export class TDHumidifier extends EntityClass<boolean, HumidifierServices, Humid
         return f;
     }
 
-    protected _serializeState(state: boolean) {
-        if (state === true) return "ON";
-        if (state === false) return "OFF";
-        return state;
-    }
-
     protected discovery_data() {
         const dd = super.discovery_data();
-        // HA's humidifier uses `state_value_template` (not `value_template`) for the main state
-        Object.assign(dd, {
-            state_value_template: "{{ value_json.state }}",
-            target_humidity_state_topic: this.mqtt_state_topic,
-            target_humidity_state_template: "{{ value_json.target_humidity }}",
-            ...discoveryPassOptions(this.options, ["device_class", "min_humidity", "max_humidity"]),
-        });
-        delete (dd as any).value_template;
+        useStateValueTemplate(dd);
+        Object.assign(dd,
+            this.stateField("target_humidity_state_topic", "target_humidity_state_template", "target_humidity"),
+            discoveryPassOptions(this.options, ["device_class", "min_humidity", "max_humidity"]));
         if (this.has_modes) {
-            Object.assign(dd, {
-                modes: this.options!.modes,
-                mode_state_topic: this.mqtt_state_topic,
-                mode_state_template: "{{ value_json.mode }}",
-            });
+            Object.assign(dd, { modes: this.options!.modes }, this.stateField("mode_state_topic", "mode_state_template", "mode"));
         }
         if (this.options?.current_humidity) {
-            Object.assign(dd, {
-                current_humidity_topic: this.mqtt_state_topic,
-                current_humidity_template: "{{ value_json.current_humidity }}",
-            });
+            Object.assign(dd, this.stateField("current_humidity_topic", "current_humidity_template", "current_humidity"));
         }
         if (this.options?.action) {
-            Object.assign(dd, {
-                action_topic: this.mqtt_state_topic,
-                action_template: "{{ value_json.action }}",
-            });
+            Object.assign(dd, this.stateField("action_topic", "action_template", "action"));
         }
         return dd;
     }
@@ -103,20 +88,17 @@ export class TDHumidifier extends EntityClass<boolean, HumidifierServices, Humid
     @action
     handle_command(payload: any, key?: string) {
         if (key == "command") {
-            if (payload != "ON" && payload != "OFF") return;
-            const handler = payload == "ON" ? this.on_turn_on : this.on_turn_off;
-            if (handler) return handler.call(this);
-            this.state = payload == "ON";
+            const on = parseOnOff(payload);
+            if (on == null) return;
+            this.dispatch(on ? this.on_turn_on : this.on_turn_off, [], () => { this.state = on });
         } else if (key == "target_humidity_command") {
-            const h = parseFloat(payload);
-            if (isNaN(h)) return;
-            if (h < (this.options?.min_humidity ?? 0) || h > (this.options?.max_humidity ?? 100)) return;
-            if (this.on_set_target_humidity) return this.on_set_target_humidity(h);
-            this.target_humidity = h;
+            const h = parseNumberPayload(payload,
+                this.options?.min_humidity ?? DEFAULT_MIN_HUMIDITY, this.options?.max_humidity ?? DEFAULT_MAX_HUMIDITY);
+            if (h == null) return;
+            this.dispatch(this.on_set_target_humidity, [h], () => { this.target_humidity = h });
         } else if (key == "mode_command") {
             if (!this.options?.modes?.includes(payload)) return;
-            if (this.on_set_mode) return this.on_set_mode(payload);
-            this.mode = payload;
+            this.dispatch(this.on_set_mode, [payload], () => { this.mode = payload });
         }
     }
 }
