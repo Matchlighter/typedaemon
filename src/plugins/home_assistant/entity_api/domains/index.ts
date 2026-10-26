@@ -1,4 +1,5 @@
 
+import { TDAlarmControlPanel } from "./alarm_control_panel";
 import { TDBinarySensor } from "./binary_sensor";
 import { TDButton } from "./button";
 import { TDCamera } from "./camera";
@@ -21,6 +22,7 @@ import { TDText } from "./text";
 import { TDUpdate } from "./update";
 
 export const domain_entities = {
+    alarm_control_panel: TDAlarmControlPanel,
     binary_sensor: TDBinarySensor,
     button: TDButton,
     camera: TDCamera,
