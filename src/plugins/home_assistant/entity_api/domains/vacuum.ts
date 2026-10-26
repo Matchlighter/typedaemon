@@ -3,7 +3,8 @@ import { omitDiscoveryKeys } from "../general";
 import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseJsonOrRaw } from "./base";
 
 export type VacuumState = "cleaning" | "docked" | "paused" | "idle" | "returning" | "error";
-export type VacuumFeature = "start" | "stop" | "pause" | "return_home" | "clean_spot" | "locate" | "fan_speed" | "send_command" | "status" | "battery" | "clean_area";
+/** Values HA's MQTT vacuum accepts in `supported_features` */
+export type VacuumFeature = "start" | "stop" | "pause" | "return_home" | "status" | "locate" | "clean_spot" | "fan_speed" | "send_command";
 
 type VacuumCommand = "start" | "pause" | "stop" | "return_to_base" | "clean_spot" | "locate";
 const COMMANDS: VacuumCommand[] = ["start", "pause", "stop", "return_to_base", "clean_spot", "locate"];
