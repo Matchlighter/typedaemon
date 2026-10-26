@@ -52,7 +52,7 @@ To use TCP/tailcat from another machine, copy `.typedaemon/connection_params` an
 TypeDaemon tries to abstract the need for you to learn how JS packaging and NPM work. It does this by generating the appropriate configs and automagically downloading appropriate typings and support files. This process occurs automatically upon first startup and when TypeDaemon detects that it was updated, but you can also manually trigger this by running `./td dev_env`
 
 ### Home Assistant Integration
-Some features (currently just custom Actions) require the TypeDaemon companion integration to be installed in Home Assistant:
+Some features (custom Actions, stream cameras) require the TypeDaemon companion integration to be installed in Home Assistant:
 1. Install via [HACS](https://hacs.xyz): HACS > ⋮ > Custom repositories > add `https://github.com/Matchlighter/typedaemon` as type *Integration*, then download *TypeDaemon*.
    (Manual alternative: copy [`custom_components/typedaemon`](custom_components/typedaemon) to `custom_components/typedaemon` in your HA config directory.)
 2. Restart Home Assistant
@@ -67,6 +67,18 @@ async announce(data: { message: string }) {
     return { announced: true };
 }
 ```
+
+#### Cameras: snapshot vs stream
+TypeDaemon has two camera entity types, picked by which one you use (they're separate entity kinds, so ids don't clash):
+- `ha.entity.camera` - **snapshot** camera over MQTT. State is the image bytes; HA shows the last image pushed. No companion integration needed, but no live video.
+- `ha.entity.stream_camera` - **live stream** camera via the companion integration. State is a stream URL (RTSP/HLS/... - anything HA's `stream` integration accepts), which HA serves to the frontend as HLS/WebRTC. Stills come from `still_image_url` if given, otherwise from the stream.
+
+```ts
+@ha.entity.stream_camera({ id: "front_door", name: "Front Door", still_image_url: "http://cam.lan/snapshot.jpg" })
+accessor front_door_stream = "rtsp://cam.lan:554/main";
+```
+
+Changing the value (or name/attributes) updates the camera in HA. Stream cameras are available while TypeDaemon is connected to HA's websocket and removed from HA when no longer declared (autoclean). In HA they're attached to a TypeDaemon-integration device mirroring the app's device (HA doesn't share devices across integrations), not to the app's MQTT device.
 
 ## Where thar be Dragons
 

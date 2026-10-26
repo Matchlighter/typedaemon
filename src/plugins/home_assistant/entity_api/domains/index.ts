@@ -16,6 +16,7 @@ import { TDLight } from "./light";
 import { TDNumber } from "./number";
 import { TDScene } from "./scene";
 import { TDSiren } from "./siren";
+import { TDStreamCamera } from "./stream_camera";
 import { TDSelect } from "./select";
 import { TDSensor } from "./sensor";
 import { TDSwitch } from "./switch";
@@ -45,6 +46,8 @@ export const domain_entities = {
     select: TDSelect,
     siren: TDSiren,
     sensor: TDSensor,
+    /** HA `camera` with a live stream, via the companion integration (not MQTT). Separate key: `camera` is the MQTT snapshot camera */
+    stream_camera: TDStreamCamera,
     switch: TDSwitch,
     tag: TDTag,
     text: TDText,

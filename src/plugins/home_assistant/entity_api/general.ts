@@ -12,7 +12,7 @@ import { EntityStore } from "./store";
 const resolveUUID = (uuid: string, ent: TDAbstractEntity<any>) => {
     if (uuid && uuid.startsWith('/')) return uuid.substring(1);
     if (uuid && uuid.startsWith('uuid:')) return uuid.substring(5);
-    return `td-${ent['application'].uuid}-${ent.domain}-${uuid}`
+    return `td-${ent['application'].uuid}-${ent.entity_kind}-${uuid}`
 }
 
 export interface TDAbstractEntityOptions {
@@ -43,7 +43,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 
     static _defaultAutocleaner() {
         setAutocleaner(this, {
-            key: `td_abstract_entity-${(this as any).domain}`,
+            key: `td_abstract_entity-${(this as any).entity_kind || (this as any).domain}`,
             make_entry: (entity) => {
                 // command_keys may depend on options (unavailable at cleanup time), so persist them
                 return { id: entity['_uuid'], domain: entity.domain, command_keys: entity.command_keys() }
@@ -93,6 +93,20 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 
     get domain() {
         return this.options?.domain || (this.constructor as any).domain;
+    }
+
+    /**
+     * Identifies the entity implementation when several classes back the same HA domain (e.g. MQTT `camera` vs the
+     * companion-integration stream camera). Namespaces the uuid and autoclean entries so they can't collide.
+     * Set `static entity_kind` to override; defaults to `domain`.
+     */
+    get entity_kind(): string {
+        return (this.constructor as any).entity_kind || this.domain;
+    }
+
+    /** Name shown in HA; falls back to the entity's id */
+    protected get display_name() {
+        return this.name || this._uuid; // TODO humanize(_uuid)?
     }
 
     async markAvailable() {
@@ -189,7 +203,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 
             availability_mode: "all",
 
-            name: this.name || this._uuid, // TODO humanize(_uuid)?
+            name: this.display_name,
             unique_id: this.uuid,
             object_id: this.options?.object_id,
 
