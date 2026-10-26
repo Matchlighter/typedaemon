@@ -73,7 +73,7 @@ export class Executor<T> {
         this.invoke('next');
     }
 
-    cancel(reason?: any) {
+    cancel(reason: any = new PromiseCancelled()) {
         if (!reason || typeof reason === 'string') {
             reason = new PromiseCancelled(reason);
         }
@@ -87,8 +87,10 @@ export class Executor<T> {
 
         this.injectError(reason);
 
-        if (this.pending_promise && this.pending_promise.cancel) {
-            this.pending_promise.cancel(reason);
+        const pending = this.pending_promise;
+        // ResumablePromise always has a (protected) `cancel`, which throws unless it is cancellable
+        if (pending && pending.cancel && !(pending instanceof ResumablePromise && !pending.isCancellable())) {
+            pending.cancel(reason);
             this.pending_promise = null;
         }
     }

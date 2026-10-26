@@ -4,7 +4,7 @@ import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weak
 import { AsyncLocalStorage } from "async_hooks";
 import { Executor } from "../regen_executor";
 import { serializable } from "../../common/util";
-import { CancellableResumablePromise, ResumablePromise, SerializeContext } from "./resumable_promise";
+import { CancellableResumablePromise, PromiseCancelled, ResumablePromise, SerializeContext } from "./resumable_promise";
 
 const RESUMABLE_CONTEXT_ID = Symbol("resumable_serialized_id");
 export const EXECUTOR_FACTORY = Symbol("builder");
@@ -181,7 +181,7 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
         return true;
     }
 
-    cancel(reason?: any): void {
+    cancel(reason: any = new PromiseCancelled()): void {
         // TODO If not currently cancellable, store the cancellation for when/if it becomes cancellable
         return super.cancel(reason);
     }
