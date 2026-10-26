@@ -7,7 +7,7 @@ import { current } from "../../hypervisor/current";
 import { flushPluginAnnotations } from "../../plugins/base";
 import { script } from ".";
 import { ResumableScriptStoreManager } from "./resumable";
-import type { ScriptOptions } from "./store";
+import { ScriptOptions, ScriptStateStore } from "./store";
 
 const source = (options: object) => `
 import { script } from "typedaemon";
@@ -175,5 +175,50 @@ describe("@script shutdown: 'wait'", () => {
         expect(running.rejected).toBeNull();
         expect(Deferred.get("b")).toBeUndefined();
         expect(shutdown.settled).toBe(true);
+    });
+});
+
+describe("@script shutdown: 'wait' once shutting down", () => {
+    const h = useResumableHarness();
+    const tmp = useTempDir("td-script-");
+    let app: any;
+
+    beforeEach(async () => {
+        app = { operating_directory: tmp.dir, cleanups: new LifecycleHelper(), state: "started" };
+        (current as any).application = app;
+        await h.boot();
+    });
+
+    afterEach(() => {
+        delete (current as any).application;
+    });
+
+    it("refuses new runs", async () => {
+        const { Worker } = compileApp(source({ mode: "parallel", shutdown: "wait" }), { Deferred }, { typedaemon: { script } });
+        const w = new Worker();
+        await flushPluginAnnotations(w);
+
+        app.state = "stopping";
+        expect(w.run("a")).toBe(false);
+        await flushMicrotasks();
+        expect(Deferred.get("a")).toBeUndefined();
+    });
+});
+
+describe("ScriptStateStore.cancelAll", () => {
+    it("cancels every item even if one throws", () => {
+        const store = new ScriptStateStore({ mode: "restart" });
+        const cancelled: string[] = [];
+        const item = (name: string, fail = false) => ({
+            cancel: () => { cancelled.push(name); if (fail) throw new Error("boom"); },
+        }) as any;
+        store.trackPending(item("p1", true));
+        store.trackPending(item("p2"));
+        store.trackRunning(item("r1", true));
+        store.trackRunning(item("r2"));
+
+        expect(() => store.cancelAll()).not.toThrow();
+        expect(cancelled).toEqual(["p1", "p2", "r1", "r2"]);
+        expect(store.total_count).toBe(0);
     });
 });

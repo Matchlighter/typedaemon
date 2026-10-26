@@ -14,7 +14,7 @@ interface RepeatConfig {
 
 interface ResumeConfig {
     id?: string;
-    /** An amount of time (in seconds) after which the timers will not be resumed. Defaults to {@link WHEN_DEFAULT_RESUME_MAX}; `null` for no limit */
+    /** Seconds after which timers will not be resumed. Default {@link WHEN_DEFAULT_RESUME_MAX}; `null` = no limit */
     max?: number | null;
 }
 
@@ -34,7 +34,7 @@ interface WhenDecorator<S> {
     (decoratee: any, ctx: ClassMethodDecoratorContext<S>): void;
 }
 
-/** Default `resume.max` (seconds): saved timers older than this (since last activity) are discarded rather than resumed */
+/** Default `resume.max` (seconds): older saved timers are discarded rather than resumed */
 export const WHEN_DEFAULT_RESUME_MAX = 24 * 60 * 60;
 
 function normalizeOptions(options: WhenOptions) {
