@@ -66,7 +66,7 @@ describe("TDWaterHeater", () => {
         expect(e.on_set_mode).toHaveBeenCalledWith("off");
         expect(e.state).toBe("eco");
 
-        const d = new TDWaterHeater("uuid:ent2");
+        const d = new TDWaterHeater("uuid:ent1");
         const r = await discovered(d);
         r.send("mode_command", "heat_pump");
         expect(d.state).toBe("heat_pump");
