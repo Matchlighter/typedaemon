@@ -30,7 +30,7 @@ interface WhenOptions {
 }
 
 interface WhenDecorator<S> {
-    (callback: (self: S) => boolean): (() => void);
+    (callback: (self: S) => any): (() => void);
     (decoratee: any, ctx: ClassMethodDecoratorContext<S>): void;
 }
 
