@@ -45,12 +45,14 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         setAutocleaner(this, {
             key: `td_abstract_entity-${(this as any).domain}`,
             make_entry: (entity) => {
-                return { id: entity['_uuid'], domain: entity.domain }
+                // command_keys may depend on options (unavailable at cleanup time), so persist them
+                return { id: entity['_uuid'], domain: entity.domain, command_keys: entity.command_keys() }
             },
             destroy_entity: async (state, store: EntityStore) => {
                 // @ts-ignore
                 const tempEntity = new this(state.id, { domain: state.domain });
                 tempEntity._bound_store = store;
+                if (state.command_keys) tempEntity.command_keys = () => state.command_keys;
                 return await tempEntity._destroy();
             },
         })
@@ -72,6 +74,16 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 
     /** Compute and return any additional attributes */
     protected getExtraAttributes(): any {
+        return {}
+    }
+
+    /**
+     * Extra top-level fields to publish in the JSON state payload, for domains whose HA config reads several values
+     * (e.g. cover position, climate target temperature). Point the HA option at the shared state topic with a template:
+     * `{ position_topic: this.mqtt_state_topic, position_template: "{{ value_json.position }}" }`.
+     * Keeps a single retained topic so updates stay atomic. `state` and `attrs` are reserved.
+     */
+    protected getStateFields(): Record<string, any> {
         return {}
     }
 
@@ -103,6 +115,8 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
             `homeassistant/${this.domain}/${this.uuid}/config`,
             `${this.mqtt_topic}/status`,
             this.discovery_data().state_topic,
+            // Commands are normally non-retained, but clear in case `retain` was set
+            ...this.command_keys().map(k => this.command_topic_for(k)),
         ]
         for (let t of clear_topics) {
             conn.publish(t, null, {
@@ -116,9 +130,29 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         this.markUnavailable();
     }
 
-    handle_command(payload: any) {
+    /**
+     * Handle a payload received on one of the entity's command topics.
+     * @param key Which command topic it arrived on (see `command_keys()`); `"command"` for the primary `command_topic`.
+     */
+    handle_command(payload: any, key?: string) {
         // TODO Map services
         // TODO
+    }
+
+    /**
+     * Names of the MQTT command topics this entity listens on. Each key `k` is advertised in discovery as `<k>_topic`
+     * (matching HA's naming, e.g. `set_position` -> `set_position_topic`, `preset_mode_command` -> `preset_mode_command_topic`)
+     * and received payloads are routed to `handle_command(payload, k)`.
+     * `"command"` is the primary `command_topic` (kept at `<entity>/cmd` for back-compat). Override and extend `super.command_keys()`.
+     */
+    protected command_keys(): string[] {
+        return ["command"];
+    }
+
+    /** MQTT topic for the given command key */
+    protected command_topic_for(key: string) {
+        if (key == "command") return this.mqtt_command_topic;
+        return `${this.mqtt_command_topic}/${key}`;
     }
 
     protected get mqtt_topic() {
@@ -134,7 +168,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
     }
 
     protected discovery_data() {
-        return {
+        const dd = {
             availability: [
                 { topic: `${this._bound_store.mqtt_system_topic}/status` }, // TD
                 { topic: `${this._bound_store.mqtt_application_topic}/status` }, // App
@@ -156,6 +190,10 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 
             device: this.device,
         }
+        for (const key of this.command_keys()) {
+            dd[`${key}_topic`] = this.command_topic_for(key);
+        }
+        return dd;
     }
 
     async reconfigure() {
@@ -175,15 +213,17 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         await this.reconfigure();
 
         // Listen for Commands
-        this._disposers.append(mqtt.subscribe(this.mqtt_command_topic, action((topic, payload) => {
-            this.handle_command(payload);
-        })))
+        for (const key of this.command_keys()) {
+            this._disposers.append(mqtt.subscribe(this.command_topic_for(key), action((topic, payload) => {
+                this.handle_command(payload, key);
+            })))
+        }
 
         // Post availability
         await this.markAvailable();
 
         // Observe getState() and getAttributes(), pushing any changes to HA (use one topic so we can have atomic updates)
-        this._disposers.append(plgmobx.reaction(this.application, () => ({ state: this.getState(), attrs: this.getExtraAttributes() }), (v: RawStatePayload<T>) => {
+        this._disposers.append(plgmobx.reaction(this.application, () => ({ ...this.getStateFields(), state: this.getState(), attrs: this.getExtraAttributes() }), (v: RawStatePayload<T>) => {
             v.state = this._serializeState(v.state);
             this._publishState(v);
         }, { fireImmediately: true }))
