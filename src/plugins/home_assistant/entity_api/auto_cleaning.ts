@@ -22,7 +22,7 @@ export const autoCleanEntitiesKey = (plg: HomeAssistantPlugin) => {
 }
 
 function cleanerUUID(entity: TDEntity<any>) {
-    return `${entity.uuid}-${(entity as any).domain}`;
+    return `${entity.uuid}-${(entity as any).entity_kind ?? (entity as any).domain}`;
 }
 
 export interface Autocleaner<T extends TDEntity<any> = TDEntity<any>, P = any> {
