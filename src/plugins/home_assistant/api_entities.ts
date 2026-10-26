@@ -20,6 +20,7 @@ import { HomeAssistantPlugin } from "./plugin";
 
 import type { TDBinarySensor } from "./entity_api/domains/binary_sensor";
 import type { TDButton } from "./entity_api/domains/button";
+import type { TDCamera } from "./entity_api/domains/camera";
 import type { TDDeviceTracker } from "./entity_api/domains/device_tracker";
 import type { TDImage } from "./entity_api/domains/image";
 import type { TDNumber } from "./entity_api/domains/number";
@@ -338,6 +339,9 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
         /** Create a `image` entity and update it whenever the decorated getter/accessor is updated */
         image: stateOnlyApi<TDImage>(domain_entities.image),
+
+        /** Create a `camera` entity and update it whenever the decorated getter/accessor (image bytes) is updated */
+        camera: stateOnlyApi<TDCamera>(domain_entities.camera),
 
         // /** Create a `person` entity and update it whenever the decorated getter/accessor is updated */
         // person: stateOnlyDecorator<{}, string>("person"), // TODO Not supported by MQTT
