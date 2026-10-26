@@ -73,6 +73,43 @@ export async function installDependencies({ dir, ...opts }: InstallOpts, depende
     }
 }
 
+/**
+ * Install the globally-configured `dependencies` into `<dir>/node_modules` (the config root) so apps can load them (in their VMs).
+ * Manages `<dir>/package.json`; skips if satisfied or if the user manages that file themselves.
+ */
+export async function installConfigDependencies(dir: string, dependencies: Record<string, string> | undefined) {
+    if (!dependencies || Object.keys(dependencies).length == 0) return;
+
+    const pkgjsonFile = path.join(dir, "package.json");
+    const packageJson = {
+        "name": "TDCONFIG",
+        "version": "0.0.1",
+        "license": "UNLICENSED",
+        "private": true,
+        "typedaemon_managed": true,
+        "dependencies": dependencies,
+    }
+    const serialized = JSON.stringify(packageJson, null, 2);
+
+    if (fs.existsSync(pkgjsonFile)) {
+        const existingRaw = await fs.promises.readFile(pkgjsonFile, "utf8");
+        let existing: any = {};
+        try { existing = JSON.parse(existingRaw) } catch { }
+        if (!existing['typedaemon_managed']) {
+            logMessage("warn", `Config root has a non-managed package.json; configured \`dependencies\` will not be installed. Add them to that package.json instead.`);
+            return;
+        }
+        if (existingRaw == serialized && fs.existsSync(path.join(dir, "node_modules"))) {
+            logMessage("debug", "Pre-installed packages are up to date");
+            return;
+        }
+    }
+
+    logMessage("info", "Installing pre-installed packages");
+    await fs.promises.writeFile(pkgjsonFile, serialized);
+    await installDependencies({ dir });
+}
+
 async function handle_subproc(proc: execa.ExecaChildProcess, { ignored_patterns }: { ignored_patterns?: (string | RegExp)[] } = { ignored_patterns: [] }) {
     const printer_factory = (level: LogLevel) => (data) => {
         const lines = (data.toString() as string).trim().split("\n");
