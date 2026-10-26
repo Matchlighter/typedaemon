@@ -22,6 +22,7 @@ import { TDTag } from "./tag";
 import { TDText } from "./text";
 import { TDUpdate } from "./update";
 import { TDVacuum } from "./vacuum";
+import { TDWaterHeater } from "./water_heater";
 
 export const domain_entities = {
     alarm_control_panel: TDAlarmControlPanel,
@@ -47,4 +48,5 @@ export const domain_entities = {
     text: TDText,
     update: TDUpdate,
     vacuum: TDVacuum,
+    water_heater: TDWaterHeater,
 }
