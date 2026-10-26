@@ -112,8 +112,8 @@ export async function saveGeneratedTsconfig(hv: Hypervisor) {
                 "ES2022",
                 "esnext.decorators",
             ] as any,
-            "module": "Node16",
-            // @ts-ignore
+            // Bundler: extensionless imports + package.json `exports` resolution (apps are transformed by Babel, not tsc)
+            "module": "ESNext",
             "moduleResolution": "Bundler",
             "sourceMap": true,
             "target": "ES2022",
