@@ -1,10 +1,14 @@
 import { action, observable } from "mobx";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
+import { omitDiscoveryKeys } from "../general";
+import { CommandHandlers, EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseNumberPayload, parseOnOff } from "./base";
 
 export type ClimateMode = "auto" | "off" | "cool" | "heat" | "dry" | "fan_only" | "heat_cool";
 export type ClimateAction = "off" | "heating" | "cooling" | "drying" | "idle" | "fan";
 
 const DEFAULT_MODES: string[] = ["auto", "off", "cool", "heat", "dry", "fan_only"];
+/** HA's default `min_humidity` / `max_humidity` for climate */
+const DEFAULT_MIN_HUMIDITY = 30;
+const DEFAULT_MAX_HUMIDITY = 99;
 
 export interface ClimateOptions extends EntityOptionsCommon, EntityOptionsCommonW {
     /** Available HVAC modes; subset of HA's list. HA default: auto, off, cool, heat, dry, fan_only */
@@ -31,9 +35,9 @@ export interface ClimateOptions extends EntityOptionsCommon, EntityOptionsCommon
     current_humidity?: boolean;
     /** Enable target humidity (`target_humidity`) reporting and commands */
     target_humidity?: boolean;
-    /** Lowest target humidity (requires `target_humidity`). HA default: 30 */
+    /** Lowest target humidity (requires `target_humidity`). HA default: 30 (`DEFAULT_MIN_HUMIDITY`) */
     min_humidity?: number;
-    /** Highest target humidity (requires `target_humidity`). HA default: 99 */
+    /** Highest target humidity (requires `target_humidity`). HA default: 99 (`DEFAULT_MAX_HUMIDITY`) */
     max_humidity?: number;
     /** Fan modes; enables `fan_mode` reporting and commands */
     fan_modes?: string[];
@@ -48,10 +52,10 @@ export interface ClimateOptions extends EntityOptionsCommon, EntityOptionsCommon
 type ClimateServices = {
     turn_on: [];
     turn_off: [];
-    set_hvac_mode: [mode: string];
-    set_temperature: [temperature: number];
-    set_temperature_range: [range: { high?: number, low?: number }];
-    set_humidity: [humidity: number];
+    set_mode: [mode: string];
+    set_target_temperature: [temperature: number];
+    set_target_temperature_range: [range: { high?: number, low?: number }];
+    set_target_humidity: [humidity: number];
     set_fan_mode: [mode: string];
     set_swing_mode: [mode: string];
     set_preset_mode: [mode: string];
@@ -62,7 +66,7 @@ type ClimateServices = {
  * and `turn_on`/`turn_off` are never applied optimistically - report the result via `state`).
  * All other values are published as fields of the JSON state payload.
  * Commands call the matching `on_*` handler; when a handler isn't set the command is applied optimistically.
- * Dual-setpoint commands call `on_set_temperature_range({ high })` / `({ low })` with the one changed bound.
+ * Dual-setpoint commands call `on_set_target_temperature_range({ high })` / `({ low })` with the one changed bound.
  */
 export class TDClimate extends EntityClass<string | undefined, ClimateServices, ClimateOptions> {
     static domain = "climate";
@@ -79,16 +83,6 @@ export class TDClimate extends EntityClass<string | undefined, ClimateServices, 
     @observable accessor swing_mode: string | undefined;
     @observable accessor preset_mode: string | undefined;
     @observable accessor action: ClimateAction | undefined;
-
-    on_turn_on?: () => void;
-    on_turn_off?: () => void;
-    on_set_mode?: (mode: string) => void;
-    on_set_temperature?: (temperature: number) => void;
-    on_set_temperature_range?: (range: { high?: number, low?: number }) => void;
-    on_set_humidity?: (humidity: number) => void;
-    on_set_fan_mode?: (mode: string) => void;
-    on_set_swing_mode?: (mode: string) => void;
-    on_set_preset_mode?: (mode: string) => void;
 
     private has(list: "fan_modes" | "swing_modes" | "preset_modes") { return !!this.options?.[list]?.length }
 
@@ -124,78 +118,65 @@ export class TDClimate extends EntityClass<string | undefined, ClimateServices, 
         const o = this.options;
         const dd = super.discovery_data();
         // State is only reported via per-field topics
-        delete (dd as any).command_topic;
-        delete (dd as any).state_topic;
-        delete (dd as any).value_template;
-        const field = (name: string, topic: string, template: string, field = name) => ({
-            [topic]: this.mqtt_state_topic,
-            [template]: `{{ value_json.${field} }}`,
-        });
-        Object.assign(dd, {
-            ...field("state", "mode_state_topic", "mode_state_template"),
-            ...field("temperature", "temperature_state_topic", "temperature_state_template"),
-            ...discoveryPassOptions(o, ["modes", "min_temp", "max_temp", "precision", "temp_step", "temperature_unit", "payload_on", "payload_off"]),
-        });
+        omitDiscoveryKeys(dd, "command_topic", "state_topic", "value_template");
+        Object.assign(dd,
+            this.stateField("mode_state_topic", "mode_state_template", "state"),
+            this.stateField("temperature_state_topic", "temperature_state_template", "temperature"),
+            discoveryPassOptions(o, ["modes", "min_temp", "max_temp", "precision", "temp_step", "temperature_unit", "payload_on", "payload_off"]));
         if (o?.high_low) {
             Object.assign(dd,
-                field("temperature_high", "temperature_high_state_topic", "temperature_high_state_template"),
-                field("temperature_low", "temperature_low_state_topic", "temperature_low_state_template"));
+                this.stateField("temperature_high_state_topic", "temperature_high_state_template", "temperature_high"),
+                this.stateField("temperature_low_state_topic", "temperature_low_state_template", "temperature_low"));
         }
-        if (o?.current_temperature) Object.assign(dd, field("current_temperature", "current_temperature_topic", "current_temperature_template"));
-        if (o?.current_humidity) Object.assign(dd, field("current_humidity", "current_humidity_topic", "current_humidity_template"));
+        if (o?.current_temperature) Object.assign(dd, this.stateField("current_temperature_topic", "current_temperature_template", "current_temperature"));
+        if (o?.current_humidity) Object.assign(dd, this.stateField("current_humidity_topic", "current_humidity_template", "current_humidity"));
         if (o?.target_humidity) {
             Object.assign(dd,
-                field("target_humidity", "target_humidity_state_topic", "target_humidity_state_template"),
+                this.stateField("target_humidity_state_topic", "target_humidity_state_template", "target_humidity"),
                 discoveryPassOptions(o, ["min_humidity", "max_humidity"]));
         }
-        if (this.has("fan_modes")) Object.assign(dd, { fan_modes: o!.fan_modes }, field("fan_mode", "fan_mode_state_topic", "fan_mode_state_template"));
-        if (this.has("swing_modes")) Object.assign(dd, { swing_modes: o!.swing_modes }, field("swing_mode", "swing_mode_state_topic", "swing_mode_state_template"));
-        if (this.has("preset_modes")) Object.assign(dd, { preset_modes: o!.preset_modes }, field("preset_mode", "preset_mode_state_topic", "preset_mode_value_template"));
-        if (o?.action) Object.assign(dd, field("action", "action_topic", "action_template"));
+        if (this.has("fan_modes")) Object.assign(dd, { fan_modes: o!.fan_modes }, this.stateField("fan_mode_state_topic", "fan_mode_state_template", "fan_mode"));
+        if (this.has("swing_modes")) Object.assign(dd, { swing_modes: o!.swing_modes }, this.stateField("swing_mode_state_topic", "swing_mode_state_template", "swing_mode"));
+        // Not a typo: HA's climate names this one `preset_mode_value_template` (unlike its `*_state_template` siblings)
+        if (this.has("preset_modes")) Object.assign(dd, { preset_modes: o!.preset_modes }, this.stateField("preset_mode_state_topic", "preset_mode_value_template", "preset_mode"));
+        if (o?.action) Object.assign(dd, this.stateField("action_topic", "action_template", "action"));
         return dd;
     }
 
     @action
     handle_command(payload: any, key?: string) {
         const o = this.options;
-        const setTemp = (prop: "target_temperature" | "target_temperature_high" | "target_temperature_low", handler: () => ((t: number) => void) | undefined) => {
-            const t = parseFloat(payload);
-            if (isNaN(t)) return;
-            if ((o?.min_temp != null && t < o.min_temp) || (o?.max_temp != null && t > o.max_temp)) return;
-            const h = handler();
-            if (h) return h(t);
-            this[prop] = t;
+        const setTemp = (prop: "target_temperature" | "target_temperature_high" | "target_temperature_low", handler: ((t: number) => void) | undefined) => {
+            const t = parseNumberPayload(payload, o?.min_temp, o?.max_temp);
+            if (t == null) return;
+            this.dispatch(handler, [t], () => { this[prop] = t });
         };
-        const setChoice = (list: string[] | undefined, prop: "fan_mode" | "swing_mode" | "preset_mode", h?: (m: string) => void) => {
+        const setChoice = (list: string[] | undefined, prop: "fan_mode" | "swing_mode" | "preset_mode", handler: ((m: string) => void) | undefined) => {
             if (!list?.includes(payload)) return;
-            if (h) return h.call(this, payload);
-            this[prop] = payload;
+            this.dispatch(handler, [payload], () => { this[prop] = payload });
         };
+        const range = this.on_set_target_temperature_range;
 
         switch (key) {
             case "power_command": {
-                const handler = payload == (o?.payload_on ?? "ON") ? this.on_turn_on
-                    : payload == (o?.payload_off ?? "OFF") ? this.on_turn_off : undefined;
-                return handler?.call(this);
+                // Never optimistic: HA has no power state
+                const on = parseOnOff(payload, o?.payload_on, o?.payload_off);
+                if (on == null) return;
+                return this.dispatch(on ? this.on_turn_on : this.on_turn_off, []);
             }
             case "mode_command":
                 if (!(o?.modes ?? DEFAULT_MODES).includes(payload)) return;
-                if (this.on_set_mode) return this.on_set_mode(payload);
-                this.state = payload;
-                return;
+                return this.dispatch(this.on_set_mode, [payload], () => { this.state = payload });
             case "temperature_command":
-                return setTemp("target_temperature", () => this.on_set_temperature);
+                return setTemp("target_temperature", this.on_set_target_temperature);
             case "temperature_high_command":
-                return setTemp("target_temperature_high", () => this.on_set_temperature_range && ((high) => this.on_set_temperature_range!({ high })));
+                return setTemp("target_temperature_high", range && ((high) => range.call(this, { high })));
             case "temperature_low_command":
-                return setTemp("target_temperature_low", () => this.on_set_temperature_range && ((low) => this.on_set_temperature_range!({ low })));
+                return setTemp("target_temperature_low", range && ((low) => range.call(this, { low })));
             case "target_humidity_command": {
-                const h = parseFloat(payload);
-                if (isNaN(h)) return;
-                if (h < (o?.min_humidity ?? 30) || h > (o?.max_humidity ?? 99)) return;
-                if (this.on_set_humidity) return this.on_set_humidity(h);
-                this.target_humidity = h;
-                return;
+                const h = parseNumberPayload(payload, o?.min_humidity ?? DEFAULT_MIN_HUMIDITY, o?.max_humidity ?? DEFAULT_MAX_HUMIDITY);
+                if (h == null) return;
+                return this.dispatch(this.on_set_target_humidity, [h], () => { this.target_humidity = h });
             }
             case "fan_mode_command": return setChoice(o?.fan_modes, "fan_mode", this.on_set_fan_mode);
             case "swing_mode_command": return setChoice(o?.swing_modes, "swing_mode", this.on_set_swing_mode);
@@ -203,3 +184,6 @@ export class TDClimate extends EntityClass<string | undefined, ClimateServices, 
         }
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDClimate extends CommandHandlers<ClimateServices> { }

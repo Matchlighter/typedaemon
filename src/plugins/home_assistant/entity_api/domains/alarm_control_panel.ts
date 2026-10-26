@@ -1,5 +1,5 @@
 import { action } from "mobx";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
+import { CommandHandlers, EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseJsonOrRaw } from "./base";
 
 export type AlarmState =
     | "disarmed" | "armed_home" | "armed_away" | "armed_night" | "armed_vacation" | "armed_custom_bypass"
@@ -51,41 +51,28 @@ export class TDAlarmControlPanel extends EntityClass<AlarmState, AlarmServices, 
 
     static { this._defaultAutocleaner(); }
 
-    on_arm_home?: (code?: string) => void;
-    on_arm_away?: (code?: string) => void;
-    on_arm_night?: (code?: string) => void;
-    on_arm_vacation?: (code?: string) => void;
-    on_arm_custom_bypass?: (code?: string) => void;
-    on_disarm?: (code?: string) => void;
-    on_trigger?: (code?: string) => void;
-
     protected discovery_data() {
         const dd = super.discovery_data();
         Object.assign(dd, {
             command_template: '{"action":"{{ action }}","code":{{ code | tojson }}}',
-            ...discoveryPassOptions(this.options ?? {}, [
+            ...discoveryPassOptions(this.options, [
                 "supported_features", "code", "code_arm_required", "code_disarm_required", "code_trigger_required",
             ]),
         });
-        for (const k of Object.keys(dd)) if ((dd as any)[k] === undefined) delete (dd as any)[k];
         return dd;
     }
 
     @action
     handle_command(payload: any) {
-        let act: unknown = payload;
-        let code: string | undefined;
-        if (typeof payload == "string" && payload.trim().startsWith("{")) {
-            try { payload = JSON.parse(payload) } catch { return }
-        }
-        if (payload && typeof payload == "object") {
-            act = payload.action;
-            code = payload.code || undefined;
-        }
+        // `{"action","code"}` JSON (see command_template), or a bare action; malformed JSON is ignored
+        const p = parseJsonOrRaw(payload);
+        const act = typeof p == "object" ? p.action : p;
+        const code: string | undefined = (typeof p == "object" && p.code) || undefined;
         if (typeof act != "string" || !Object.hasOwn(ACTIONS, act)) return;
         const [service, state] = ACTIONS[act as keyof typeof ACTIONS];
-        const handler = this[`on_${service}`];
-        if (handler) return handler.call(this, code);
-        this.state = state;
+        this.dispatch(this[`on_${service}`], [code], () => { this.state = state });
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDAlarmControlPanel extends CommandHandlers<AlarmServices> { }

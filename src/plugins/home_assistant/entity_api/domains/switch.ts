@@ -1,5 +1,5 @@
 
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, HATemplate, discoveryPassOptions } from "./base";
+import { BooleanEntityClass, EntityOptionsCommon, EntityOptionsCommonW, HATemplate, discoveryPassOptions, parseOnOff } from "./base";
 
 type SwitchDeviceClass = string;
 
@@ -34,7 +34,7 @@ type SwitchServices = {
     turn_off: [value: string];
 }
 
-export class TDSwitch extends EntityClass<boolean, SwitchServices, SwitchOptions> {
+export class TDSwitch extends BooleanEntityClass<SwitchServices, SwitchOptions> {
     static domain = "switch";
 
     static { this._defaultAutocleaner(); }
@@ -49,14 +49,8 @@ export class TDSwitch extends EntityClass<boolean, SwitchServices, SwitchOptions
         return dd;
     }
 
-    protected _serializeState(state: boolean) {
-        if (state === true) return "ON";
-        if (state === false) return "OFF";
-        return state;
-    }
-
     handle_command(payload: any) {
-        if (payload == "ON") this.state = true;
-        if (payload == "OFF") this.state = false;
+        const on = parseOnOff(payload);
+        if (on != null) this.state = on;
     }
 }

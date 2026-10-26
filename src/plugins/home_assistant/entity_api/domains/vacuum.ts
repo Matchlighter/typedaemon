@@ -1,8 +1,10 @@
 import { action, observable } from "mobx";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
+import { omitDiscoveryKeys } from "../general";
+import { CommandHandlers, EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions, parseJsonOrRaw } from "./base";
 
 export type VacuumState = "cleaning" | "docked" | "paused" | "idle" | "returning" | "error";
-export type VacuumFeature = "start" | "stop" | "pause" | "return_home" | "clean_spot" | "locate" | "fan_speed" | "send_command" | "status" | "battery" | "clean_area";
+/** Values HA's MQTT vacuum accepts in `supported_features` */
+export type VacuumFeature = "start" | "stop" | "pause" | "return_home" | "status" | "locate" | "clean_spot" | "fan_speed" | "send_command";
 
 type VacuumCommand = "start" | "pause" | "stop" | "return_to_base" | "clean_spot" | "locate";
 const COMMANDS: VacuumCommand[] = ["start", "pause", "stop", "return_to_base", "clean_spot", "locate"];
@@ -45,15 +47,6 @@ export class TDVacuum extends EntityClass<VacuumState, VacuumServices, VacuumOpt
 
     @observable accessor fan_speed: string | undefined;
 
-    on_start?: () => void;
-    on_pause?: () => void;
-    on_stop?: () => void;
-    on_return_to_base?: () => void;
-    on_clean_spot?: () => void;
-    on_locate?: () => void;
-    on_set_fan_speed?: (speed: string) => void;
-    on_send_command?: (command: string, params?: Record<string, any>) => void;
-
     private get has_fan_speeds() { return !!this.options?.fan_speed_list?.length }
 
     protected command_keys(): string[] {
@@ -70,7 +63,7 @@ export class TDVacuum extends EntityClass<VacuumState, VacuumServices, VacuumOpt
     protected discovery_data() {
         const dd = super.discovery_data();
         // Modern schema reads the JSON state topic directly
-        delete (dd as any).value_template;
+        omitDiscoveryKeys(dd, "value_template");
         Object.assign(dd, discoveryPassOptions(this.options, [
             "supported_features",
             "fan_speed_list",
@@ -87,22 +80,21 @@ export class TDVacuum extends EntityClass<VacuumState, VacuumServices, VacuumOpt
     @action
     handle_command(payload: any, key?: string) {
         if (key == "command") {
-            const cmd = COMMANDS.find(c => ((this.options as any)?.[`payload_${c}`] ?? c) == payload);
-            if (cmd) this[`on_${cmd}`]?.call(this);
+            const cmd = COMMANDS.find(c => (this.options?.[`payload_${c}` as const] ?? c) == payload);
+            if (cmd) this.dispatch(this[`on_${cmd}`], []);
         } else if (key == "set_fan_speed") {
             if (!this.options?.fan_speed_list?.includes(payload)) return;
-            if (this.on_set_fan_speed) return this.on_set_fan_speed(payload);
-            this.fan_speed = payload;
+            this.dispatch(this.on_set_fan_speed, [payload], () => { this.fan_speed = payload });
         } else if (key == "send_command") {
-            let command = payload as string, params: Record<string, any> | undefined;
-            if (typeof payload == "string" && payload.trim().startsWith("{")) {
-                try {
-                    const { command: c, ...rest } = JSON.parse(payload);
-                    if (typeof c != "string") return;
-                    command = c; params = rest;
-                } catch { /* raw string */ }
-            }
-            this.on_send_command?.(command, params);
+            // Plain command string, or JSON `{"command": ..., ...params}`; malformed JSON is ignored
+            const p = parseJsonOrRaw(payload);
+            if (typeof p == "string") return this.dispatch(this.on_send_command, [p]);
+            if (typeof p?.command != "string") return;
+            const { command, ...params } = p;
+            this.dispatch(this.on_send_command, [command, params]);
         }
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDVacuum extends CommandHandlers<VacuumServices> { }

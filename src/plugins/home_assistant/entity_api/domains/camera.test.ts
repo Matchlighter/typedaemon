@@ -1,30 +1,5 @@
-jest.mock('../../..', () => ({ ha: { application_device: { name: "App Device" } } }));
-jest.mock('../../../mobx', () => {
-    const mobx = jest.requireActual('mobx');
-    return { plgmobx: { reaction: (_app: any, ...args: any[]) => (mobx.reaction as any)(...args) } };
-});
+import { BASE, discovered } from "../../../../../test/helpers/entity_api";
 import { TDCamera } from "./camera";
-
-const BASE = "td/apps/app1/entities/ent1";
-
-function setup(e: TDCamera) {
-    const subscriptions: Record<string, any> = {};
-    const published: { topic: string, payload: any, opts?: any }[] = [];
-    const publish = (topic: string, payload: any, opts?: any) => { published.push({ topic, payload, opts }) };
-    (e as any)._bound_store = {
-        mqtt_system_topic: "td", mqtt_application_topic: "td/apps/app1", application: {},
-        mqttApi: () => ({ publish, subscribe: (t: string, cb: any) => { subscriptions[t] = cb; return () => { } } }),
-        mqttConnection: () => ({ publish }),
-    };
-    return { subscriptions, published };
-}
-
-async function discovered(e: TDCamera) {
-    const ctx = setup(e);
-    await (e as any)._register_in_ha();
-    const cfg = ctx.published.find(p => p.topic == "homeassistant/camera/ent1/config")!;
-    return { ...ctx, dd: JSON.parse(cfg.payload) };
-}
 
 describe("TDCamera", () => {
     it("discovers with image topic, no state/command topics", async () => {

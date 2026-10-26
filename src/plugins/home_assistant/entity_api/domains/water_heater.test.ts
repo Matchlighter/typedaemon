@@ -1,31 +1,5 @@
-jest.mock('../../..', () => ({ ha: { application_device: { name: "App Device" } } }));
-jest.mock('../../../mobx', () => {
-    const mobx = jest.requireActual('mobx');
-    return { plgmobx: { reaction: (_app: any, ...args: any[]) => (mobx.reaction as any)(...args) } };
-});
+import { BASE, discovered, lastState } from "../../../../../test/helpers/entity_api";
 import { TDWaterHeater } from "./water_heater";
-
-const BASE = "td/apps/app1/entities/ent1";
-
-async function discovered(e: TDWaterHeater) {
-    const subscriptions: Record<string, (topic: string, payload: any) => void> = {};
-    const published: { topic: string, payload: any, opts?: any }[] = [];
-    const publish = (topic: string, payload: any, opts?: any) => { published.push({ topic, payload, opts }) };
-    (e as any)._bound_store = {
-        mqtt_system_topic: "td", mqtt_application_topic: "td/apps/app1", application: {},
-        mqttApi: () => ({ publish, subscribe: (t: string, cb: any) => { subscriptions[t] = cb; return () => { } } }),
-        mqttConnection: () => ({ publish }),
-    };
-    await (e as any)._register_in_ha();
-    const cfg = published.find(p => p.topic == "homeassistant/water_heater/ent1/config")!;
-    const send = (key: string, payload: any) => {
-        const t = `${BASE}/cmd/${key}`;
-        subscriptions[t](t, payload);
-    };
-    return { subscriptions, published, send, dd: JSON.parse(cfg.payload) };
-}
-
-const lastState = (published: any[]) => JSON.parse(published.filter(p => p.topic == `${BASE}/stat`).pop()!.payload);
 
 describe("TDWaterHeater", () => {
     it("discovers power, mode and temperature topics (no primary command/state topic)", async () => {
@@ -83,9 +57,9 @@ describe("TDWaterHeater", () => {
         send("temperature_command", "80");
         send("temperature_command", "10");
         expect(e.target_temperature).toBe(55.5);
-        e.on_set_temperature = jest.fn();
+        e.on_set_target_temperature = jest.fn();
         send("temperature_command", "60");
-        expect(e.on_set_temperature).toHaveBeenCalledWith(60);
+        expect(e.on_set_target_temperature).toHaveBeenCalledWith(60);
         expect(e.target_temperature).toBe(55.5);
     });
 

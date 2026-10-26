@@ -1,5 +1,6 @@
 import { action } from "mobx";
-import { EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
+import { omitDiscoveryKeys } from "../general";
+import { CommandHandlers, EntityClass, EntityOptionsCommon, EntityOptionsCommonW, discoveryPassOptions } from "./base";
 
 export interface UpdateOptions extends EntityOptionsCommon, EntityOptionsCommonW {
     /** Device class, e.g. `firmware` */
@@ -48,8 +49,6 @@ export class TDUpdate extends EntityClass<string | undefined, UpdateServices, Up
 
     static { this._defaultAutocleaner(); }
 
-    on_install: () => void;
-
     /** Set installed version and all other info at once */
     @action
     setInfo(info: UpdateInfo) {
@@ -68,11 +67,11 @@ export class TDUpdate extends EntityClass<string | undefined, UpdateServices, Up
     }
 
     protected discovery_data() {
-        const dd: any = super.discovery_data();
+        const dd = super.discovery_data();
         // HA parses the JSON state payload (installed_version etc.) directly
-        delete dd.value_template;
+        omitDiscoveryKeys(dd, "value_template");
         if (this.options?.installable === false) {
-            delete dd.command_topic;
+            omitDiscoveryKeys(dd, "command_topic");
         } else {
             dd.payload_install = PAYLOAD_INSTALL;
         }
@@ -83,6 +82,9 @@ export class TDUpdate extends EntityClass<string | undefined, UpdateServices, Up
     }
 
     handle_command(payload: any) {
-        if (payload == PAYLOAD_INSTALL) this.on_install?.();
+        if (payload == PAYLOAD_INSTALL) this.dispatch(this.on_install, []);
     }
 }
+
+/** `on_<service>` handlers, called for commands from HA */
+export interface TDUpdate extends CommandHandlers<UpdateServices> { }

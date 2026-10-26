@@ -1,31 +1,5 @@
-jest.mock('../../..', () => ({ ha: { application_device: { name: "App Device" } } }));
-jest.mock('../../../mobx', () => {
-    const mobx = jest.requireActual('mobx');
-    return { plgmobx: { reaction: (_app: any, ...args: any[]) => (mobx.reaction as any)(...args) } };
-});
+import { BASE, discovered, lastState } from "../../../../../test/helpers/entity_api";
 import { TDVacuum } from "./vacuum";
-
-const BASE = "td/apps/app1/entities/ent1";
-
-async function discovered(e: TDVacuum) {
-    const subscriptions: Record<string, (topic: string, payload: any) => void> = {};
-    const published: { topic: string, payload: any, opts?: any }[] = [];
-    const publish = (topic: string, payload: any, opts?: any) => { published.push({ topic, payload, opts }) };
-    (e as any)._bound_store = {
-        mqtt_system_topic: "td", mqtt_application_topic: "td/apps/app1", application: {},
-        mqttApi: () => ({ publish, subscribe: (t: string, cb: any) => { subscriptions[t] = cb; return () => { } } }),
-        mqttConnection: () => ({ publish }),
-    };
-    await (e as any)._register_in_ha();
-    const cfg = published.find(p => p.topic == "homeassistant/vacuum/ent1/config")!;
-    const send = (key: string, payload: any) => {
-        const t = key == "command" ? `${BASE}/cmd` : `${BASE}/cmd/${key}`;
-        subscriptions[t](t, payload);
-    };
-    return { subscriptions, published, send, dd: JSON.parse(cfg.payload) };
-}
-
-const lastState = (published: any[]) => JSON.parse(published.filter(p => p.topic == `${BASE}/stat`).pop()!.payload);
 
 describe("TDVacuum", () => {
     it("discovers command + state topics, no value_template", async () => {
@@ -96,8 +70,19 @@ describe("TDVacuum", () => {
             e.on_send_command = jest.fn();
             send("send_command", "dock");
             send("send_command", '{"command":"go_to","x":1}');
-            expect(e.on_send_command).toHaveBeenNthCalledWith(1, "dock", undefined);
+            send("send_command", { command: "spot", y: 2 }); // already JSON-decoded by the subscription
+            expect(e.on_send_command).toHaveBeenNthCalledWith(1, "dock");
             expect(e.on_send_command).toHaveBeenNthCalledWith(2, "go_to", { x: 1 });
+            expect(e.on_send_command).toHaveBeenNthCalledWith(3, "spot", { y: 2 });
+        });
+
+        it("ignores malformed JSON and JSON without a command", async () => {
+            const e = new TDVacuum("uuid:ent1", { send_command: true });
+            const { send } = await discovered(e);
+            e.on_send_command = jest.fn();
+            send("send_command", '{"command":');
+            send("send_command", '{"x":1}');
+            expect(e.on_send_command).not.toHaveBeenCalled();
         });
     });
 });

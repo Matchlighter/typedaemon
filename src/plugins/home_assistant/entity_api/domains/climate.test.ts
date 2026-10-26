@@ -1,33 +1,5 @@
-jest.mock('../../..', () => ({ ha: { application_device: { name: "App Device" } } }));
-jest.mock('../../../mobx', () => {
-    const mobx = jest.requireActual('mobx');
-    return { plgmobx: { reaction: (_app: any, ...args: any[]) => (mobx.reaction as any)(...args) } };
-});
+import { BASE, discovered, lastState } from "../../../../../test/helpers/entity_api";
 import { TDClimate } from "./climate";
-
-const BASE = "td/apps/app1/entities/ent1";
-
-async function discovered(e: TDClimate) {
-    const subscriptions: Record<string, (topic: string, payload: any) => void> = {};
-    const published: { topic: string, payload: any, opts?: any }[] = [];
-    const publish = (topic: string, payload: any, opts?: any) => { published.push({ topic, payload, opts }) };
-    (e as any)._bound_store = {
-        mqtt_system_topic: "td", mqtt_application_topic: "td/apps/app1", application: {},
-        mqttApi: () => ({ publish, subscribe: (t: string, cb: any) => { subscriptions[t] = cb; return () => { } } }),
-        mqttConnection: () => ({ publish }),
-    };
-    await (e as any)._register_in_ha();
-    const cfg = published.find(p => p.topic == "homeassistant/climate/ent1/config")!;
-    const send = (key: string, payload: any) => {
-        const t = key == "command" ? `${BASE}/cmd` : `${BASE}/cmd/${key}`;
-        subscriptions[t](t, payload);
-    };
-    return { subscriptions, published, send, dd: JSON.parse(cfg.payload) };
-}
-
-
-
-const lastState = (published: any[]) => JSON.parse(published.filter(p => p.topic == `${BASE}/stat`).pop()!.payload);
 
 describe("TDClimate", () => {
     it("discovers minimal: mode, power and temperature topics only", async () => {
@@ -127,13 +99,13 @@ describe("TDClimate", () => {
         send("temperature_high_command", "25");
         send("temperature_low_command", "18");
         expect(lastState(published)).toMatchObject({ temperature: 21.5, temperature_high: 25, temperature_low: 18 });
-        e.on_set_temperature = jest.fn(); e.on_set_temperature_range = jest.fn();
+        e.on_set_target_temperature = jest.fn(); e.on_set_target_temperature_range = jest.fn();
         send("temperature_command", "22");
-        expect(e.on_set_temperature).toHaveBeenCalledWith(22);
+        expect(e.on_set_target_temperature).toHaveBeenCalledWith(22);
         send("temperature_high_command", "26");
-        expect(e.on_set_temperature_range).toHaveBeenCalledWith({ high: 26 });
+        expect(e.on_set_target_temperature_range).toHaveBeenCalledWith({ high: 26 });
         send("temperature_low_command", "19");
-        expect(e.on_set_temperature_range).toHaveBeenCalledWith({ low: 19 });
+        expect(e.on_set_target_temperature_range).toHaveBeenCalledWith({ low: 19 });
         expect(e.target_temperature).toBe(21.5);
         expect(e.target_temperature_high).toBe(25);
     });
@@ -147,9 +119,9 @@ describe("TDClimate", () => {
         expect(e.target_humidity).toBeUndefined();
         send("target_humidity_command", "45");
         expect(lastState(published)).toMatchObject({ target_humidity: 45 });
-        e.on_set_humidity = jest.fn();
+        e.on_set_target_humidity = jest.fn();
         send("target_humidity_command", "50");
-        expect(e.on_set_humidity).toHaveBeenCalledWith(50);
+        expect(e.on_set_target_humidity).toHaveBeenCalledWith(50);
     });
 
     it("fan/swing/preset: validated, handler else optimistic", async () => {
