@@ -21,7 +21,7 @@ const COMPILE_MODULES: Record<string, any> = {
  * Compile app-style source through the same Babel pipeline as real apps (so `@resumable` methods
  * get the regenerator transform) and evaluate it, returning its exports. `globals` are exposed to the source as free variables.
  */
-export function compileApp<T = any>(source: string, globals: Record<string, any> = {}): T {
+export function compileApp<T = any>(source: string, globals: Record<string, any> = {}, extraModules: Record<string, any> = {}): T {
     const out = babel.transformSync(source, {
         ...APP_BABEL_CONFIG,
         filename: "/virtual/app.ts",
@@ -29,9 +29,10 @@ export function compileApp<T = any>(source: string, globals: Record<string, any>
     });
 
     const module = { exports: {} as any };
+    const modules = { ...COMPILE_MODULES, ...extraModules };
     const req = (name: string) => {
-        if (!(name in COMPILE_MODULES)) throw new Error(`compileApp: unexpected import "${name}"`);
-        return COMPILE_MODULES[name];
+        if (!(name in modules)) throw new Error(`compileApp: unexpected import "${name}"`);
+        return modules[name];
     };
     const gnames = Object.keys(globals);
     new Function("require", "module", "exports", ...gnames, out.code)(req, module, module.exports, ...gnames.map(k => globals[k]));

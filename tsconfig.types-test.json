@@ -1,1 +1,14 @@
-{ "extends": "./tsconfig.json", "compilerOptions": {"noEmit": true, "types": ["jest","node"]}, "include": ["src/runtime/script/script.types.test.ts"], "exclude": [] }
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["jest", "node"]
+  },
+  "include": [
+    "./src/**/*.types.test.ts"
+  ],
+  // Override the base config's exclusion of test files
+  "exclude": [
+    "node_modules"
+  ]
+}

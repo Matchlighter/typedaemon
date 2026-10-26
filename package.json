@@ -10,6 +10,7 @@
     "build": "script/build.sh",
     "postinstall": "patch-package",
     "test": "jest",
+    "test:types": "tsc -p tsconfig.types-test.json",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
   },

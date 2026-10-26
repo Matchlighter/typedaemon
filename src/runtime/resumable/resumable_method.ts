@@ -189,6 +189,12 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
     protected _cancel(reason?: any) {
         const exc = this.executor;
 
+        // Never started (eg. queued): there is no step to deliver an error to, so let the Executor settle us directly.
+        if (!exc._started) {
+            exc.cancel(reason);
+            return;
+        }
+
         // Inject the error when control returns to this Executor.
         // Injecting into both this Executor and child (done by ResumablePromise) makes sure that we cancel this (the parent) Executor,
         //   even if the child Cancellable swallows the error.
