@@ -27,7 +27,7 @@ export class TDCamera extends EntityClass<CameraImage | undefined, {}, CameraOpt
     }
 
     protected discovery_data() {
-        const dd = super.discovery_data() as Record<string, any>;
+        const dd: any = super.discovery_data();
         // Camera's `topic` carries image bytes; HA has no state/command topics for it
         delete dd.state_topic;
         delete dd.value_template;
