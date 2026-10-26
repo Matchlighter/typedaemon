@@ -35,7 +35,7 @@ export function script(options: ScriptOptions) {
             }
 
             // Make sure to save/load the queue on shutdown/startup
-            notePluginAnnotation(f, async (self) => {
+            notePluginAnnotation(context, async (self) => {
                 const superStore = ResumableScriptStoreManager.current();
                 await superStore.defineSubStore(sid, options);
             })

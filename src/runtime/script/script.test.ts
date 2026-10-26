@@ -3,6 +3,7 @@ import "../../../test/helpers/mock_hypervisor";
 import { useTempDir } from "../../../test/helpers/fs";
 import { Deferred, compileApp, flushMicrotasks, useResumableHarness } from "../../../test/helpers/resumable";
 import { current } from "../../hypervisor/current";
+import { flushPluginAnnotations } from "../../plugins/base";
 import { script } from ".";
 import { ResumableScriptStoreManager } from "./resumable";
 import type { ScriptOptions } from "./store";
@@ -52,10 +53,9 @@ describe.each(["kill", "suspend"])("@script queue cancellation (shutdown: %s)", 
     async function makeWorker(options: Omit<ScriptOptions, "shutdown">) {
         const full = { ...options, shutdown } as ScriptOptions;
         const { Worker } = compileApp(source(full), { Deferred }, { typedaemon: { script } });
-        if (shutdown === "suspend") {
-            await ResumableScriptStoreManager.current().defineSubStore("run", full);
-        }
-        return new Worker();
+        const worker = new Worker();
+        await flushPluginAnnotations(worker);
+        return worker;
     }
 
     it("cancelling a queued run settles it and frees its queue slot", async () => {

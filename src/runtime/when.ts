@@ -188,7 +188,7 @@ export function when<S>(
     const dec: WhenDecorator<S> = (target, context?) => {
         if (context) {
             if (opts.resume) opts.resume.id ??= `decorated-method:${context.name}`;
-            notePluginAnnotation(target, (self) => {
+            notePluginAnnotation(context, (self) => {
                 const inst_method: Function = self[context.name];
                 connect(self, inst_method.bind(self));
             })
