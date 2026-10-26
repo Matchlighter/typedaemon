@@ -11,7 +11,7 @@ export * as lifecycle from "./lifescycle";
 export { persistence } from './persistence';
 export { resumable } from './resumable';
 export * as schedule from './schedule';
-export { parseTimeOfDay } from './schedule';
+export { parseTimeOfDay, nowIsBetween } from './schedule';
 export { sleep, sleep_until } from "./sleep";
 export { script } from "./script";
 export { when } from "./when";
