@@ -72,6 +72,22 @@ describe("multi-topic command entities", () => {
         ]));
     });
 
+    it("autoclean falls back to the default command keys for entries persisted without command_keys", async () => {
+        const cleaner: Autocleaner = (MultiTopicEntity as any)[SymbolAutocleaner];
+        const later = fakeStore();
+        await cleaner.destroy_entity({ id: "uuid:ent1", domain: "multi" }, { ...later.store } as any);
+
+        const cleared = later.published.filter(p => p.payload === null && p.opts?.retain).map(p => p.topic);
+        expect(cleared).toEqual(expect.arrayContaining([
+            "homeassistant/multi/ent1/config",
+            `${BASE}/stat`,
+            `${BASE}/cmd`,
+            `${BASE}/cmd/set_position`,
+        ]));
+        // Option-dependent keys are unknown without options
+        expect(cleared).not.toContain(`${BASE}/cmd/preset_mode_command`);
+    });
+
     it("leaves single-topic domains unchanged", async () => {
         const sw = new TDSwitch("uuid:ent1");
         const { subscriptions, discovery } = await discovered(sw);
@@ -102,5 +118,12 @@ describe("per-field state", () => {
 
         const states = published.filter(p => p.topic == `${BASE}/stat`).map(p => JSON.parse(p.payload));
         expect(states[states.length - 1]).toEqual({ state: "open", attrs: {}, position: 30 });
+    });
+
+    it.each(["state", "attrs"])("rejects reserved field %s", (k) => {
+        class Bad extends FieldStateEntity {
+            protected getStateFields() { return { [k]: 1 } }
+        }
+        expect(() => (new Bad("uuid:ent1") as any)._statePayload()).toThrow(/reserved key/);
     });
 });

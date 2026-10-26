@@ -81,7 +81,8 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
      * Extra top-level fields to publish in the JSON state payload, for domains whose HA config reads several values
      * (e.g. cover position, climate target temperature). Point the HA option at the shared state topic with a template:
      * `{ position_topic: this.mqtt_state_topic, position_template: "{{ value_json.position }}" }`.
-     * Keeps a single retained topic so updates stay atomic. `state` and `attrs` are reserved.
+     * Keeps a single retained topic so updates stay atomic. `state` and `attrs` are reserved (throws if returned).
+     * See `stateField()` for building the matching discovery options.
      */
     protected getStateFields(): Record<string, any> {
         return {}
@@ -115,7 +116,8 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
             `homeassistant/${this.domain}/${this.uuid}/config`,
             `${this.mqtt_topic}/status`,
             this.mqtt_state_topic,
-            // Commands are normally non-retained, but clear in case `retain` was set
+            // With the `retain` option HA publishes commands retained. Clear them so a stale command (e.g. `OPEN`) isn't
+            // replayed to a future entity re-registered under the same uuid.
             ...this.command_keys().map(k => this.command_topic_for(k)),
         ]
         for (let t of clear_topics) {
@@ -167,7 +169,17 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         return `${this.mqtt_topic}/cmd`;
     }
 
-    protected discovery_data() {
+    /**
+     * Discovery options pointing an HA `<topic>`/`<template>` option pair at a top-level field of the JSON state payload
+     * (see `getStateFields()`). HA's option names vary per domain/field (`*_state_topic` + `*_state_template`,
+     * `*_topic` + `*_template`, `*_state_topic` + `*_value_template`), so both are given explicitly.
+     * @param template_value Template to use instead of `{{ value_json.<field> }}`
+     */
+    protected stateField(topic: string, template: string, field: string, template_value = `{{ value_json.${field} }}`): DiscoveryData {
+        return { [topic]: this.mqtt_state_topic, [template]: template_value };
+    }
+
+    protected discovery_data(): DiscoveryData {
         const dd = {
             availability: [
                 { topic: `${this._bound_store.mqtt_system_topic}/status` }, // TD
@@ -223,10 +235,18 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
         await this.markAvailable();
 
         // Observe getState() and getAttributes(), pushing any changes to HA (use one topic so we can have atomic updates)
-        this._disposers.append(plgmobx.reaction(this.application, () => ({ ...this.getStateFields(), state: this.getState(), attrs: this.getExtraAttributes() }), (v: RawStatePayload<T>) => {
+        this._disposers.append(plgmobx.reaction(this.application, () => this._statePayload(), (v: RawStatePayload<T>) => {
             v.state = this._serializeState(v.state);
             this._publishState(v);
         }, { fireImmediately: true }))
+    }
+
+    protected _statePayload(): RawStatePayload<T> {
+        const fields = this.getStateFields();
+        for (const k of RESERVED_STATE_FIELDS) {
+            if (k in fields) throw new Error(`${this.constructor.name}.getStateFields() returned reserved key "${k}"`);
+        }
+        return { ...fields, state: this.getState(), attrs: this.getExtraAttributes() };
     }
 
     protected _serializeState(state: T): any {
@@ -242,6 +262,25 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
     protected get mqttConn() {
         return this._bound_store.mqttConnection();
     }
+}
+
+const RESERVED_STATE_FIELDS = ["state", "attrs"] as const;
+
+/** MQTT discovery config payload */
+export type DiscoveryData = Record<string, any>;
+
+/** Base discovery options a domain may need to drop (see `omitDiscoveryKeys`) */
+type BaseDiscoveryKey = "state_topic" | "value_template" | "command_topic";
+
+/** Remove base discovery options a domain's HA schema doesn't have (e.g. no primary state or command topic) */
+export function omitDiscoveryKeys(dd: DiscoveryData, ...keys: BaseDiscoveryKey[]) {
+    for (const k of keys) delete dd[k];
+}
+
+/** For domains (fan, humidifier, siren) whose HA schema reads the main state via `state_value_template` instead of `value_template` */
+export function useStateValueTemplate(dd: DiscoveryData) {
+    dd.state_value_template = dd.value_template;
+    delete dd.value_template;
 }
 
 export type RawStatePayload<T> = {
