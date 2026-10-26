@@ -187,6 +187,18 @@ export const parseTimeOfDay = (sched: string, options?: ScheduleOpts) => {
     return parsed.nextAfter(moment().tz(tz).startOf('day').unix() * 1000);
 }
 
+/**
+ * True if the current time-of-day is within [start, end). Bounds use `parseTimeOfDay` syntax
+ * (incl. sun-relative and tz). If end <= start, the range wraps past midnight.
+ */
+export const nowIsBetween = (start: string, end: string, options?: ScheduleOpts) => {
+    const now = Date.now();
+    const s = parseTimeOfDay(start, options).valueOf();
+    const e = parseTimeOfDay(end, options).valueOf();
+    if (e <= s) return now >= s || now < e;
+    return now >= s && now < e;
+}
+
 export const parseDuration = (dur: string) => {
     return parse_duration(dur);
 }
