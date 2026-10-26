@@ -1,4 +1,5 @@
 
+import { installConfigDependencies } from "./packages";
 import * as Sentry from "@sentry/node";
 import { captureExceptionWithSourceMaps } from "./sentry";
 
@@ -256,12 +257,24 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         this.crossCallStore = new CrossCallStore(this);
         await this.crossCallStore.load();
 
+        await this.installConfigDependencies();
+        this.watchConfigEntry("dependencies", () => this.installConfigDependencies());
+
         this.logMessage("info", "Starting Apps");
         this.appInstances.on("instance_lifecycle", (instance, levent) => {
             this.emit("app_lifecycle", instance, levent);
         });
         await this.appInstances.sync(this.currentConfig.apps || {});
         this.watchConfigEntry("apps", () => this.appInstances.sync(this.currentConfig.apps));
+    }
+
+    /** Install pre-installed packages (`dependencies` config) into the config root's node_modules */
+    private async installConfigDependencies() {
+        try {
+            await installConfigDependencies(this.working_directory, this.currentConfig.dependencies);
+        } catch (ex) {
+            this.logMessage("error", "Failed to install pre-installed packages", ex);
+        }
     }
 
     async shutdown() {

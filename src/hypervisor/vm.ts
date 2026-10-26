@@ -112,6 +112,17 @@ function isSystemModule(x: string) {
     return matched;
 }
 
+/**
+ * Inject TD-managed install locations into a VM module lookup chain:
+ * the app's own dependencies take precedence; pre-installed packages in the config root are the fallback.
+ */
+export function injectModuleLookupPaths(paths: string[], dirs: { appModules: string, configModules: string }) {
+    paths = [...paths];
+    if (!paths.includes(dirs.appModules)) paths.unshift(dirs.appModules);
+    if (!paths.includes(dirs.configModules)) paths.push(dirs.configModules);
+    return paths;
+}
+
 export function determineModuleContext(filename: string) {
     if (filename.startsWith(TYPEDAEMON_PATH)) {
         let sys_rel = path.relative(TYPEDAEMON_PATH, filename);
@@ -171,7 +182,11 @@ export async function createApplicationVM(app: ApplicationInstance) {
         await loadPathMaps(app.entrypoint),
     );
 
-    const opModulesPath = path.join(app.shared_operating_directory, "node_modules");
+    const lookupDirs = {
+        appModules: path.join(app.shared_operating_directory, "node_modules"),
+        // Pre-installed packages (global `dependencies` config)
+        configModules: path.join(app.hypervisor.working_directory, "node_modules"),
+    };
 
     const nativeTimers = new Set<any>();
     const nativeIntervals = new Set<any>();
@@ -283,12 +298,7 @@ export async function createApplicationVM(app: ApplicationInstance) {
     const system_modules_folders = vmResolver.genLookupPaths(TD_MODULES_PATH)
 
     patch(vmResolver, 'genLookupPaths', original => function (curPath) {
-        let paths = original(curPath);
-
-        // Inject the install location of the app's dependencies
-        if (!paths.includes(opModulesPath)) paths.unshift(opModulesPath)
-
-        return paths;
+        return injectModuleLookupPaths(original(curPath), lookupDirs);
     });
 
     patch(vmResolver, 'loadNodeModules', original => function (x, dirs, extList) {
