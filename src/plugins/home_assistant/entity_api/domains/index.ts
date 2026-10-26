@@ -9,6 +9,7 @@ import { TDImage } from "./image";
 import { TDLight } from "./light";
 import { TDNumber } from "./number";
 import { TDScene } from "./scene";
+import { TDSiren } from "./siren";
 import { TDSelect } from "./select";
 import { TDSensor } from "./sensor";
 import { TDSwitch } from "./switch";
@@ -27,6 +28,7 @@ export const domain_entities = {
     number: TDNumber,
     scene: TDScene,
     select: TDSelect,
+    siren: TDSiren,
     sensor: TDSensor,
     switch: TDSwitch,
     tag: TDTag,
