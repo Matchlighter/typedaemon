@@ -1,9 +1,4 @@
-jest.mock('../..', () => ({ ha: { application_device: { name: "App Device" } } }));
-jest.mock('../../mobx', () => {
-    const mobx = jest.requireActual('mobx');
-    return { plgmobx: { reaction: (_app: any, ...args: any[]) => (mobx.reaction as any)(...args) } };
-});
-
+import { BASE, discovered, fakeStore } from "../../../../test/helpers/entity_api";
 import { SymbolAutocleaner, Autocleaner } from "./auto_cleaning";
 import { EntityClass } from "./domains/base";
 import { TDSwitch } from "./domains/switch";
@@ -25,43 +20,11 @@ class MultiTopicEntity extends EntityClass<string, {}, { presets?: boolean }> {
     }
 }
 
-function fakeStore() {
-    const subscriptions: Record<string, (topic: string, payload: any) => void> = {};
-    const published: { topic: string, payload: any, opts?: any }[] = [];
-    const publish = (topic: string, payload: any, opts?: any) => { published.push({ topic, payload, opts }) };
-    const store = {
-        mqtt_system_topic: "td",
-        mqtt_application_topic: "td/apps/app1",
-        application: {},
-        mqttApi: () => ({
-            publish,
-            subscribe: (topic: string, cb: any) => {
-                subscriptions[topic] = cb;
-                return () => { delete subscriptions[topic] };
-            },
-        }),
-        mqttConnection: () => ({ publish }),
-    };
-    return { store, subscriptions, published };
-}
-
-async function register<E>(entity: E) {
-    const ctx = fakeStore();
-    (entity as any)._bound_store = ctx.store;
-    await (entity as any)._register_in_ha();
-    const discovery = () => {
-        const msgs = ctx.published.filter(p => p.topic.startsWith("homeassistant/") && p.topic.endsWith("/config"));
-        return JSON.parse(msgs[msgs.length - 1].payload);
-    };
-    return { ...ctx, discovery };
-}
-
-const BASE = "td/apps/app1/entities/ent1";
 
 describe("multi-topic command entities", () => {
     it("subscribes each named command topic and routes payload + key", async () => {
         const ent = new MultiTopicEntity("uuid:ent1", { presets: true });
-        const { subscriptions } = await register(ent);
+        const { subscriptions } = await discovered(ent);
 
         expect(Object.keys(subscriptions).sort()).toEqual([
             `${BASE}/cmd`,
@@ -81,7 +44,7 @@ describe("multi-topic command entities", () => {
     });
 
     it("advertises each named command topic in discovery as <key>_topic", async () => {
-        const { discovery } = await register(new MultiTopicEntity("uuid:ent1", { presets: true }));
+        const { discovery } = await discovered(new MultiTopicEntity("uuid:ent1", { presets: true }));
         expect(discovery()).toMatchObject({
             command_topic: `${BASE}/cmd`,
             set_position_topic: `${BASE}/cmd/set_position`,
@@ -91,7 +54,7 @@ describe("multi-topic command entities", () => {
 
     it("autoclean clears every command topic, including option-dependent ones", async () => {
         const ent = new MultiTopicEntity("uuid:ent1", { presets: true });
-        const { store } = await register(ent);
+        const { store } = await discovered(ent);
 
         const cleaner: Autocleaner = (MultiTopicEntity as any)[SymbolAutocleaner];
         // Persisted entry round-trips through JSON storage
@@ -111,7 +74,7 @@ describe("multi-topic command entities", () => {
 
     it("leaves single-topic domains unchanged", async () => {
         const sw = new TDSwitch("uuid:ent1");
-        const { subscriptions, discovery } = await register(sw);
+        const { subscriptions, discovery } = await discovered(sw);
 
         expect(Object.keys(subscriptions)).toEqual([`${BASE}/cmd`]);
         expect(Object.keys(discovery()).filter(k => k.endsWith("_topic")).sort()).toEqual([
@@ -135,7 +98,7 @@ describe("per-field state", () => {
     it("publishes extra fields alongside state in the JSON state payload", async () => {
         const ent = new FieldStateEntity("uuid:ent1");
         ent.setState("open");
-        const { published } = await register(ent);
+        const { published } = await discovered(ent);
 
         const states = published.filter(p => p.topic == `${BASE}/stat`).map(p => JSON.parse(p.payload));
         expect(states[states.length - 1]).toEqual({ state: "open", attrs: {}, position: 30 });
