@@ -12,6 +12,7 @@ import { TDScene } from "./scene";
 import { TDSelect } from "./select";
 import { TDSensor } from "./sensor";
 import { TDSwitch } from "./switch";
+import { TDTag } from "./tag";
 import { TDText } from "./text";
 
 export const domain_entities = {
@@ -28,5 +29,6 @@ export const domain_entities = {
     select: TDSelect,
     sensor: TDSensor,
     switch: TDSwitch,
+    tag: TDTag,
     text: TDText,
 }
