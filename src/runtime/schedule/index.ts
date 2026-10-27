@@ -4,6 +4,7 @@ import * as ne from "nearley";
 import parse_duration from "parse-duration";
 import * as SunCalc from "suncalc";
 import moment from "moment-timezone";
+import { _getGlobalState, createAtom } from "mobx";
 
 import { current } from "../../hypervisor/current";
 import { callback_or_decorator2 } from "../../plugins/util";
@@ -190,9 +191,24 @@ export const parseTimeOfDay = (sched: string, options?: ScheduleOpts) => {
 /**
  * True if the current time-of-day is within [start, end). Bounds use `parseTimeOfDay` syntax
  * (incl. sun-relative and tz). If end <= start, the range wraps past midnight.
+ *
+ * Observable: inside a MobX derivation (computed/autorun/reaction), dependents re-evaluate at the next start/end boundary.
  */
 export const nowIsBetween = (start: string, end: string, options?: ScheduleOpts) => {
     const now = Date.now();
+    if (_getGlobalState().trackingDerivation) {
+        // Invalidate at the next boundary; timer only lives while observed
+        const nextFlip = Math.min(
+            _parseTDFormatInternal(start, options).nextAfter(now).valueOf(),
+            _parseTDFormatInternal(end, options).nextAfter(now).valueOf(),
+        );
+        let timer: ReturnType<typeof setTimeout>;
+        const atom = createAtom("nowIsBetween",
+            () => { timer = setTimeout(() => atom.reportChanged(), Math.min(Math.max(nextFlip - Date.now(), 0), 2 ** 31 - 1)) },
+            () => clearTimeout(timer),
+        );
+        atom.reportObserved();
+    }
     const s = parseTimeOfDay(start, options).valueOf();
     const e = parseTimeOfDay(end, options).valueOf();
     if (e <= s) return now >= s || now < e;

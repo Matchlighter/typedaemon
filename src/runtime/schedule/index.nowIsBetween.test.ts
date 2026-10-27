@@ -1,4 +1,5 @@
 import moment from "moment-timezone";
+import { autorun, computed } from "mobx";
 import { nowIsBetween } from "./index";
 
 // Mock the current module to avoid dependencies on hypervisor
@@ -124,5 +125,47 @@ describe("nowIsBetween", () => {
     expect(nowIsBetween("02:00 America/Denver", "04:00 America/Denver", { timezone: tz })).toBe(true);
     at("2025-11-19T06:30:00Z"); // 01:30 EST (Nov 19) == 23:30 MST (Nov 18)
     expect(nowIsBetween("23:00 America/Denver", "23:59 America/Denver", { timezone: tz })).toBe(true);
+  });
+
+  describe("in a MobX derivation", () => {
+    const HOUR = 3600_000;
+
+    it("re-runs only at the start and end boundaries", () => {
+      const seen: boolean[] = [];
+      const dispose = autorun(() => { seen.push(nowIsBetween("06:00", "08:00", { timezone: tz })) }); // 05:00 now
+      expect(seen).toEqual([false]);
+
+      jest.advanceTimersByTime(HOUR - 1);
+      expect(seen).toEqual([false]);
+      jest.advanceTimersByTime(1); // 06:00
+      expect(seen).toEqual([false, true]);
+
+      jest.advanceTimersByTime(2 * HOUR - 1);
+      expect(seen).toEqual([false, true]);
+      jest.advanceTimersByTime(1); // 08:00
+      expect(seen).toEqual([false, true, false]);
+      dispose();
+    });
+
+    it("works through a computed", () => {
+      const c = computed(() => nowIsBetween("04:00", "06:00", { timezone: tz }));
+      const seen: boolean[] = [];
+      const dispose = autorun(() => { seen.push(c.get()) });
+      jest.advanceTimersByTime(HOUR);
+      expect(seen).toEqual([true, false]);
+      dispose();
+    });
+
+    it("clears timers on dispose", () => {
+      const dispose = autorun(() => { nowIsBetween("06:00", "08:00", { timezone: tz }) });
+      expect(jest.getTimerCount()).toBe(1);
+      dispose();
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it("creates no timer outside a derivation", () => {
+      nowIsBetween("06:00", "08:00", { timezone: tz });
+      expect(jest.getTimerCount()).toBe(0);
+    });
   });
 });
