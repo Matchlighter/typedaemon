@@ -87,8 +87,11 @@ export class Executor<T> {
 
         this.injectError(reason);
 
-        if (this.pending_promise && this.pending_promise.cancel) {
-            this.pending_promise.cancel(reason);
+        const pending = this.pending_promise;
+        // ResumablePromise always has a (protected) `cancel`, which throws unless it is cancellable
+        const cancellable = pending?.cancel && (!(pending instanceof ResumablePromise) || pending.isCancellable());
+        if (cancellable) {
+            pending.cancel(reason);
             this.pending_promise = null;
         }
     }

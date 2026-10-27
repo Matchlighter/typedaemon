@@ -252,7 +252,7 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
         this.reject(reason);
     }
 
-    protected cancel(reason?: any) {
+    protected cancel(reason: any = new PromiseCancelled()) {
         if (!this.isCancellable()) {
             throw new Error("Cannot cancel a ResumablePromise that is not cancellable");
         }
@@ -403,6 +403,7 @@ export class PromiseCancelled extends Error {
 }
 
 export interface ICancellablePromise {
+    /** `reason` defaults to a `PromiseCancelled` */
     cancel(reason?: any): void;
 }
 

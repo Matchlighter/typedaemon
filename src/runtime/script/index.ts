@@ -2,14 +2,32 @@ import { randomUUID } from "crypto";
 
 import { ControlledPromise } from "@matchlighter/common_library/promises";
 
+import type { AppLifecycle } from "../../hypervisor/application_instance";
 import { current } from "../../hypervisor/current";
 import { notePluginAnnotation } from "../../plugins/base";
 import { Executor } from "../regen_executor";
 import { EXECUTOR_FACTORY, ResumableMethod } from "../resumable/resumable_method";
-import { ICancellablePromise } from "../resumable/resumable_promise";
+import { ICancellablePromise, PromiseCancelled } from "../resumable/resumable_promise";
 
 import { hookScriptCallback, ResumableScriptStoreManager } from "./resumable";
 import { ScriptOptions, ScriptStateStore } from "./store";
+
+type ShutdownCleanerFactory = (executor: Executor<any>, store: ScriptStateStore, complete: PromiseLike<any>) => () => Promise<void>;
+
+/** Per-`shutdown` mode cleaner, registered on the app for each non-resumable run */
+const SHUTDOWN_CLEANERS: Partial<Record<ScriptOptions["shutdown"], ShutdownCleanerFactory>> = {
+    kill: (executor) => async () => {
+        executor.cancel(new Error("Script killed due to application shutdown"));
+    },
+    // Hold shutdown until the run completes (no timeout). Queued runs are cancelled rather than started.
+    wait: (_executor, store, complete) => async () => {
+        store.cancelPending(new PromiseCancelled("Script cancelled due to application shutdown"));
+        await complete.then(() => { }, () => { });
+    },
+};
+
+const SHUTTING_DOWN_STATES: ReadonlySet<AppLifecycle> = new Set(["stopping", "stopped", "dead"]);
+const isShuttingDown = () => SHUTTING_DOWN_STATES.has(current.application?.state);
 
 export function script(options: ScriptOptions) {
     // Typed generically over the decorated method so TS accepts it on async methods (TS1270).
@@ -51,12 +69,13 @@ export function script(options: ScriptOptions) {
             const ukey = typeof options.mode_key === "function" ? options.mode_key(args) : context?.name.toString() ?? "-";
             const store = lookupStore(ukey);
 
-            if (store.total_count >= store.limit) {
-                if (store.configuration.mode == "restart") {
-                    store.cancelOldest();
-                } else {
-                    return false;
-                }
+            // Don't start work that shutdown handling would miss
+            if (SHUTDOWN_CLEANERS[options.shutdown] && isShuttingDown()) return false;
+
+            if (store.configuration.mode == "restart") {
+                store.cancelAll(new PromiseCancelled("The Script has been called again, aborting this previous run."));
+            } else if (store.total_count >= store.limit) {
+                return false;
             }
 
             const executor: Executor<any> = f.call(this, ...args);
@@ -89,12 +108,9 @@ export function script(options: ScriptOptions) {
                     }
                 };
 
-                if (options.shutdown == 'kill') {
-                    // Register cleaner to kill the executor
-                    const cleanups = current.application.cleanups.unorderedGroup("script:killers");
-                    const script_cleaner = async () => {
-                        executor.cancel(new Error("Script killed due to application shutdown"));
-                    };
+                const script_cleaner = SHUTDOWN_CLEANERS[options.shutdown]?.(executor, store, complete_promise);
+                if (script_cleaner) {
+                    const cleanups = current.application.cleanups.unorderedGroup(`script:${options.shutdown}`);
                     cleanups.push(script_cleaner);
 
                     const old_on_completed = executor.on_completed;

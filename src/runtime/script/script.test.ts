@@ -1,12 +1,13 @@
 import "../../../test/helpers/mock_hypervisor";
 
 import { useTempDir } from "../../../test/helpers/fs";
+import { LifecycleHelper } from "../../common/lifecycle_helper";
 import { Deferred, compileApp, flushMicrotasks, useResumableHarness } from "../../../test/helpers/resumable";
 import { current } from "../../hypervisor/current";
 import { flushPluginAnnotations } from "../../plugins/base";
 import { script } from ".";
 import { ResumableScriptStoreManager } from "./resumable";
-import type { ScriptOptions } from "./store";
+import { ScriptOptions, ScriptStateStore } from "./store";
 
 const source = (options: object) => `
 import { script } from "typedaemon";
@@ -26,7 +27,7 @@ function track(result: any) {
     return state;
 }
 
-describe.each(["kill", "suspend"])("@script queue cancellation (shutdown: %s)", (shutdown) => {
+describe.each(["kill", "suspend", "wait"])("@script queue cancellation (shutdown: %s)", (shutdown) => {
     const h = useResumableHarness();
     const tmp = useTempDir("td-script-");
 
@@ -76,17 +77,148 @@ describe.each(["kill", "suspend"])("@script queue cancellation (shutdown: %s)", 
         expect(w.run("d")).not.toBe(false); // slot freed
     });
 
-    it("restart mode cancels the oldest queued run when called again", async () => {
-        const w = await makeWorker({ mode: "restart", limit: 1 });
+    it("cancel() without a reason rejects with PromiseCancelled", async () => {
+        const w = await makeWorker({ mode: "queued" });
         track(w.run("a"));
-        const second = track(w.run("b")); // queued behind a
+        const queued = w.run("b");
+        const queuedState = track(queued);
         await flushMicrotasks();
 
-        const third = track(w.run("c")); // evicts b
+        queued.cancel();
         await flushMicrotasks();
 
+        expect(queuedState.rejected?.name).toBe("PromiseCancelled");
+    });
+
+    it("restart mode cancels the running run and starts the new one immediately", async () => {
+        const w = await makeWorker({ mode: "restart" });
+        const first = track(w.run("a"));
+        await flushMicrotasks();
+        expect(Deferred.get("a")).toBeDefined();
+
+        const second = track(w.run("b"));
+        await flushMicrotasks();
+        expect(Deferred.get("b")).toBeDefined(); // started without waiting for a to unwind
+
+        // a's (non-cancellable) await settles; the injected cancellation surfaces instead of its result
+        Deferred.get("a").resolve(1);
+        await flushMicrotasks();
+        expect(first.settled).toBe(true);
+        expect(first.rejected?.name).toBe("PromiseCancelled");
+        expect(second.settled).toBe(false);
+
+        Deferred.get("b").resolve(2);
+        await flushMicrotasks();
         expect(second.settled).toBe(true);
-        expect(second.rejected).toBeTruthy();
-        expect(third.settled).toBe(false);
+        expect(second.rejected).toBeNull();
+    });
+});
+
+describe("@script shutdown: 'wait'", () => {
+    const h = useResumableHarness();
+    const tmp = useTempDir("td-script-");
+    let cleanups: LifecycleHelper;
+
+    beforeEach(async () => {
+        cleanups = new LifecycleHelper();
+        (current as any).application = {
+            operating_directory: tmp.dir,
+            cleanups,
+        };
+        await h.boot();
+    });
+
+    afterEach(() => {
+        delete (current as any).application;
+    });
+
+    async function makeWorker(options: Omit<ScriptOptions, "shutdown">) {
+        const { Worker } = compileApp(source({ ...options, shutdown: "wait" }), { Deferred }, { typedaemon: { script } });
+        const worker = new Worker();
+        await flushPluginAnnotations(worker);
+        return worker;
+    }
+
+    it("app cleanup waits for running runs to complete", async () => {
+        const w = await makeWorker({ mode: "parallel" });
+        const a = track(w.run("a"));
+        const b = track(w.run("b"));
+        await flushMicrotasks();
+
+        const shutdown = track(cleanups.cleanup());
+        await flushMicrotasks();
+        expect(shutdown.settled).toBe(false);
+
+        Deferred.get("a").resolve(1);
+        await flushMicrotasks();
+        expect(a.settled).toBe(true);
+        expect(shutdown.settled).toBe(false);
+
+        Deferred.get("b").resolve(2);
+        await flushMicrotasks();
+        expect(b.rejected).toBeNull();
+        expect(shutdown.settled).toBe(true);
+    });
+
+    it("cancels queued runs instead of starting them during shutdown", async () => {
+        const w = await makeWorker({ mode: "queued" });
+        const running = track(w.run("a"));
+        const queued = track(w.run("b"));
+        await flushMicrotasks();
+
+        const shutdown = track(cleanups.cleanup());
+        await flushMicrotasks();
+        expect(queued.rejected?.name).toBe("PromiseCancelled");
+
+        Deferred.get("a").resolve(1);
+        await flushMicrotasks();
+        expect(running.rejected).toBeNull();
+        expect(Deferred.get("b")).toBeUndefined();
+        expect(shutdown.settled).toBe(true);
+    });
+});
+
+describe("@script shutdown: 'wait' once shutting down", () => {
+    const h = useResumableHarness();
+    const tmp = useTempDir("td-script-");
+    let app: any;
+
+    beforeEach(async () => {
+        app = { operating_directory: tmp.dir, cleanups: new LifecycleHelper(), state: "started" };
+        (current as any).application = app;
+        await h.boot();
+    });
+
+    afterEach(() => {
+        delete (current as any).application;
+    });
+
+    it("refuses new runs", async () => {
+        const { Worker } = compileApp(source({ mode: "parallel", shutdown: "wait" }), { Deferred }, { typedaemon: { script } });
+        const w = new Worker();
+        await flushPluginAnnotations(w);
+
+        app.state = "stopping";
+        expect(w.run("a")).toBe(false);
+        await flushMicrotasks();
+        expect(Deferred.get("a")).toBeUndefined();
+    });
+});
+
+describe("ScriptStateStore.cancelAll", () => {
+    it("cancels every item even if one throws", () => {
+        const store = new ScriptStateStore({ mode: "restart" });
+        const cancelled: string[] = [];
+        const item = (name: string, fail = false) => ({
+            cancel: () => { cancelled.push(name); if (fail) throw new Error("boom"); },
+        }) as any;
+        store.trackPending(item("p1", true));
+        store.trackPending(item("p2"));
+        store.trackRunning(item("r1", true));
+        store.trackRunning(item("r2"));
+
+        expect(() => store.cancelAll()).not.toThrow();
+        expect(cancelled).toEqual(["p1", "p2", "r1", "r2"]);
+        expect(store.total_count).toBe(0);
     });
 });

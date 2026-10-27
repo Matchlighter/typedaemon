@@ -54,11 +54,12 @@ export interface Configuration {
     hosted_modules?: (string | RegExp)[];
 
     /**
-     * Additional packages that should be installed, specified in `package.json["dependencies"]` format.
-     * 
-     * These packages are automatically added to `hosted_modules`
+     * Packages to pre-install, specified in `package.json["dependencies"]` format.
+     *
+     * Installed at startup into `<config root>/node_modules` (via a TD-managed `<config root>/package.json`)
+     * and available to every app. Like other app dependencies, they are loaded inside each app's VM, not the host.
      */
-    dependencies?: any;
+    dependencies?: Record<string, string>;
 
     plugins?: Record<string, PluginConfiguration>,
 

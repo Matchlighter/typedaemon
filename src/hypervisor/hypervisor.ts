@@ -31,6 +31,7 @@ import { CrossCallStore } from "./cross_call";
 import { current } from "./current";
 import { ExtendedLoger, LogLevel, ORIGINAL_CONSOLE, createDomainLogger, setFallbackLogger } from "./logging";
 import { AppNamespace } from "./managed_apps";
+import { installConfigDependencies } from "./packages";
 import { SharedStorages } from "./persistent_storage";
 import { PluginInstance } from "./plugin_instance";
 import { ReplOptions, startRepl } from "./repl";
@@ -256,12 +257,24 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         this.crossCallStore = new CrossCallStore(this);
         await this.crossCallStore.load();
 
+        await this.syncConfigDependencies();
+        this.watchConfigEntry("dependencies", () => this.syncConfigDependencies());
+
         this.logMessage("info", "Starting Apps");
         this.appInstances.on("instance_lifecycle", (instance, levent) => {
             this.emit("app_lifecycle", instance, levent);
         });
         await this.appInstances.sync(this.currentConfig.apps || {});
         this.watchConfigEntry("apps", () => this.appInstances.sync(this.currentConfig.apps));
+    }
+
+    /** Install pre-installed packages (`dependencies` config) into the config root's node_modules */
+    private async syncConfigDependencies() {
+        try {
+            await installConfigDependencies(this.working_directory, this.currentConfig.dependencies);
+        } catch (ex) {
+            this.logMessage("error", "Failed to install pre-installed packages", ex);
+        }
     }
 
     async shutdown() {
