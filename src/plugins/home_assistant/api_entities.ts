@@ -20,12 +20,14 @@ import { HomeAssistantPlugin } from "./plugin";
 
 import type { TDBinarySensor } from "./entity_api/domains/binary_sensor";
 import type { TDButton } from "./entity_api/domains/button";
+import type { TDCamera } from "./entity_api/domains/camera";
 import type { TDDeviceTracker } from "./entity_api/domains/device_tracker";
 import type { TDImage } from "./entity_api/domains/image";
 import type { TDNumber } from "./entity_api/domains/number";
 import type { TDScene } from "./entity_api/domains/scene";
 import type { TDSelect } from "./entity_api/domains/select";
 import type { TDSensor } from "./entity_api/domains/sensor";
+import type { TDStreamCamera } from "./entity_api/domains/stream_camera";
 import type { TDSwitch } from "./entity_api/domains/switch";
 import type { TDText } from "./entity_api/domains/text";
 
@@ -338,6 +340,15 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
         /** Create a `image` entity and update it whenever the decorated getter/accessor is updated */
         image: stateOnlyApi<TDImage>(domain_entities.image),
+
+        /** Create a `camera` entity and update it whenever the decorated getter/accessor (image bytes) is updated */
+        camera: stateOnlyApi<TDCamera>(domain_entities.camera),
+
+        /**
+         * Create a streaming `camera` entity whose stream URL (RTSP/HLS/...) follows the decorated getter/accessor.
+         * Requires the TypeDaemon companion integration in HA.
+         */
+        stream_camera: stateOnlyApi<TDStreamCamera>(domain_entities.stream_camera),
 
         // /** Create a `person` entity and update it whenever the decorated getter/accessor is updated */
         // person: stateOnlyDecorator<{}, string>("person"), // TODO Not supported by MQTT

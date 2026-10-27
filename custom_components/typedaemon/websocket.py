@@ -21,12 +21,19 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_set_service_schema
 
+from .camera import async_remove_camera, async_upsert_camera
 from .const import (
+    CONF_ATTRIBUTES,
     CONF_CALL_ID,
+    CONF_DEVICE,
     CONF_ERROR,
     CONF_FIELDS,
     CONF_RESPONSE,
     CONF_SERVICE,
+    CONF_STILL_IMAGE_URL,
+    CONF_STREAM_SOURCE,
+    CONF_UNIQUE_ID,
+    DATA_CAMERAS,
     DATA_PENDING_CALLS,
     DATA_SERVICES,
     DOMAIN,
@@ -40,6 +47,9 @@ def register_websocket_handlers(hass: HomeAssistant) -> None:
     """Register the websocket handlers."""
     websocket_api.async_register_command(hass, websocket_register_action)
     websocket_api.async_register_command(hass, websocket_action_response)
+    websocket_api.async_register_command(hass, websocket_register_camera)
+    websocket_api.async_register_command(hass, websocket_update_camera)
+    websocket_api.async_register_command(hass, websocket_remove_camera)
 
 
 @callback
@@ -174,4 +184,104 @@ def websocket_action_response(
     else:
         future.set_result(msg.get(CONF_RESPONSE))
 
+    connection.send_result(msg[CONF_ID])
+
+
+# Camera config fields; omitted fields are left unchanged by `typedaemon/camera/update`
+CAMERA_FIELDS = {
+    vol.Optional(CONF_NAME): vol.Any(cv.string, None),
+    vol.Optional(CONF_STREAM_SOURCE): vol.Any(cv.string, None),
+    vol.Optional(CONF_STILL_IMAGE_URL): vol.Any(cv.url, None),
+    vol.Optional(CONF_ATTRIBUTES): vol.Any(dict, None),
+    vol.Optional(CONF_DEVICE): vol.Any(dict, None),
+}
+
+
+def _camera_config(msg: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in msg.items() if k not in (CONF_ID, CONF_TYPE)}
+
+
+def _cameras(hass: HomeAssistant) -> dict | None:
+    return hass.data.get(DOMAIN, {}).get(DATA_CAMERAS)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required(CONF_TYPE): "typedaemon/camera/register",
+        vol.Required(CONF_UNIQUE_ID): cv.string,
+        **CAMERA_FIELDS,
+    }
+)
+@callback
+def websocket_register_camera(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Create or take over a stream camera. It's available until this subscription ends (or the connection closes).
+
+    Re-registering an existing unique_id (e.g. after a reconnect) updates it and moves ownership to the new registration.
+    """
+    if _cameras(hass) is None:
+        connection.send_error(msg[CONF_ID], "not_loaded", f"{DOMAIN} is not loaded")
+        return
+
+    unique_id = msg[CONF_UNIQUE_ID]
+    owner = object()
+    async_upsert_camera(hass, _camera_config(msg), owner)
+
+    @callback
+    def unregister() -> None:
+        # Leave the entity (TypeDaemon may come back); just mark it unavailable if still ours
+        cameras = _cameras(hass) or {}
+        camera = cameras.get(unique_id)
+        if camera is not None and camera.owner is owner:
+            camera.set_owner(None)
+
+    connection.subscriptions[msg[CONF_ID]] = unregister
+    connection.send_result(msg[CONF_ID])
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required(CONF_TYPE): "typedaemon/camera/update",
+        vol.Required(CONF_UNIQUE_ID): cv.string,
+        **CAMERA_FIELDS,
+    }
+)
+@callback
+def websocket_update_camera(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Update a registered stream camera."""
+    camera = (_cameras(hass) or {}).get(msg[CONF_UNIQUE_ID])
+    if camera is None:
+        connection.send_error(
+            msg[CONF_ID], "not_found", f"No camera {msg[CONF_UNIQUE_ID]}"
+        )
+        return
+
+    config = _camera_config(msg)
+    # Device is only applied when the entity is added
+    config.pop(CONF_DEVICE, None)
+    camera.async_update_config(config)
+    connection.send_result(msg[CONF_ID])
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required(CONF_TYPE): "typedaemon/camera/remove",
+        vol.Required(CONF_UNIQUE_ID): cv.string,
+    }
+)
+@websocket_api.async_response
+async def websocket_remove_camera(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Remove a stream camera and its entity registry entry. Succeeds if it doesn't exist."""
+    if _cameras(hass) is None:
+        connection.send_error(msg[CONF_ID], "not_loaded", f"{DOMAIN} is not loaded")
+        return
+    await async_remove_camera(hass, msg[CONF_UNIQUE_ID])
     connection.send_result(msg[CONF_ID])
