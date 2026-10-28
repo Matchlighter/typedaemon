@@ -13,6 +13,7 @@ import { TDFan } from "./fan";
 import { TDHumidifier } from "./humidifier";
 import { TDImage } from "./image";
 import { TDLight } from "./light";
+import { TDLock } from "./lock";
 import { TDNumber } from "./number";
 import { TDScene } from "./scene";
 import { TDSiren } from "./siren";
@@ -41,6 +42,7 @@ export const domain_entities = {
     humidifier: TDHumidifier,
     image: TDImage,
     light: TDLight,
+    lock: TDLock,
     number: TDNumber,
     scene: TDScene,
     select: TDSelect,
