@@ -57,11 +57,17 @@ export class DestroyerStore {
         this.setEntry(uuid, undefined);
     }
 
+    /**
+     * Run every registered destroyer. A failing (or unknown) destroyer does not stop the others, but the failures are
+     * reported together afterwards: whoever called this must not treat the app as cleaned up.
+     */
     async destroyApplication() {
+        const failures: string[] = [];
         for (let [uuid, info] of Object.entries(this.getEntries())) {
             const des = this.constructor.destroyers[info.type];
             if (!des) {
                 logMessage("warn", `Unkown destroyer '${info.type}' with ${JSON.stringify(info.options)}`);
+                failures.push(`Unknown destroyer '${info.type}'`);
                 continue;
             }
 
@@ -69,8 +75,10 @@ export class DestroyerStore {
                 await des(this.application, info.options);
             } catch (ex) {
                 logMessage("error", `Error in destroyer '${info.type}' with ${JSON.stringify(info.options)}:`, ex);
+                failures.push(`Destroyer '${info.type}' failed: ${ex?.message ?? ex}`);
             }
         }
+        if (failures.length) throw new Error(failures.join("; "));
     }
 
     async load() {
