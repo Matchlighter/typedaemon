@@ -89,9 +89,10 @@ export function homeAssistantApi(plugin_instace: HomeAssistantPlugin) {
     //     // TODO
     // }
 
-    async function findRelatedEntities(entity: HassEntity): Promise<string[]> {
+    async function findRelatedEntities(entity: HassEntity | HassEntityIdLike): Promise<string[]> {
         const pl = _plugin();
-        const response1: any = await pl.request('search/related', { item_type: 'entity', item_id: entity.entity_id });
+        const entity_id = typeof entity === "string" ? entity : entity.entity_id;
+        const response1: any = await pl.request('search/related', { item_type: 'entity', item_id: entity_id });
         const relatedDeviceIds = response1['device'];
         if (!relatedDeviceIds) return [];
         // const response2: any = await pl.request('search/related', { item_type: 'device', item_id: relatedDeviceIds[0] });
