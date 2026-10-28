@@ -66,7 +66,12 @@ export const trackAutocleanEntity = (store: EntityStore, entity: TDEntity<any>) 
     application.persistedStorage.objectSet(autocleanKey, cleanerUUID(entity), entry, { min_time_to_disk: 5, max_time_to_disk: 15 });
 }
 
+/**
+ * Remove from HA every autoclean entry the app does not track. An entry whose removal fails stays in the registry (retried
+ * next time) and is returned; callers that must not proceed past a failure check the result.
+ */
 export const autocleanEntities = async (store: EntityStore) => {
+    const failures: { uuid: string; error: Error }[] = [];
     const { application, plugin } = store;
     const currentEnityIds = new Set<string>();
     for (let ent of store.tracked_entities) {
@@ -92,15 +97,22 @@ export const autocleanEntities = async (store: EntityStore) => {
                 await cleaner.destroy_entity(ent.cleaner_opts, store);
             } catch (ex) {
                 logPluginClientMessage(plugin, "warn", `Failed to autoclean entity '${ent.uuid}':`, ex)
+                // Forgetting it would leave the entity in HA for good
+                keepEntriesByCUID[cuid] = ent;
+                failures.push({ uuid: ent.uuid, error: ex });
             }
         }
     }
     application.persistedStorage.setValue(autocleanKey, keepEntriesByCUID, { min_time_to_disk: 0, max_time_to_disk: 10 });
+    return failures;
 }
 
 export const HAEntititesDestroyer = DestroyerStore.defineDestroyerClass("HAEntities", async (app, { plugin_id }: { plugin_id: string }) => {
     logMessage("info", "Cleaning HA Entities");
     const pl = get_plugin<HomeAssistantPlugin>(plugin_id);
     const store = pl.api._getEntityStore();
-    await autocleanEntities(store);
+    const failures = await autocleanEntities(store);
+    if (failures.length) {
+        throw new Error(`Couldn't remove ${failures.length} entities from Home Assistant: ${failures.map(f => `${f.uuid} (${f.error?.message ?? f.error})`).join(", ")}`);
+    }
 })
