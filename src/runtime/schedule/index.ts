@@ -11,7 +11,7 @@ import { callback_or_decorator2 } from "../../plugins/util";
 
 import { sleep } from "../sleep";
 import { logPluginClientMessage } from "../../hypervisor/logging";
-import { bind_callback_env, get_plugin } from "../../plugins/base";
+import { bind_callback_env, get_plugin, handle_client_error } from "../../plugins/base";
 import type { HomeAssistantPlugin } from "../../plugins/home_assistant/plugin";
 import { ResumableCallbackPromise } from "../resumable/resumable_method";
 import { sleep_until } from "../sleep";
@@ -425,10 +425,19 @@ function runAtDate(date: Date, func: () => any) {
         return setTimeout(func, diff);
 }
 
-function scheduleTimer(when: Date, callback: () => any) {
-    callback = bind_callback_env(callback);
+/** Arm a timer for `callback`. `after` continues once the callback has run, successfully or not. */
+function scheduleTimer(when: Date, callback: () => any, after?: () => void) {
+    const bound = bind_callback_env(callback);
 
-    const handle = runAtDate(when, callback);
+    const handle = runAtDate(when, async () => {
+        try {
+            await bound();
+        } catch (e) {
+            // Logged for the app instead of escaping as an unhandled rejection that would end a recurring schedule
+            handle_client_error(e);
+        }
+        after?.();
+    });
     return schedule_cleanups().addExposed(() => {
         clearTimeout(handle);
     })
@@ -450,10 +459,7 @@ function scheduleRecurring(computeNext: () => Date, callback: () => any) {
 
         // ctx.logMessage('debug', `Scheduling recurring callback at ${nextTime.toISOString()}`)
 
-        currentDisposer = scheduleTimer(nextTime, async () => {
-            await callback();
-            schedule_next();
-        });
+        currentDisposer = scheduleTimer(nextTime, callback, schedule_next);
     }
 
     schedule_next();
