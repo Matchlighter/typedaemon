@@ -73,7 +73,7 @@ export function script(options: ScriptOptions) {
             if (SHUTDOWN_CLEANERS[options.shutdown] && isShuttingDown()) return false;
 
             if (store.configuration.mode == "restart") {
-                store.cancelAll(new PromiseCancelled("The Script has been called again, aborting this previous run."));
+                store.makeRoom(new PromiseCancelled("The Script has been called again, aborting this previous run."));
             } else if (store.total_count >= store.limit) {
                 return false;
             }

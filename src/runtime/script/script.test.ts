@@ -205,7 +205,7 @@ describe("@script shutdown: 'wait' once shutting down", () => {
     });
 });
 
-describe("ScriptStateStore.cancelAll", () => {
+describe("ScriptStateStore.makeRoom (restart)", () => {
     it("cancels every item even if one throws", () => {
         const store = new ScriptStateStore({ mode: "restart" });
         const cancelled: string[] = [];
@@ -217,8 +217,8 @@ describe("ScriptStateStore.cancelAll", () => {
         store.trackRunning(item("r1", true));
         store.trackRunning(item("r2"));
 
-        expect(() => store.cancelAll()).not.toThrow();
-        expect(cancelled).toEqual(["p1", "p2", "r1", "r2"]);
+        expect(() => store.makeRoom()).not.toThrow();
+        expect(cancelled).toEqual(["r1", "r2", "p1", "p2"]);
         expect(store.total_count).toBe(0);
     });
 });

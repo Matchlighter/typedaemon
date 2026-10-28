@@ -7,7 +7,7 @@ export interface ScriptOptions {
     /** Default: 'parallel' */
     mode: 'single' | 'restart' | 'queued' | 'parallel';
     mode_key?: (args: any[]) => string;
-    /** When `mode: 'queued'` or `mode: 'parallel`, define the maximum number queued+running. Default: 20 */
+    /** When `mode: 'queued'` or `mode: 'parallel`, define the maximum number queued+running. Default: 20 (1 for `mode: 'restart'`: a new call cancels the oldest runs beyond it) */
     limit?: number | false;
     shutdown?: 'suspend' | 'kill' | 'wait';
     // TODO Direct debounce and throttle support?
@@ -27,7 +27,7 @@ export class ScriptStateStore {
         if (!this.configuration) return 0;
         if (this.configuration.mode === 'single') return 1;
         if (this.configuration.limit === false) return Infinity;
-        return this.configuration.limit ?? 20;
+        return this.configuration.limit ?? (this.configuration.mode === 'restart' ? 1 : 20);
     }
 
     pendingScripts: ScriptQueueItem[] = [];
@@ -49,13 +49,15 @@ export class ScriptStateStore {
     }
 
     /**
-     * Cancel and stop tracking every queued and running run, so a new run may start immediately.
-     * Cancellation is cooperative: a running run may outlive this call.
+     * Cancel and stop tracking the oldest runs (running before queued) until a new run fits under `limit`,
+     * so it may start immediately. Cancellation is cooperative: a cancelled run may outlive this call.
      */
-    cancelAll(reason?: any) {
-        const items = [...this.pendingScripts, ...this.runningScripts];
-        this.pendingScripts = [];
-        this.runningScripts = [];
+    makeRoom(reason?: any) {
+        const excess = this.total_count - this.limit + 1;
+        if (excess <= 0) return;
+        const items = [...this.runningScripts, ...this.pendingScripts].slice(0, excess);
+        this.runningScripts = this.runningScripts.filter(i => !items.includes(i));
+        this.pendingScripts = this.pendingScripts.filter(i => !items.includes(i));
         for (const item of items) {
             try {
                 item.cancel(reason);
@@ -68,7 +70,8 @@ export class ScriptStateStore {
     refill() {
         if (!this.configuration) return;
 
-        let running_limit = this.configuration.mode == "parallel" ? this.limit : 1;
+        // 'restart' with limit N keeps the N newest runs going at once
+        let running_limit = this.configuration.mode == "parallel" || this.configuration.mode == "restart" ? this.limit : 1;
 
         while (this.runningScripts.length < running_limit && this.pendingScripts.length > 0) {
             const next = this.pendingScripts.shift();
