@@ -6,6 +6,9 @@ import { ResumableMethod } from "../resumable/resumable_method";
 import { resumableCallbackFactory } from "../resumable/resumable_promise";
 import { ScriptOptions, ScriptQueueItem, ScriptStateStore } from "./store";
 
+/** Queued script runs. Distinct from the ResumableStore file, which has a different shape */
+export const SCRIPT_STATE_FILE = ".script_state.json";
+
 export class ResumableScriptStoreManager {
     protected application = current.application;
 
@@ -22,7 +25,7 @@ export class ResumableScriptStoreManager {
     }
 
     get store_file() {
-        return path.join(this.application.operating_directory, ".resumable_state.json")
+        return path.join(this.application.operating_directory, SCRIPT_STATE_FILE)
     }
 
     async defineSubStore(sid: string, config: ScriptOptions) {

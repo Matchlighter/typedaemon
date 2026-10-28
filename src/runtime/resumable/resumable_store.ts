@@ -30,6 +30,13 @@ export class ResumableStore {
         logPluginClientMessage("Resumable", "info", "Found stored Resumables; resuming them")
         const restore_json = await fs.promises.readFile(this.store_file);
         const restore_list = JSON.parse(restore_json.toString());
+        if (!Array.isArray(restore_list)) {
+            // Written by the old script manager; not ours to interpret, but don't destroy it
+            const legacy = this.store_file + ".legacy";
+            logPluginClientMessage("Resumable", "warn", `${this.store_file} is not in the expected format; moved to ${legacy}`);
+            await fs.promises.rename(this.store_file, legacy);
+            return;
+        }
 
         const loaded = await this._loadWithLookups(restore_list);
         const failures = Object.values(loaded).filter(p => p instanceof FailedResume) as FailedResume[];
