@@ -1,0 +1,7 @@
+/* Removable filter chips (components/FilterChips) */
+.fchips { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fchip { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 17px; background: var(--prib); color: var(--pri); font: 500 13px var(--font); white-space: nowrap; }
+.fchip button { display: inline-flex; align-items: center; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.fchip-off { border: 1px dashed var(--div); background: transparent; color: var(--text2); cursor: pointer; }
+.fchip-off:hover { background: var(--sunk); }
+@media (max-width: 640px) { .fchip { height: 44px; } }

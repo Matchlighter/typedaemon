@@ -7,7 +7,7 @@ type DestroyerFunction<T> = (application: ApplicationInstance, configuration: T)
 
 const DestroyerKeySymbol = Symbol("Destroyer Class Key");
 
-interface DestroyerEntry {
+export interface DestroyerEntry {
     uuid: string;
     type: string;
     options: any;
@@ -55,6 +55,11 @@ export class DestroyerStore {
         this.constructor.validateDestroyerFunction(destroyer);
         const uuid = this.destroyerUUID(destroyer, options)
         this.setEntry(uuid, undefined);
+    }
+
+    /** Pending destroyers, as registered */
+    list(): DestroyerEntry[] {
+        return Object.values(this.getEntries());
     }
 
     /**

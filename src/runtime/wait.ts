@@ -2,7 +2,7 @@ import { current } from "../hypervisor/current";
 import { appmobx } from "../plugins/mobx";
 import { ResumablePromise } from "./resumable";
 import { ResumableMethod } from "./resumable/resumable_method";
-import { SerializeContext } from "./resumable/resumable_promise";
+import { SerializeContext, type ResumableWait } from "./resumable/resumable_promise";
 import { _parseTDFormatInternal, parseDuration } from "./schedule";
 import { sleep, sleep_until } from "./sleep";
 
@@ -69,6 +69,10 @@ class StateWaiter extends ResumablePromise<void> {
         } else {
             return this.expr();
         }
+    }
+
+    describeWait(): ResumableWait {
+        return { kind: 'condition', condition: typeof this.expr === "string" ? this.expr : this.expr.toString(), since: this.createdAt };
     }
 
     isCancellable(): boolean {

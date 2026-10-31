@@ -1,3 +1,4 @@
+import { entityStateKey } from "./storage_keys";
 
 import { action, computed, observable } from "mobx";
 
@@ -57,7 +58,7 @@ function separateRegistrationOptions<O extends {}>(opts: O & EntityRegistrationO
 export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
     const _entity_store = () => {
         assert_application_context();
-        return getOrCreateLocalData(_plugin(), current.application, "entities", (plg, app) => new EntityStore(plg, app));
+        return EntityStore.forApplication(_plugin(), current.application);
     }
 
     // ========= Shared Entity Helpers ========= //
@@ -74,7 +75,7 @@ export const _entitySubApi = (_plugin: () => HomeAssistantPlugin) => {
 
         if (options?.persist_state) {
             const ent = entity as EntityClass<any, any>;
-            const pkey = `entity_state:${entity.uuid}`;
+            const pkey = entityStateKey(entity.uuid);
 
             if (persistence.has(pkey)) {
                 const p = persistence.get(pkey) as any;

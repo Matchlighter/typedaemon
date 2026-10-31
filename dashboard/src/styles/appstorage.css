@@ -1,0 +1,11 @@
+/* App Storage tab. Row styles live in storage.css. */
+.stor { display: grid; gap: 12px; }
+.stor-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.stor-path { min-width: 0; color: var(--text2); font-size: 13px; overflow-wrap: anywhere; }
+.stor-list { display: grid; gap: 8px; }
+.stor-card { padding: 0; overflow: hidden; }
+.stor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; border-bottom: 1px solid var(--div); }
+.stor-bar .input-pill { flex: 0 1 280px; min-width: 0; background: var(--card); }
+.stor-bar .stor-meta { margin-left: auto; font-size: 12.5px; }
+.stor-card .banner { margin: 12px 16px 4px; }
+.stor-card .appd-action-error { margin: 8px 16px 0; }

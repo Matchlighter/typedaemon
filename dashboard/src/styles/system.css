@@ -1,0 +1,39 @@
+/* System view. Generic table styles (.tbl) live in app.css; facts reuse appdetail.css. */
+.sys { display: grid; gap: 20px; }
+.sys-section { display: grid; gap: 10px; }
+.sys-section h2 { margin: 0; }
+.sys-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sys-path { min-width: 0; color: var(--text2); font-size: 13px; overflow-wrap: anywhere; }
+.sys-user { color: var(--text); text-decoration: none; }
+.sys-user:hover { text-decoration: underline; }
+.sys-store-detail > td { display: grid; gap: 8px; }
+.sys-store-rows { display: grid; gap: 6px; }
+.sys-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.sys-calls { min-width: 560px; --stack-cols: 1fr 1fr; }
+.sys-note { font-size: 13px; }
+.sys-stuck-note { color: var(--errf); }
+.sys-stuck-note a { color: inherit; }
+.sys-actions { text-align: right; width: 110px; }
+.sys-route { white-space: nowrap; }
+.sys-route a { color: var(--text); }
+.sys-route a { color: var(--text); text-decoration: none; font-weight: 500; }
+.sys-route a:hover { text-decoration: underline; }
+.sys-arrow { margin: 0 8px; color: var(--text2); }
+.sys-calls tr.sys-stuck { background: var(--errb); }
+.sys-calls tr.sys-stuck:hover { background: var(--errb); }
+
+@media (max-width: 640px) {
+    .sys-calls tr.sys-stuck { background: var(--errb); }
+    .sys-calls .sys-route { grid-column: 1 / -1; }
+}
+.sys-config { display: grid; gap: 10px; }
+.sys-config h2 { margin: 0; }
+.sys-config h2 .note { font-size: 12px; font-weight: 400; }
+
+/* Mock: Hypervisor (narrow) beside Resolved config (wide); wraps/stacks below ~1000px (phone: single column) */
+.sys-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
+.sys-top > :first-child { flex: 1 1 420px; min-width: 0; }
+.sys-top > :last-child { flex: 999 1 560px; min-width: 0; }
+@media (max-width: 640px) {
+    .sys-top > * { flex-basis: 100%; }
+}

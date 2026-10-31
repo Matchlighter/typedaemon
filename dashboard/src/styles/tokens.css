@@ -1,0 +1,23 @@
+/* Design tokens (see docs/design/admin-dashboard-brief.md). Own copy of HA's palette: the ingress iframe is
+   cross-origin so HA's CSS vars are not inherited. Dark = prefers-color-scheme unless data-theme overrides. */
+:root {
+    --bg: #fafafa; --card: #fff; --sunk: #f2f3f4; --text: #1f1f1f; --text2: #5c6166; --div: #e1e3e5;
+    --pri: #0277bd; --pribtn: #0277bd; --onpri: #fff; --prib: #e3f2fd;
+    --okf: #1b5e20; --okb: #e6f4e7; --runf: #01579b; --runb: #e1f2fc;
+    --offf: #424242; --offb: #ececec; --errf: #b3261e; --errb: #fdecea;
+    --warnf: #8a4b00; --warnb: #fff1dc; --flash: #fff3b0; --hdr: #fff; --codebg: #f6f7f8;
+    --scrim: rgba(0, 0, 0, .45);
+    --shadow-modal: 0 12px 40px rgba(0, 0, 0, .18);
+    --font: Roboto, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light;
+}
+:root[data-theme="dark"] {
+    --bg: #111213; --card: #1c1d1f; --sunk: #252628; --text: #e3e3e3; --text2: #a0a4a8; --div: #313335;
+    --pri: #5bc4f5; --pribtn: #5bc4f5; --onpri: #06263a; --prib: #0f2a3a;
+    --okf: #86d08a; --okb: #16291a; --runf: #6ccaf7; --runb: #0e2533;
+    --offf: #bdbdbd; --offb: #2a2b2d; --errf: #f2a39d; --errb: #381b19;
+    --warnf: #ffbf66; --warnb: #33240e; --flash: #3d3510; --hdr: #1c1d1f; --codebg: #161718;
+    --scrim: rgba(0, 0, 0, .65);
+    color-scheme: dark;
+}

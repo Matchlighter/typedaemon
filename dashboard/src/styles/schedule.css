@@ -1,0 +1,25 @@
+/* Schedule row: one shared column template so header and every row line up. */
+.sched-row {
+    display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1fr) 120px;
+    align-items: center; column-gap: 12px; padding: 10px 14px; border-top: 1px solid var(--div);
+}
+.sched-row:first-child { border-top: 0; }
+.sched-expr-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sched-expr, .sched-method { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched-expr { font-size: 13px; }
+.sched-method { color: var(--text); font-size: 13px; }
+.sched-next { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sched-last { color: var(--text2); white-space: nowrap; }
+.sched-none { color: var(--text2); }
+.sched-result { justify-self: start; }
+@media (max-width: 640px) {
+    .sched-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+    .sched-method { grid-column: 1 / -1; grid-row: 2; }
+    .sched-next, .sched-last { grid-row: 3; }
+    .sched-result { grid-column: 2; grid-row: 3; justify-self: end; }
+}
+
+/* App Schedules tab: a single bordered card holding header + rows. */
+.sched-list { background: var(--card); border: 1px solid var(--div); border-radius: 12px; overflow: hidden; }
+.sched-head { color: var(--text2); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+@media (max-width: 640px) { .sched-head { display: none; } }

@@ -1,4 +1,5 @@
 import * as path from "path";
+import { TypedEmitter } from "tiny-typed-emitter";
 import { FileHandle, open, rename, writeFile } from "fs/promises";
 
 import { AsyncLock } from "../common/async_lock";
@@ -48,15 +49,99 @@ interface QueuedAction {
     not_after: number;
 }
 
+/** A single key changed. `value` is the key's value after the change (undefined for deletes). */
+export interface StorageChange {
+    type: "set" | "delete";
+    key: string;
+    value?: any;
+    /** Approximate serialized size (JSON length) of the value; 0 for deletes. Only computed when something listens. */
+    size: number;
+    /** ms epoch of the write */
+    at: number;
+    /** True for TypeDaemon-owned bookkeeping keys (vs. user `@persistent` data) */
+    internal: boolean;
+}
+
+export interface StorageEvents {
+    change: (change: StorageChange) => void;
+}
+
+const internal_key_prefixes = new Set<string>(["_"]);
+
+/** Declare a key prefix as TypeDaemon-owned bookkeeping (hidden from user data, not deletable by users). Idempotent; prefixes live for the process. */
+export function registerInternalKeyPrefix(prefix: string) {
+    internal_key_prefixes.add(prefix);
+}
+
+/** Internal keys: `_`-prefixed (eg. destroyers registry) and any prefix declared via `registerInternalKeyPrefix` */
+export function isInternalStorageKey(key: string) {
+    for (const prefix of internal_key_prefixes) {
+        if (key.startsWith(prefix)) return true;
+    }
+    return false;
+}
+
 /**
  * This is a KV Store that Journals to disk. The Jorunaling reduces disk usage over writing the complete object to disk.
  * Upon shutdown, we try to clear the journal and store the minimal data set, but if something prevents that, the complete state should be recoverable from the journal
  * 
  * The Journal format is fairly simple - each line consists of a command, a space, and a JSON value. eg `MRG {"key":"value"}`
  */
-export class PersistentStorage {
+export class PersistentStorage extends TypedEmitter<StorageEvents> {
     constructor(readonly file_path: string) {
+        super();
+    }
 
+    private last_writes: Record<string, { at: number }> = {};
+
+    private static sizeOf(value: any) {
+        return JSON.stringify(value)?.length ?? 0;
+    }
+
+    /** UTF-8 bytes of each key's JSON, filled lazily by `keyBytes`; a key is dropped on every change to it */
+    private bytes_cache = new Map<string, number>();
+
+    /** Serialized (JSON, UTF-8) size of a key's value; cached until the key next changes, so repeat reads don't rescan the store */
+    keyBytes(key: string): number {
+        let n = this.bytes_cache.get(key);
+        if (n === undefined) {
+            n = Buffer.byteLength(JSON.stringify(this.kvstore[key]) ?? "");
+            this.bytes_cache.set(key, n);
+        }
+        return n;
+    }
+
+    /** Size (computed on demand) and last-write time of a key, as of this process's lifetime (undefined if never written/deleted since load) */
+    keyInfo(key: string) {
+        const w = this.last_writes[key];
+        if (!w) return undefined;
+        return { at: w.at, size: PersistentStorage.sizeOf(this.kvstore[key]) };
+    }
+
+    private emitChange(key: string) {
+        this.bytes_cache.delete(key);
+        const exists = key in this.kvstore && this.kvstore[key] != null;
+        const at = Date.now();
+        if (exists) {
+            this.last_writes[key] = { at };
+        } else {
+            delete this.last_writes[key];
+        }
+        // Serializing for size is O(value) - skip it when nobody is watching
+        if (!this.listenerCount("change")) return;
+        const value = exists ? this.kvstore[key] : undefined;
+        const size = exists ? PersistentStorage.sizeOf(value) : 0;
+        this.emit("change", { type: exists ? "set" : "delete", key, value, size, at, internal: isInternalStorageKey(key) });
+    }
+
+    /**
+     * Removes a key from the store/journal ONLY. Whoever owns the in-memory value (eg an app's `@persistent` property)
+     * keeps it until its next write (which re-creates the key) or restart (where it's lost).
+     */
+    async deleteKey(key: string) {
+        if (!this.hasKey(key)) return;
+        this.setValue(key, undefined, { min_time_to_disk: 0, max_time_to_disk: 0 });
+        await this.flushToDisk(true);
     }
 
     protected hasBeenModified = false;
@@ -91,6 +176,7 @@ export class PersistentStorage {
         } else {
             this.kvstore[key] = value;
         }
+        this.emitChange(key);
 
         // Short-circuit if the pending SET is being reverted
         if (kactions?.length && disk_value === value) {
@@ -162,17 +248,21 @@ export class PersistentStorage {
 
     private execCmd(cmd: string, pdata: any) {
         if (cmd == "DEL") {
-            for (let k of pdata) delete this.kvstore[k];
+            for (let k of pdata) { delete this.kvstore[k]; this.bytes_cache.delete(k) }
         } else if (cmd == "MRG") {
             Object.assign(this.kvstore, pdata);
+            for (let k of Object.keys(pdata)) this.bytes_cache.delete(k);
         } else if (cmd == "SET") {
             this.kvstore = pdata;
+            this.bytes_cache.clear();
         } else if (cmd == "ASPLC") {
+            this.bytes_cache.delete(pdata.key);
             const arr: any[] = this.kvstore[pdata.key] ??= [];
             // Same semantics as Array.prototype.splice(). Defaults to the end of the array (ie. push/pop)
             const idx = pdata.position ?? (pdata.delete ? -pdata.delete : arr.length);
             arr.splice(idx, pdata.delete ?? 0, ...(pdata.values ?? []));
         } else if (cmd == "OSET") {
+            this.bytes_cache.delete(pdata.key);
             const obj: any = this.kvstore[pdata.key] ??= {};
             if (pdata.value === undefined) {
                 delete obj[pdata.subkey];
@@ -322,6 +412,7 @@ export class PersistentStorage {
     private pushAndExecAction(key: string, options: PersistentEntryOptions, action: AnyAction) {
         this.execCmd(action.action, action);
         this.pushAction(key, options, action);
+        this.emitChange(key);
     }
 
     private cancelWriteTimer() {
@@ -348,13 +439,32 @@ export class PersistentStorage {
     }
 }
 
-export class SharedStorages {
+export class SharedStorages extends TypedEmitter<{ change: (storage_name: string, change: StorageChange) => void }> {
     constructor(readonly root_directory: string) {
-
+        super();
     }
+
+    /** Names of loaded stores */
+    list() { return Object.keys(this.loaded_storages) }
+
+    /** A loaded store, or undefined */
+    get(name: string): PersistentStorage | undefined { return this.loaded_storages[name] }
+
+    /** Absolute file of a store (loaded or not) */
+    fileOf(name: string) { return path.resolve(this.root_directory, `${name}.jkv`) }
 
     private _primary: PersistentStorage;
     get primary() { return this._primary }
+
+    private users: Record<string, Set<string>> = {};
+
+    /** Record that an app accessed a store (this run only; not persisted) */
+    noteUse(name: string, appId: string | undefined) {
+        if (appId) (this.users[name] ??= new Set()).add(appId);
+    }
+
+    /** Ids of apps that accessed a store since start, sorted */
+    usedBy(name: string): string[] { return [...(this.users[name] ?? [])].sort() }
 
     private loaded_storages: Record<string, PersistentStorage> = {};
 
@@ -365,7 +475,8 @@ export class SharedStorages {
     async load(name: string) {
         let storage = this.loaded_storages[name];
         if (!storage) {
-            storage = this.loaded_storages[name] = new PersistentStorage(path.resolve(this.root_directory, `${name}.jkv`));
+            storage = this.loaded_storages[name] = new PersistentStorage(this.fileOf(name));
+            storage.on("change", (change) => this.emit("change", name, change));
             await storage.load();
         }
         return storage;

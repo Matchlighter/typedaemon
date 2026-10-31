@@ -1,7 +1,7 @@
 import "../../../test/helpers/mock_hypervisor";
 
 import { Executor } from "../regen_executor";
-import { ScriptStateStore } from "./store";
+import { scriptLimit, ScriptStateStore } from "./store";
 
 function makeExecutor() {
     const exc = new Executor((ctx) => { ctx.next = "end"; return ctx.stop(); }, { self: {}, try_locs: [], marked_locs: [] });
@@ -58,5 +58,31 @@ describe("ScriptStateStore restart limit", () => {
         store.trackPending(a); store.refill();
         store.makeRoom();
         expect(a.cancel).not.toHaveBeenCalled();
+    });
+});
+
+describe("ScriptStateStore dashboard hooks", () => {
+    it("makeRoom emits change", () => {
+        const store = new ScriptStateStore({ mode: "restart" });
+        store.trackPending({ cancel: jest.fn(), start: jest.fn() } as any); store.refill();
+        const onChange = jest.fn();
+        store.on("change", onChange);
+        store.makeRoom();
+        expect(onChange).toHaveBeenCalled();
+    });
+});
+
+describe("scriptLimit", () => {
+    it("restart defaults to 1 and honors limit", () => {
+        expect(scriptLimit({ mode: "restart" })).toBe(1);
+        expect(scriptLimit({ mode: "restart", limit: 3 })).toBe(3);
+        expect(scriptLimit({ mode: "restart", limit: false })).toBeNull();
+    });
+
+    it("keeps the other defaults", () => {
+        expect(scriptLimit({ mode: "single" })).toBe(1);
+        expect(scriptLimit({ mode: "parallel" })).toBe(20);
+        expect(scriptLimit({ mode: "queued", limit: 5 })).toBe(5);
+        expect(scriptLimit({ mode: "queued", limit: false })).toBeNull();
     });
 });

@@ -1,0 +1,136 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 400 14px/20px var(--font); }
+h1 { font: 400 22px/28px var(--font); margin: 0; }
+h2 { font: 500 15px/20px var(--font); margin: 0; }
+a { color: var(--pri); }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+:focus-visible { outline: 2px solid var(--pri); outline-offset: 2px; }
+.lbl { font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .5px; color: var(--text2); }
+/* Default padding is zero-specificity (:where) so card variants (.ov-panel, .logs-card, .stor-card, ...) can set
+   padding:0 for edge-to-edge rows regardless of stylesheet load order (view CSS is bundled before this file). */
+.card { background: var(--card); border: 1px solid var(--div); border-radius: 12px; }
+:where(.card) { padding: 16px; }
+.btn { height: 36px; padding: 0 16px; border-radius: 18px; border: 1px solid var(--div); background: transparent; color: var(--pri); font: 500 14px var(--font); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn:hover { background: var(--prib); }
+.btn-danger { background: var(--errf); border-color: var(--errf); color: var(--bg); }
+.btn-danger:hover { background: var(--errf); filter: brightness(1.1); }
+.btn-danger-outline { border-color: var(--errf); color: var(--errf); }
+.btn-danger-outline:hover { background: var(--errb); }
+.btn-primary { background: var(--pribtn); border-color: var(--pribtn); color: var(--onpri); }
+.btn-primary:hover { background: var(--pribtn); filter: brightness(1.1); }
+.btn-sm { height: 28px; padding: 0 12px; border-radius: 14px; font-size: 13px; }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 10px; background: var(--offb); color: var(--text2); font: 500 11.5px/16px var(--font); white-space: nowrap; }
+.chip-mono { font-family: var(--mono); font-weight: 400; }
+.chip-ok { background: var(--okb); color: var(--okf); }
+.chip-run { background: var(--runb); color: var(--runf); }
+.chip-accent { background: var(--flash); color: var(--text); }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+/* Count bubble */
+.cnt { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--sunk); color: var(--text2); font: 500 11px/18px var(--font); text-align: center; display: inline-block; }
+
+.cnt-w { background: var(--warnb); color: var(--warnf); }
+.cnt-e { background: var(--errf); color: var(--card); }
+
+/* Visually hidden, still read by screen readers */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Tables */
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th { padding: 10px 12px; text-align: left; font: 500 11.5px/16px var(--font); text-transform: uppercase; letter-spacing: .5px; color: var(--text2); }
+.tbl td { padding: 10px 12px; border-top: 1px solid var(--div); vertical-align: middle; }
+.tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+.tbl tbody tr:hover { background: var(--sunk); }
+/* Card around a wide table (scrolls sideways); the table sets its own min-width */
+.tbl-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--div); border-radius: 12px; }
+/* Phone: `.tbl-stack` rows become stacked cards. Columns/gap per table: `--stack-cols`, `--stack-gap`; place cells with grid-column. */
+@media (max-width: 640px) {
+    .tbl-wrap:has(.tbl-stack) { overflow: visible; background: none; border: 0; }
+    .tbl-wrap .tbl-stack { min-width: 0; }
+    .tbl-stack thead { display: none; }
+    .tbl-stack, .tbl-stack tbody { display: block; }
+    .tbl-stack tr { display: grid; grid-template-columns: var(--stack-cols, auto minmax(0, 1fr)); gap: var(--stack-gap, 4px 12px); align-items: center; margin-bottom: 10px; padding: 12px; background: var(--card); border: 1px solid var(--div); border-radius: 12px; }
+    .tbl-stack td { display: block; padding: 0; border: 0; }
+}
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Live-delta highlight: add `.flash` for ~1.5s (see hooks/flash.ts). */
+.flash { animation: tdflash 1.5s ease-out; }
+@keyframes tdflash { from { background-color: var(--flash); } to { background-color: transparent; } }
+/* Recovery flash (e.g. app back to started): green instead of yellow */
+.flash-ok { animation: tdflashok 1.5s ease-out; }
+@keyframes tdflashok { from { background-color: var(--okb); } to { background-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .flash, .flash-ok { animation: none; } }
+
+/* ---- shell ---- */
+.shell { min-height: 100vh; display: flex; flex-direction: column; }
+.top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 24px; background: var(--hdr); border-bottom: 1px solid var(--div); }
+.logo { width: 28px; height: 28px; border-radius: 8px; background: var(--pri); color: var(--onpri); display: grid; place-items: center; font: 700 13px var(--mono); }
+.brand { font-size: 16px; font-weight: 500; }
+.ver { color: var(--text2); font: 400 12px var(--mono); }
+.spacer { flex: 1; }
+.icon-btn { width: 32px; height: 32px; border-radius: 50%; border: 0; background: transparent; color: var(--text); cursor: pointer; font-size: 16px; }
+.icon-btn:hover { background: var(--sunk); }
+.search-trigger { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; margin-right: 4px; border: 0; border-radius: 18px; background: var(--sunk); color: var(--text2); flex: 0 1 380px; min-width: 200px; font: 400 13px var(--font); cursor: pointer; text-align: left; }
+.search-trigger .search-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-trigger kbd { font: 500 11px var(--mono); padding: 1px 5px; border: 1px solid var(--div); border-radius: 4px; color: var(--text2); background: var(--card); }
+.icon-btn-sm { width: 28px; height: 28px; color: var(--text2); }
+
+.nav { display: flex; gap: 4px; padding: 0 12px; background: var(--hdr); border-bottom: 1px solid var(--div); overflow-x: auto; }
+.nav a { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 14px; color: var(--text2); text-decoration: none; font-weight: 500; border-bottom: 2px solid transparent; white-space: nowrap; }
+.nav a[aria-current="page"] { color: var(--pri); border-bottom-color: var(--pri); }
+.nav a:hover { color: var(--text); }
+.nav .phone-only { display: none; }
+.nav .nav-icon { display: none; }
+.page-name { display: none; }
+.page-back { display: none; }
+
+.main { width: 100%; max-width: 1320px; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+.page-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* phone: bottom tab bar */
+@media (max-width: 640px) {
+    .top { padding: 0 16px; }
+    .top { height: auto; padding: 6px 6px 6px 16px; gap: 8px; }
+    .logo { width: 24px; height: 24px; border-radius: 6px; font-size: 11px; }
+    .brand, .ver, .theme-toggle { display: none; }
+    .page-name { display: block; font-size: 17px; font-weight: 500; }
+    /* Detail views: a back chevron stands in for the logo */
+    .page-back { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -6px 0 -6px -12px; color: var(--text); }
+    .logo:has(~ .page-back) { display: none; }
+    /* Icon-only search button after the Live pill */
+    .search-trigger { order: 1; flex: none; width: 44px; height: 44px; min-width: 0; margin: 0; padding: 0; justify-content: center; border-radius: 22px; background: transparent; }
+    .search-trigger .search-text, .search-trigger kbd { display: none; }
+    .search-trigger svg { width: 20px; height: 20px; }
+    .nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; height: 56px; padding: 0 0 env(safe-area-inset-bottom); gap: 0; border-top: 1px solid var(--div); border-bottom: 0; justify-content: space-around; overflow: visible; }
+    .nav a { flex: 1; flex-direction: column; justify-content: center; gap: 2px; height: 56px; padding: 0; font-size: 11px; border-bottom: 0; }
+    .nav .nav-icon { display: block; flex: none; }
+    /* Mock: phone bar is icon + label only; counts live on the desktop tabs */
+    .nav .cnt { display: none; }
+    .nav .desktop-only { display: none; }
+    .nav .phone-only { display: flex; }
+    .main { padding: 16px 16px 72px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* Inline info notice: <InfoBanner> */
+.banner { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 8px; background: var(--prib); color: var(--text); font-size: 13px; }
+.banner > svg { flex: none; margin-top: 2px; color: var(--pri); }
+
+/* Checkbox + label */
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { width: 16px; height: 16px; accent-color: var(--pri); margin: 0; }
+
+/* Muted explanatory paragraph under a list or table */
+.note { margin: 0; color: var(--text2); font-size: 13px; }
+
+/* Pill text input (filters, search) */
+.input-pill { height: 34px; padding: 0 14px; border: 1px solid var(--div); border-radius: 17px; background: var(--sunk); color: var(--text); font: 400 13px var(--font); max-width: 100%; }
+/* Card variant: white bordered, for filter boxes sitting on the page background */
+.input-pill-card { height: 36px; padding: 0 12px; border-radius: 18px; background: var(--card); }

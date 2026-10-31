@@ -1,0 +1,63 @@
+/* App detail page. Tabs plug in via views/app_tabs.tsx. */
+.appd { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.appd-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; row-gap: 8px; align-items: start; }
+.appd-head > :not(.appd-id):not(.appd-actions) { grid-column: 1 / -1; }
+.appd-id { display: grid; gap: 8px; min-width: 0; }
+.appd-crumb { display: inline-flex; align-items: center; gap: 2px; justify-self: start; font-size: 13px; text-decoration: none; }
+.appd-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.appd-sub { color: var(--text2); }
+.appd-watching { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.appd-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text2); }
+.appd-source { overflow-wrap: anywhere; }
+.appd-actions { display: flex; align-items: center; gap: 8px; align-self: center; }
+.appd-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.appd-action-error { padding: 8px 12px; border-radius: 8px; background: var(--errb); color: var(--errf); }
+.appd-override { padding: 8px 12px; border-radius: 8px; background: var(--warnb); color: var(--warnf); }
+
+.appd-tabs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--div); }
+.appd-tabs a { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 14px; color: var(--text2); text-decoration: none; font: 500 13.5px var(--font); border-bottom: 2px solid transparent; white-space: nowrap; }
+.appd-tabs a:hover { color: var(--text); }
+.appd-tabs a[aria-current="page"] { color: var(--pri); border-bottom-color: var(--pri); }
+
+.appd-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.appd-sums { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+.appd-sum { display: grid; gap: 4px; align-content: start; /* siblings stretch to the tallest card: keep rows top-aligned, no footer => spare space at the bottom */ color: var(--text); text-decoration: none; }
+.appd-sum:hover { background: var(--sunk); }
+.appd-sum-value { font-size: 28px; line-height: 34px; font-weight: 400; }
+.appd-sum-unit { color: var(--text2); font-size: 14px; }
+.appd-sum-warn { color: var(--warnf); font-size: 12.5px; }
+.appd-sum-note, .appd-muted { color: var(--text2); font-size: 12.5px; }
+.appd-split { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
+.appd-split > .appd-logs { flex: 999 1 560px; min-width: 0; }
+.appd-split > .appd-details { flex: 1 1 340px; min-width: 0; }
+.appd-deps { display: flex; flex-wrap: wrap; gap: 6px; }
+.appd-logs { display: grid; gap: 8px; }
+.appd-logs-head { display: flex; align-items: center; justify-content: space-between; }
+.appd-logs a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+.appd-details { display: grid; gap: 8px; }
+.appd-kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 6px 12px; margin: 0; }
+.appd-kv dt { color: var(--text2); }
+.appd-kv dd { margin: 0; overflow-wrap: anywhere; }
+.appd-pkg { display: inline-block; margin-right: 12px; }
+
+/* Phone: tabs become scrolling pills, actions stick to the bottom (above the tab bar) */
+@media (max-width: 640px) {
+    .appd-tabs { border-bottom: 0; gap: 8px; }
+    .appd-tabs a { height: 36px; border-radius: 18px; border-bottom: 0; background: var(--sunk); }
+    .appd-tabs a[aria-current="page"] { background: var(--prib); }
+    .appd-actions { position: fixed; left: 0; right: 0; bottom: 56px; z-index: 5; padding: 8px 16px; background: var(--hdr); border-top: 1px solid var(--div); }
+    .appd-actions .btn { flex: 1; justify-content: center; height: 44px; border-radius: 22px; }
+    .appd-actions .appd-phone-hide { display: none; }
+    .appd-head { grid-template-columns: 1fr; }
+    /* The top bar carries the back link and the app's name */
+    .appd-crumb, .appd-title h1 { display: none; }
+    .appd-panel { padding-bottom: 72px; }
+    .appd-kv { grid-template-columns: 1fr; }
+}
+/* "Open logs" sits beside "Restart now" in the phone action bar (MobileAppDetail); the error panel has its own on desktop */
+.appd-actions .appd-logs-link { display: none; text-decoration: none; }
+@media (max-width: 640px) {
+    .appd-actions .appd-logs-link { display: inline-flex; align-items: center; justify-content: center; }
+    .errpanel-actions a.btn { display: none; }
+}

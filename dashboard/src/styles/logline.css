@@ -1,0 +1,28 @@
+/* Log line. Collapsed: one fixed-height row; expanded: stack block below (measurable). */
+.log-line { display: grid; grid-template-columns: 96px 72px minmax(0, 150px) minmax(0, 1fr) auto; column-gap: 12px; align-items: baseline; padding: 3px 16px; font: 400 12.5px/19px var(--mono); }
+.log-line.log-nosrc { grid-template-columns: 96px 72px minmax(0, 1fr) auto; }
+.log-line > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-line > .log-msg { white-space: pre-wrap; overflow: visible; overflow-wrap: anywhere; }
+.log-line:hover { background: var(--sunk); }
+.log-error:hover { background: var(--errb); }
+/* Column header: same grid as a line */
+.log-head { border-bottom: 1px solid var(--div); padding-top: 6px; padding-bottom: 6px; color: var(--text2); font: 500 11.5px/19px var(--font); text-transform: uppercase; letter-spacing: .5px; }
+.log-head:hover { background: var(--card); }
+.log-head > span { white-space: nowrap; }
+.log-ts, .log-src { color: var(--text2); font-variant-numeric: tabular-nums; }
+.log-level { color: var(--text2); }
+.log-warn .log-level { color: var(--warnf); font-weight: 500; }
+.log-error .log-level { color: var(--errf); font-weight: 500; }
+.log-lifecycle .log-level { color: var(--pri); font-weight: 500; }
+.log-error { background: var(--errb); }
+/* Stack sits in the message column, under the message. Link-like summary toggle */
+.log-stack-block { grid-column: 4 / -1; padding: 4px 0 6px; color: var(--text2); }
+.log-stack-toggle { border: 0; background: transparent; padding: 0; color: var(--pri); font: 500 12.5px/19px var(--font); cursor: pointer; border-radius: 4px; }
+.log-jump { grid-column: 4 / -1; justify-self: start; border: 0; background: transparent; padding: 0; color: var(--pri); font: 500 12px/19px var(--font); cursor: pointer; }
+.log-jump:hover { color: var(--text); }
+.log-stack { list-style: none; margin: 0; padding: 0 0 0 16px; color: var(--text2); white-space: pre-wrap; word-break: break-all; }
+.log-frame a { color: var(--pri); }
+@media (max-width: 600px) {
+    .log-line { grid-template-columns: 84px 56px minmax(0, 1fr) auto; font-size: 12px; }
+    .log-src, .log-head > .log-src { display: none; }
+}

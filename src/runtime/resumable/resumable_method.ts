@@ -4,7 +4,7 @@ import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weak
 import { AsyncLocalStorage } from "async_hooks";
 import { Executor } from "../regen_executor";
 import { serializable } from "../../common/util";
-import { CancellableResumablePromise, ResumablePromise, SerializeContext } from "./resumable_promise";
+import { CancellableResumablePromise, ResumablePromise, SerializeContext, type ResumableDescription } from "./resumable_promise";
 
 const RESUMABLE_CONTEXT_ID = Symbol("resumable_serialized_id");
 export const EXECUTOR_FACTORY = Symbol("builder");
@@ -67,6 +67,9 @@ ResumablePromise.defineClass<ResumableMethod<any>>({
             ...scope,
             owner,
         }
+        rthmd.startedAt = data.started_at ?? rthmd.startedAt;
+        rthmd.restarts = (data.restarts ?? 0) + 1;
+        if (data.script) rthmd.markAsScript();
 
         if (data.started ?? true) {
             rthmd.resume(dep);
@@ -92,6 +95,8 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
             if (promise instanceof ResumablePromise) {
                 then_args.push(this);
             }
+            // What this waits on changed
+            this._store.emit('change');
             return promise.then(...then_args);
         }
 
@@ -105,6 +110,36 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
     }
 
     scope: HotScope;
+
+    /** epoch ms the call started (the original start, for one resumed after a restart) */
+    startedAt = this.createdAt;
+    /** App restarts survived */
+    restarts = 0;
+    private is_script = false;
+
+    /** This is a run of a `@script({ shutdown: 'suspend' })` rather than a plain `@resumable` call */
+    markAsScript() { this.is_script = true }
+
+    describe(): ResumableDescription {
+        return {
+            type: this.is_script ? 'script' : 'resumable',
+            owner: String(this.scope.owner?.[RESUMABLE_CONTEXT_ID] ?? 'unknown'),
+            method: this.scope.method,
+            params: this.scope.parameters,
+            startedAt: this.startedAt,
+            restarts: this.restarts,
+            wait: this.describeWait(),
+        };
+    }
+
+    protected awaiting_for() {
+        const exc = this.executor;
+
+        if (exc.pending_promise) {
+            return [exc.pending_promise];
+        }
+        return [];
+    }
 
     resume(waitFor?: ResumablePromise<any>) {
         const exc = this.executor;
@@ -132,6 +167,9 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
                 parameters: this.scope.parameters,
             } as SerializedScope,
             started: exc._started,
+            started_at: this.startedAt,
+            restarts: this.restarts,
+            script: this.is_script,
 
             state: exc.state,
             temporaries: exc.temporaries,
@@ -157,15 +195,6 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
         if (!serializable(exc.state, []) || !serializable(exc.temporaries, []) || !serializable(exc.completions, [])) return false;
         if (!serializable(exc.arg, []) || !serializable(this.scope.parameters, [])) return false;
         return true;
-    }
-
-    protected awaiting_for() {
-        const exc = this.executor;
-
-        if (exc.pending_promise) {
-            return [exc.pending_promise];
-        }
-        return [];
     }
 
     protected do_unsuspend(): void {

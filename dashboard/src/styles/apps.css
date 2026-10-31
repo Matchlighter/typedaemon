@@ -1,0 +1,33 @@
+/* Apps view. Generic table styles (.tbl, .cnt) live in app.css. */
+.apps-controls { min-width: 0; max-width: 100%; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.apps-filter { display: flex; align-items: center; gap: 8px; width: 260px; color: var(--text2); }
+.apps-filter input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text); font: inherit; }
+.apps-unlinked { display: block; color: var(--warnf); font-size: 12px; }
+.apps-actions { text-align: right; white-space: nowrap; }
+.apps-table { min-width: 1080px; }
+.apps-name a { font-weight: 500; color: var(--text); text-decoration: none; }
+.apps-name a:hover { text-decoration: underline; }
+.apps-id { display: block; font-size: 11.5px; color: var(--text2); }
+.apps-source-inner { display: flex; align-items: center; gap: 8px; }
+.apps-error-cell { max-width: 280px; }
+.apps-error { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--errf); }
+.apps-orphans { padding: 0; overflow: hidden; box-shadow: inset 0 3px 0 var(--warnf); }
+.apps-orphans-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 16px 16px 10px; }
+.apps-orphans-head h2 { margin: 0; font-size: 15px; }
+.apps-orphans-icon { color: var(--warnf); }
+.apps-orphans .tbl-wrap { border: 0; border-radius: 0; background: none; }
+.apps-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.apps-destroyers { font-size: 12px; }
+.apps-orphan-actions { text-align: right; white-space: nowrap; }
+.apps-orphan-actions .btn { display: inline-flex; align-items: center; text-decoration: none; }
+.apps-orphan-actions .btn + .btn { margin-left: 6px; }
+
+/* Phone (rows stack: see .tbl-stack) */
+@media (max-width: 640px) {
+    .apps-table td[data-label="Entities"], .apps-table td[data-label="Schedules"], .apps-table td[data-label="Resumables"] { display: none; }
+    .apps-table .apps-name { grid-column: 2; }
+    .apps-table .apps-source, .apps-table .apps-error-cell { grid-column: 1 / -1; max-width: none; }
+    .apps-filter { width: 100%; height: 44px; }
+    .apps-table .apps-actions { grid-column: 1 / -1; text-align: right; }
+    .apps-orphan-table .apps-orphan-actions { grid-column: 1 / -1; text-align: left; }
+}

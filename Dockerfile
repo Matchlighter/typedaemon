@@ -29,6 +29,7 @@ RUN yarn install --frozen-lockfile --network-timeout 1000000
 # Add App
 COPY tsconfig.json ./
 COPY src/ ./src/
+COPY dashboard/ ./dashboard/
 COPY script/ ./script/
 RUN yarn build
 
@@ -45,7 +46,7 @@ RUN \
     && jq '.image_version = "'${BUILD_VERSION}'" | .image_channel = "'${BUILD_CHANNEL}'"' package.json > /tmp/package.json && mv /tmp/package.json package.json
 
 # Remove src
-RUN rm -rf src/ node_modules/ docker/
+RUN rm -rf src/ node_modules/ dashboard/ docker/
 
 WORKDIR /opt/typedaemon
 

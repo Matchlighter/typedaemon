@@ -1,0 +1,17 @@
+/* List states */
+.liststate-loading { display: grid; gap: 10px; padding: 12px 0; }
+.liststate-bar { height: 14px; border-radius: 7px; background: var(--sunk); animation: liststate-pulse 1.4s ease-in-out infinite; }
+.liststate-syncing { display: flex; align-items: center; gap: 8px; padding: 16px 0; color: var(--text2); font: 400 13px/1 var(--font); }
+.liststate-center { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 32px 16px; text-align: center; }
+.liststate-center.card { padding: 32px 16px; }
+.liststate-icon { color: var(--text2); }
+.liststate-title { font: 500 15px/1.3 var(--font); color: var(--text); }
+.liststate-err { color: var(--errf); }
+.liststate-hint { font: 400 13px/1.4 var(--font); color: var(--text2); max-width: 48ch; }
+.liststate-detail { font: 400 12px/1.4 var(--mono); color: var(--text2); }
+.liststate-live { display: contents; }
+.liststate-stale { opacity: .6; }
+@keyframes liststate-pulse { 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) {
+    .liststate-bar { animation: none; }
+}

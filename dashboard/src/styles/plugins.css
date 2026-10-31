@@ -1,0 +1,23 @@
+/* Plugins view: card grid; inline detail panel below. */
+.plugin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 12px; }
+.plugin-card { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.plugin-card-head { display: flex; align-items: center; gap: 10px; }
+.plugin-card-title { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.plugin-card-title a { font-weight: 500; font-size: 14px; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+.plugin-card-title a:hover { text-decoration: underline; }
+.plugin-card-type { color: var(--text2); font-size: 12px; }
+.plugin-card-kv { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 13px; }
+.plugin-card-kv dt { color: var(--text2); }
+.plugin-card-kv dd { margin: 0; overflow-wrap: anywhere; }
+.plugin-card.selected { box-shadow: inset 0 0 0 2px var(--pri); }
+
+/* Inline detail panel under the grid */
+.plugin-detail { margin-top: 16px; overflow: hidden; }
+.plugin-detail-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--div); }
+.plugin-detail-head h2 { margin: 0 auto 0 0; }
+.plugin-detail-sub { color: var(--text2); font-weight: 400; }
+.plugins-split { display: flex; flex-wrap: wrap; }
+.plugins-logs { flex: 999 1 560px; min-width: 0; padding: 8px 0; border-right: 1px solid var(--div); display: grid; gap: 6px; align-content: start; }
+.plugins-logs .lbl, .plugins-config .lbl { margin: 0; }
+.plugins-logs .lbl { padding: 6px 16px; }
+.plugins-config { flex: 1 1 340px; min-width: 0; padding: 14px 16px; display: grid; gap: 8px; align-content: start; }

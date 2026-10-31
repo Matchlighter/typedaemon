@@ -80,7 +80,7 @@ Today there is **no UI**. All insight comes from log files and a CLI. The dashbo
 Overview
 Apps
   └ App detail (tabs): Overview · Logs · Entities · Storage · Resumables & Scripts · Schedules · HTTP · Config
-     (orphan apps: Overview · Leftovers · Cleanup)
+     (orphan apps: no detail page; a Leftovers modal over the Apps list, with the Clean up confirmation)
 Entities        (global, cross-app; filter by app, domain, linked/unlinked)
 Plugins
   └ Plugin detail: status · logs · config
@@ -158,7 +158,7 @@ The global Entities and Logs pages exist because the common questions are "who o
 
 ## 9. Constraints worth knowing (affect design, not just backend)
 
-- Served from the existing HTTP plugin (port 9000) and exposed via HA Ingress, so all URLs must be relative (ingress path prefix).
+- Served by the Hypervisor's own HTTP listener (`dashboard.port`, default 8099), not the `http` plugin (:9000). Reached through HA Ingress (always allowed); direct access needs the opt-in `dashboard.token`. Either way all URLs must be relative (ingress path prefix).
 - The live channel is one WebSocket with per-topic subscriptions (apps, per-app entities/resumables/storage). The UI subscribes only to what is on screen, so detail tabs may show a brief "syncing" state.
 - Storage values can be large or deeply nested JSON. Values need truncation plus a lazy "expand" control.
 - An app restart drops and recreates its entities/resumables/schedules within seconds. The UI must keep the user's place: selected tab, scroll, open JSON nodes.

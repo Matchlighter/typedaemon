@@ -1,3 +1,4 @@
+import { HA_PLUGIN_KEY_PREFIX } from "../storage_keys";
 import { AbstractConstructor } from "type-fest";
 
 import { TDEntity } from ".";
@@ -6,6 +7,7 @@ import { DestroyerStore } from "../../../hypervisor/destroyer";
 import { logMessage, logPluginClientMessage } from "../../../hypervisor/logging";
 import { HyperWrapper } from "../../../hypervisor/managed_apps";
 import { get_plugin } from "../../base";
+import { entityCuid } from "./inspect";
 import { EntityStore } from "./store";
 
 export interface AutoCleanEntry {
@@ -18,11 +20,11 @@ export interface AutoCleanEntry {
 export const SymbolAutocleaner = Symbol("Autoclean Destructor");
 
 export const autoCleanEntitiesKey = (plg: HomeAssistantPlugin) => {
-    return `ha[${plg[HyperWrapper].id}].entities.auto_clean`;
+    return `${HA_PLUGIN_KEY_PREFIX}${plg[HyperWrapper].id}].entities.auto_clean`;
 }
 
 function cleanerUUID(entity: TDEntity<any>) {
-    return `${entity.uuid}-${(entity as any).entity_kind ?? (entity as any).domain}`;
+    return entityCuid(entity as any);
 }
 
 export interface Autocleaner<T extends TDEntity<any> = TDEntity<any>, P = any> {
@@ -68,7 +70,7 @@ export const trackAutocleanEntity = (store: EntityStore, entity: TDEntity<any>) 
 
 /**
  * Remove from HA every autoclean entry the app does not track. An entry whose removal fails stays in the registry (retried
- * next time) and is returned; callers that must not proceed past a failure check the result.
+ * next time) and is returned; callers that must not proceed past a failure (orphan cleanup) check the result.
  */
 export const autocleanEntities = async (store: EntityStore) => {
     const failures: { uuid: string; error: Error }[] = [];
@@ -105,6 +107,23 @@ export const autocleanEntities = async (store: EntityStore) => {
     }
     application.persistedStorage.setValue(autocleanKey, keepEntriesByCUID, { min_time_to_disk: 0, max_time_to_disk: 10 });
     return failures;
+}
+
+/**
+ * Remove one unlinked entity (an autoclean registry entry the app no longer tracks) from HA and the registry.
+ * The registry entry stays if HA removal fails, so it can be retried.
+ */
+export const destroyUnlinkedEntity = async (store: EntityStore, cuid: string) => {
+    const { application, plugin } = store;
+    const autocleanKey = autoCleanEntitiesKey(plugin);
+    const entry: AutoCleanEntry | undefined = application.persistedStorage.getValue(autocleanKey)?.[cuid];
+    if (!entry) throw new Error(`No unlinked entity '${cuid}'`);
+    if ([...store.tracked_entities].some(e => cleanerUUID(e) === cuid)) throw new Error(`Entity '${cuid}' is still linked`);
+
+    logPluginClientMessage(plugin, "debug", `Deleting unlinked entity '${entry.uuid}'`);
+    await getAutocleaner(entry.cleaner_key).destroy_entity(entry.cleaner_opts, store);
+    application.persistedStorage.objectSet(autocleanKey, cuid, undefined, { min_time_to_disk: 0, max_time_to_disk: 10 });
+    plugin.entityEvents.emit('change', application);
 }
 
 export const HAEntititesDestroyer = DestroyerStore.defineDestroyerClass("HAEntities", async (app, { plugin_id }: { plugin_id: string }) => {

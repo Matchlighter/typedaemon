@@ -6,13 +6,18 @@ jest.mock("fs/promises", () => {
     return { ...actual, open: jest.fn(actual.open) };
 });
 
+import * as fs from "fs";
 import * as fsp from "fs/promises";
+import * as os from "os";
+import * as path from "path";
 
 import { useTempDir } from "../../test/helpers/fs";
-import { PersistentEntryOptions, PersistentStorage, SharedStorages } from "./persistent_storage";
+import { PersistentEntryOptions, PersistentStorage, SharedStorages, StorageChange, isInternalStorageKey, registerInternalKeyPrefix } from "./persistent_storage";
 
 const policy = (min_time_to_disk: number, max_time_to_disk: number): PersistentEntryOptions => ({ min_time_to_disk, max_time_to_disk });
 const IMMEDIATE = policy(0, 0);
+const OPTS = IMMEDIATE;
+const LATER = policy(3600, 3600);
 
 describe("PersistentStorage", () => {
     const tmp = useTempDir("td-persist-");
@@ -405,5 +410,179 @@ describe("SharedStorages", () => {
 
         expect(tmp.read("default.jkv")).toBe(`SET {"p":1}\n`);
         expect(tmp.read("other.jkv")).toBe(`SET {"o":2}\n`);
+    });
+
+    it("emits changes from loaded stores and lists them", async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "td-shared-"));
+        const shared = new SharedStorages(dir);
+        await shared.initialize();
+        const seen: [string, StorageChange][] = [];
+        shared.on("change", (name, e) => seen.push([name, e]));
+        const other = await shared.load("other");
+        other.setValue("k", 1, LATER);
+        shared.primary.setValue("p", 2, LATER);
+        expect(shared.list().sort()).toEqual(["default", "other"]);
+        expect(seen.map(([n, e]) => [n, e.key])).toEqual([["other", "k"], ["default", "p"]]);
+        await shared.dispose();
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+});
+
+describe("PersistentStorage change events", () => {
+    let dir: string;
+    let file: string;
+    let storage: PersistentStorage;
+    let events: StorageChange[];
+
+    beforeEach(() => {
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), "td-storage-"));
+        file = path.join(dir, "s.jkv");
+        storage = new PersistentStorage(file);
+        events = [];
+        storage.on("change", (e) => events.push(e));
+    });
+
+    afterEach(async () => {
+        await storage.dispose();
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("emits set with size, time, and user flag", () => {
+        const before = Date.now();
+        storage.setValue("@persistent-count", { a: 1 }, LATER);
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({ type: "set", key: "@persistent-count", value: { a: 1 }, size: 7, internal: false });
+        expect(events[0].at).toBeGreaterThanOrEqual(before);
+    });
+
+    it("flags internal keys but still emits them", () => {
+        storage.setValue("_destroyers", [], LATER);
+        expect(events.map(e => [e.key, e.internal])).toEqual([["_destroyers", true]]);
+        expect(isInternalStorageKey("@persistent-x")).toBe(false);
+    });
+
+    it("owners declare further internal key prefixes", () => {
+        expect(isInternalStorageKey("owned:abc")).toBe(false);
+        registerInternalKeyPrefix("owned:");
+        registerInternalKeyPrefix("owned:");
+        expect(isInternalStorageKey("owned:abc")).toBe(true);
+        storage.setValue("owned:abc", 1, LATER);
+        expect(events[0]).toMatchObject({ key: "owned:abc", internal: true });
+    });
+
+    it("does not serialize values for size when nobody listens", () => {
+        const toJSON = jest.fn(() => "x");
+        storage.removeAllListeners("change");
+        storage.setValue("k", { toJSON }, LATER);
+        expect(toJSON).not.toHaveBeenCalled();
+        expect(storage.keyInfo("k")).toEqual({ at: expect.any(Number), size: 3 }); // sized lazily, on demand
+        expect(toJSON).toHaveBeenCalledTimes(1);
+    });
+
+    it("emits delete when setting null/undefined", () => {
+        storage.setValue("k", 1, LATER);
+        storage.setValue("k", undefined, LATER);
+        expect(events[1]).toMatchObject({ type: "delete", key: "k", size: 0 });
+    });
+
+    it("emits set with updated value for objectSet and array ops", () => {
+        storage.objectSet("o", "a", 1, LATER);
+        storage.arrayPush("arr", 5, LATER);
+        expect(events[0]).toMatchObject({ type: "set", key: "o", value: { a: 1 } });
+        expect(events[1]).toMatchObject({ type: "set", key: "arr", value: [5] });
+    });
+
+    it("does not emit during load", async () => {
+        storage.setValue("k", 1, OPTS);
+        await storage.flushToDisk(true);
+        const s2 = new PersistentStorage(file);
+        const ev: StorageChange[] = [];
+        s2.on("change", (e) => ev.push(e));
+        await s2.load();
+        expect(s2.getValue("k")).toBe(1);
+        expect(ev).toEqual([]);
+    });
+
+    it("keyInfo reports size and last write", () => {
+        storage.setValue("k", "abc", LATER);
+        expect(storage.keyInfo("k")).toMatchObject({ size: 5 });
+        expect(storage.keyInfo("k").at).toBe(events[0].at);
+        expect(storage.keyInfo("missing")).toBeUndefined();
+    });
+
+    describe("deleteKey", () => {
+        it("removes from store, journals DEL, emits delete", async () => {
+            storage.setValue("k", 1, OPTS);
+            await storage.flushToDisk(true);
+            events.length = 0;
+
+            await storage.deleteKey("k");
+            expect(storage.hasKey("k")).toBe(false);
+            expect(events).toEqual([expect.objectContaining({ type: "delete", key: "k" })]);
+
+            const s2 = new PersistentStorage(file);
+            await s2.load();
+            expect(s2.hasKey("k")).toBe(false);
+            await s2.dispose();
+        });
+
+        it("discards queued partial writes for the key", async () => {
+            storage.objectSet("o", "a", 1, LATER);
+            await storage.deleteKey("o");
+            const s2 = new PersistentStorage(file);
+            await s2.load();
+            expect(s2.hasKey("o")).toBe(false);
+            await s2.dispose();
+        });
+
+        it("is a no-op for missing keys", async () => {
+            await storage.deleteKey("nope");
+            expect(events).toEqual([]);
+        });
+
+        it("a later write by the app restores the key (in-memory value not touched)", async () => {
+            const live = { n: 1 }; // app's in-memory value
+            storage.setValue("k", live, OPTS);
+            await storage.deleteKey("k");
+            expect(live).toEqual({ n: 1 });
+            storage.setValue("k", live, OPTS);
+            expect(storage.getValue("k")).toBe(live);
+        });
+    });
+
+    describe("keyBytes", () => {
+        it("caches per key and recomputes only the changed key", () => {
+            const s = storage;
+            s.setValue("a", { x: "é" }, IMMEDIATE);
+            s.setValue("b", [1, 2], IMMEDIATE);
+            const spy = jest.spyOn(JSON, "stringify");
+            try {
+                expect(s.keyBytes("a")).toBe(Buffer.byteLength('{"x":"é"}'));
+                expect(s.keyBytes("b")).toBe(5);
+                expect(spy).toHaveBeenCalledTimes(2);
+                s.keyBytes("a"); s.keyBytes("b");
+                expect(spy).toHaveBeenCalledTimes(2); // no rescan
+
+                s.arrayPush("b", 3, IMMEDIATE);
+                expect(s.keyBytes("b")).toBe(7);
+                s.objectSet("a", "y", 1, IMMEDIATE);
+                expect(s.keyBytes("a")).toBe(Buffer.byteLength('{"x":"é","y":1}'));
+            } finally {
+                spy.mockRestore();
+            }
+        });
+
+        it("is 0 after delete and fresh after load", async () => {
+            const s = storage;
+            s.setValue("a", "xx", IMMEDIATE);
+            expect(s.keyBytes("a")).toBe(4);
+            await s.deleteKey("a");
+            expect(s.keyBytes("a")).toBe(0);
+            s.setValue("a", "yyy", IMMEDIATE);
+            await s.flushToDisk(true);
+            const s2 = new PersistentStorage(file); await s2.load();
+            expect(s2.keyBytes("a")).toBe(5);
+            await s2.dispose();
+        });
     });
 });

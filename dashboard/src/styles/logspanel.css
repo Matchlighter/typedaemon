@@ -1,0 +1,27 @@
+/* Log viewer toolbar and footer */
+.logs { display: grid; gap: 10px; }
+.logs-bar { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; }
+.logs-search { display: flex; align-items: center; gap: 8px; flex: 1 1 220px; min-width: 180px; color: var(--text2); }
+.logs-search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; }
+.logs-search:focus-within { outline: 2px solid var(--pri); outline-offset: 1px; }
+.logs-spacer { flex: 1; }
+.logs-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.logs-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--okf); }
+.logs-status.paused { color: var(--text2); }
+.logs-dot { width: 8px; height: 8px; border-radius: 4px; background: currentColor; flex: none; }
+@media (max-width: 640px) { .logs-search { width: 100%; height: 44px; } }
+/* Scoped (one source) log card: toolbar, lines and tail footer share one card */
+.logs-card { padding: 0; overflow: hidden; }
+.logs-card .logs-bar { padding: 12px 16px; border-bottom: 1px solid var(--div); }
+.logs-card .logs-search { flex: 1 1 200px; background: var(--card); border: 1px solid var(--div); }
+.logs-card .loglist-frame { border: 0; border-radius: 0; }
+.logs-card .log-head { display: none; }
+/* Fit the lines (tail row right after the last one); scroll only past the cap */
+.logs-card .loglist { height: auto; max-height: clamp(320px, 65vh, 760px); }
+.logs-foot { display: flex; align-items: center; gap: 8px; padding: 6px 16px 10px; font: 12.5px var(--mono, monospace); color: var(--text2); }
+.logs-foot .logs-dot { width: 10px; height: 10px; border-radius: 5px; }
+/* Page filter bar: one rounded card (chips, channel, levels, search) */
+.logs-filters { padding: 12px 16px; border-radius: 12px; }
+/* Tail row at the end of the page's list, under the message column */
+.logs-tail { display: flex; align-items: center; gap: 8px; padding: 6px 16px 10px; font: 12.5px var(--mono, monospace); color: var(--text2); border-top: 1px solid var(--div); }
+.logs-tail .logs-dot { width: 10px; height: 10px; border-radius: 5px; }

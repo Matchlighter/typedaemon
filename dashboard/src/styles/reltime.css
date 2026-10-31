@@ -1,0 +1,13 @@
+/* Relative time: absolute time tooltip on hover and keyboard focus. */
+.reltime { position: relative; font-variant-numeric: tabular-nums; cursor: default; }
+.reltime-stale { opacity: .6; }
+.reltime::after {
+    content: attr(data-abs); position: absolute; left: 0; bottom: calc(100% + 4px); z-index: 20;
+    padding: 4px 8px; border-radius: 6px; background: var(--text); color: var(--card);
+    font: 400 12px/16px var(--font); white-space: nowrap; pointer-events: none;
+    opacity: 0; visibility: hidden; transition: opacity .1s;
+}
+.reltime:hover::after, .reltime:focus-visible::after { opacity: 1; visibility: visible; }
+.reltime-plain::after { display: none; }
+.reltime-abs { color: var(--text2); font-size: 12px; }
+.reltime-rel { font-weight: 500; color: var(--text); }

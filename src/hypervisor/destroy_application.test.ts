@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
+import { logTap } from "./log_tap";
 import { DestroyerStore } from "./destroyer";
 import { UtilityHypervisor } from "./hypervisor";
 import { PersistentStorage } from "./persistent_storage";
@@ -45,7 +46,7 @@ describe("Hypervisor.destroyApplication", () => {
     });
 
     it("finds apps that are no longer configured", async () => {
-        expect(await hypervisor.findOrphanedApplications()).toEqual(["old_app"]);
+        expect(await hypervisor.listOrphanApplications()).toEqual(["old_app"]);
     });
 
     it("runs registered destroyers and removes the operating directory", async () => {
@@ -59,16 +60,40 @@ describe("Hypervisor.destroyApplication", () => {
 
         expect(destroyed).toHaveBeenCalledWith("old_app", { thing: "a" });
         expect(fs.existsSync(hypervisor.defaultAppOperatingDirectory("old_app"))).toBe(false);
-        expect(await hypervisor.findOrphanedApplications()).toEqual([]);
+        expect(await hypervisor.listOrphanApplications()).toEqual([]);
+    });
+
+    it("drops the destroyed app's retained logs", async () => {
+        const source = { kind: "app", id: "old_app" } as const;
+        logTap.append({ ts: 1, level: "info", source, channel: "user", message: "hi" });
+        await hypervisor.destroyApplication("old_app");
+        expect(logTap.history({ sources: [source] })).toEqual([]);
+    });
+
+    it("keeps logs when destroy is refused", async () => {
+        const source = { kind: "app", id: "current_app" } as const;
+        logTap.append({ ts: 1, level: "info", source, channel: "user", message: "hi" });
+        await expect(hypervisor.destroyApplication("current_app")).rejects.toThrow();
+        expect(logTap.history({ sources: [source] })).toHaveLength(1);
+        logTap.drop(source);
     });
 
     it("refuses to destroy configured apps", async () => {
-        await expect(hypervisor.destroyApplication("current_app")).rejects.toThrow(/still configured/);
+        await expect(hypervisor.destroyApplication("current_app")).rejects.toThrow(/not an orphan/);
         expect(fs.existsSync(hypervisor.defaultAppOperatingDirectory("current_app"))).toBe(true);
     });
 
     it("refuses unknown apps and paths", async () => {
-        await expect(hypervisor.destroyApplication("nope")).rejects.toThrow(/No resources found/);
-        await expect(hypervisor.destroyApplication("../app_environments")).rejects.toThrow(/Invalid app/);
+        await expect(hypervisor.destroyApplication("nope")).rejects.toThrow(/No leftovers/);
+        await expect(hypervisor.destroyApplication("../app_environments")).rejects.toThrow(/Invalid app id/);
+    });
+
+    it("does not follow a symlink standing in for the operating directory", async () => {
+        const outside = path.join(working_directory, "precious");
+        await fs.promises.mkdir(outside);
+        await fs.promises.writeFile(path.join(outside, "keep"), "k");
+        await fs.promises.symlink(outside, hypervisor.defaultAppOperatingDirectory("link_app"));
+        await expect(hypervisor.destroyApplication("link_app")).rejects.toThrow(/No leftovers/);
+        expect(fs.readFileSync(path.join(outside, "keep"), "utf8")).toBe("k");
     });
 });

@@ -4,8 +4,10 @@ import * as path from 'path';
 import { Socket } from 'net';
 
 import { HttpPlugin } from "./plugin";
+import type { HttpRouteDefinition } from "./routes";
 import { ApplicationInstance } from '../../hypervisor/application_instance';
 import { current } from "../../hypervisor/current";
+import { callbackName } from '../../common/util';
 import { int_callback_or_decorator } from '../util';
 import { assert_application_context, bind_callback_env, getOrCreateLocalData, handle_client_error, makeApiExport } from "../base";
 
@@ -18,6 +20,13 @@ export class AppHttpStore {
     }
 
     readonly router = express.Router({ });
+
+    private routeRemovals: (() => void)[] = [];
+
+    /** Record what the app serves (shown in the dashboard); forgotten when the app cleans up */
+    recordRoute(def: Omit<HttpRouteDefinition, 'appUuid'>) {
+        this.routeRemovals.push(this.plugin.routes.add({ appUuid: this.app.uuid, ...def }));
+    }
 
     handle_request: RequestHandler = (req, resp, next) => {
         console.debug(`[HTTP] ${req.method.toUpperCase()}: ${req.originalUrl}`);
@@ -43,6 +52,8 @@ export class AppHttpStore {
 
     private async cleanup() {
         this.plugin.unregisterAppStore(this);
+        this.routeRemovals.forEach(remove => remove());
+        this.routeRemovals = [];
         for (let sock of this.openSockets) {
             sock.destroy();
         }
@@ -59,8 +70,11 @@ export function httpApi(plugin_instace: HttpPlugin) {
 
     const _request = (method: string, path: string) => {
         return int_callback_or_decorator((f: RequestHandler) => {
+            const handler = callbackName(f);
             f = bind_callback_env(f);
-            _store().router[method.toLowerCase()](path, f);
+            const store = _store();
+            store.router[method.toLowerCase()](path, f);
+            store.recordRoute({ kind: 'route', method: method.toUpperCase(), path, handler });
         })
     }
 
@@ -70,7 +84,9 @@ export function httpApi(plugin_instace: HttpPlugin) {
 
     const serve_static = (prefix: string, data_path: string) => {
         data_path = path.resolve(current.application.source_directory, data_path);
-        _store().router.use(prefix, express.static(data_path, { }));
+        const store = _store();
+        store.router.use(prefix, express.static(data_path, { }));
+        store.recordRoute({ kind: 'static', path: prefix, directory: data_path });
     }
 
     const server_methods = {

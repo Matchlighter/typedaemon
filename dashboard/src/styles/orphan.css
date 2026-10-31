@@ -1,0 +1,8 @@
+/* Orphan leftovers modal. Entity and storage rows reuse entity/storage styles. */
+.orphan-note { margin: 0; }
+.orphan-section { display: grid; gap: 8px; }
+.orphan-section h3 { margin: 0; font: 500 15px/20px var(--font); }
+.orphan-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.orphan-path { overflow-wrap: anywhere; }
+.orphan-destroyers { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.orphan-destroyers li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

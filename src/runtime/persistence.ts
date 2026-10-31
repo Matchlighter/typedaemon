@@ -79,11 +79,13 @@ export const persistence = {
 
     get shared() {
         const storage = current.hypervisor.sharedStorages.primary;
+        current.hypervisor.sharedStorages.noteUse("default", current.application?.id);
         return create_api(storage);
     },
 
     async load_namespace(key: string = "default") {
         const storage = await current.hypervisor.sharedStorages.load(key);
+        current.hypervisor.sharedStorages.noteUse(key, current.application?.id);
         // TODO Allow closing shared namespaces?
         return create_api(storage);
     }

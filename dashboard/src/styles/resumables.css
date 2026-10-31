@@ -1,0 +1,22 @@
+/* App Resumables & Scripts tab. Card styles live in resumable.css. */
+.rsm { display: grid; gap: 20px; }
+.rsm-group { display: grid; gap: 10px; }
+.rsm-group h3 { display: flex; align-items: center; gap: 8px; margin: 0; font: 500 14px var(--font); }
+.rsm-list { display: grid; gap: 8px; }
+.rsm-table { --stack-cols: repeat(3, auto); --stack-gap: 6px 14px; }
+.rsm-script { font-weight: 500; }
+.rsm-runs { display: grid; gap: 6px; }
+.rsm-run { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.rsm-meter { display: inline-block; vertical-align: middle; width: 60px; height: 4px; margin-left: 8px; border-radius: 2px; background: var(--sunk); overflow: hidden; }
+.rsm-meter > span { display: block; height: 100%; background: var(--pri); }
+.rsm-idle { color: var(--text2); }
+.rsm-run .btn { margin-left: auto; }
+.rsm-run-call { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.rsm-run-age { color: var(--text2); font-size: 12.5px; }
+
+/* Phone (rows stack: see .tbl-stack) */
+@media (max-width: 640px) {
+    .rsm-table.tbl-stack tr { justify-content: start; }
+    .rsm-table .rsm-script, .rsm-table .rsm-runs { grid-column: 1 / -1; }
+    .rsm-table td[data-label]::before { content: attr(data-label) ' '; color: var(--text2); font-size: 12px; }
+}

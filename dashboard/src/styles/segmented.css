@@ -1,0 +1,7 @@
+/* Segmented control */
+.seg { display: inline-flex; border: 1px solid var(--div); border-radius: 17px; overflow: hidden; background: var(--card); }
+.seg button { height: 34px; padding: 0 14px; border: 0; border-right: 1px solid var(--div); background: transparent; color: var(--text); font: 500 13px var(--font); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.seg button:last-child { border-right: 0; }
+.seg button:hover { background: var(--sunk); }
+.seg button[aria-pressed="true"] { background: var(--prib); color: var(--pri); }
+@media (max-width: 640px) { .seg { max-width: 100%; overflow-x: auto; } .seg button { height: 44px; flex: none; } }

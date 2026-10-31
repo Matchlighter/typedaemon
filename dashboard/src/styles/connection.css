@@ -1,0 +1,12 @@
+/* Connection pill + banner */
+.conn-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--okf); }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.conn-pill[data-state="connecting"], .conn-pill[data-state="reconnecting"] { color: var(--warnf); }
+.conn-pill[data-state="unreachable"] { color: var(--errf); }
+.conn-banner { display: flex; align-items: center; gap: 10px; margin: 8px 24px 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; }
+.conn-sync { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
+.conn-banner-warn { background: var(--warnb); color: var(--warnf); }
+.conn-banner-err { background: var(--errb); color: var(--errf); }
+.conn-msg { flex: 1; }
+.conn-banner .btn { border-color: currentColor; color: inherit; flex: none; }
+@media (max-width: 600px) { .conn-banner { margin: 8px 16px 0; } }

@@ -1,0 +1,41 @@
+/* Startup error panel (left) with its dependency cards (right); stacked on narrow screens */
+.errpanel-layout { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.errpanel-layout > .errpanel { flex: 999 1 560px; min-width: 0; }
+.errpanel-side { flex: 1 1 280px; min-width: 0; display: grid; gap: 12px; }
+.errpanel { border: 1px solid var(--errf); border-radius: 12px; background: var(--card); padding: 16px; display: grid; gap: 10px; }
+.errpanel-head { display: flex; align-items: flex-start; gap: 10px; }
+.errpanel-icon { flex: none; color: var(--errf); margin-top: 1px; }
+.errpanel-what { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.errpanel-title { margin: 0; font-size: 15px; font-weight: 500; color: var(--errf); }
+.errpanel-msg { margin: 0; font-size: 13.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.errpanel-frames { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; color: var(--text2); }
+.errpanel-fn { color: var(--text); }
+.errpanel-actions { display: flex; flex: none; gap: 8px; flex-wrap: wrap; }
+.errpanel-actions a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+.errpanel-code { background: var(--codebg); border-radius: 8px; padding: 8px 0; overflow-x: auto; font: 400 12px/18px var(--mono); }
+.errpanel-code .ln { display: flex; gap: 10px; padding: 0 10px; white-space: pre; }
+.errpanel-code .n { width: 28px; text-align: right; color: var(--text2); flex: none; }
+.errpanel-code .ln.hit { background: var(--errb); }
+.errpanel-code .ln.hit .n, .errpanel-code .ln.caret { color: var(--errf); }
+.errpanel-top { overflow-wrap: anywhere; }
+.errpanel-muted { color: var(--text2); }
+.errpanel-hidden { font-size: 12px; }
+.errpanel-stack summary { cursor: pointer; list-style: none; min-height: 28px; display: flex; align-items: center; gap: 6px; color: var(--pri); font-size: 13px; font-weight: 500; }
+.errpanel-stack summary::before { content: "▸"; width: 12px; }
+.errpanel-stack[open] summary::before { content: "▾"; }
+.errpanel-plugins, .errpanel-blocked { padding: 14px; display: grid; gap: 8px; }
+.errpanel-plugins ul, .errpanel-blocked ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.errpanel-plugins li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.errpanel-plugins a { color: var(--text); text-decoration: none; }
+.errpanel-hint { font-size: 12px; }
+@media (max-width: 640px) {
+    .errpanel-layout { gap: 12px; }
+    .errpanel { padding: 14px; }
+    .errpanel-title { font-size: 13px; }
+    .errpanel-icon { display: none; }
+    .errpanel-head { flex-wrap: wrap; }
+    .errpanel-code { font-size: 11.5px; }
+    .errpanel-stack summary { min-height: 44px; }
+    .errpanel-actions { flex: 1 1 100%; }
+    .errpanel-actions .btn { height: 44px; border-radius: 22px; flex: 1; }
+}

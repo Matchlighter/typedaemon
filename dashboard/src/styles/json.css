@@ -1,0 +1,14 @@
+/* JSON viewer */
+.json-viewer { position: relative; font: 400 12.5px/19px var(--mono); background: var(--codebg); border-radius: 8px; padding: 8px 12px; overflow-x: auto; }
+.json-copy { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; color: var(--text2); }
+.json-row { white-space: pre-wrap; word-break: break-all; }
+.json-children { margin-left: 18px; }
+.json-toggle { border: 0; background: transparent; color: var(--text2); padding: 0; width: 18px; height: 18px; vertical-align: middle; cursor: pointer; margin-left: -18px; margin-right: 0; }
+.json-node > .json-row { padding-left: 18px; }
+.json-key { color: var(--pri); }
+.json-str { color: var(--okf); }
+.json-num { color: var(--warnf); }
+.json-meta, .json-status { color: var(--text2); }
+.json-error { color: var(--errf); }
+.json-link { border: 0; background: transparent; color: var(--pri); font: 400 12px var(--font); cursor: pointer; padding: 0; text-decoration: underline; }
+.json-note { color: var(--text2); font-style: italic; user-select: none; }

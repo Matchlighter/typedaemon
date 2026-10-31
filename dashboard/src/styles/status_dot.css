@@ -1,0 +1,6 @@
+.status-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; display: inline-block; }
+.status-dot-ok { color: var(--okf); }
+.status-dot-run { color: var(--runf); }
+.status-dot-err { color: var(--errf); }
+.status-dot-warn, .status-dot-outline-warn { color: var(--warnf); }
+.status-dot-off { color: var(--text2); }
