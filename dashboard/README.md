@@ -1,6 +1,6 @@
 # TypeDaemon dashboard
 
-Vite + React (class components, `@matchlighter/meta_components`) + MobX. Built to `../dist/dashboard`, served by the HTTP plugin at `/` (WS at `/ws`). All URLs relative (HA Ingress).
+Vite + React (class components, `@matchlighter/meta_components`) + MobX. Built to `../dist/dashboard-ui`, served by the HTTP plugin at `/` (WS at `/ws`). All URLs relative (HA Ingress).
 
 - `yarn build` (root) builds everything; `yarn --cwd dashboard test|typecheck|dev` (dev proxies `/ws` to :8099).
 - **Add a topic**: type it in `../src/dashboard/protocol.ts` (`TopicMap`); server: `dashboardTopics.register('name', { snapshot, subscribe })` (`src/dashboard/server.ts`, see `system_topic.ts`); client: `new TopicStore(app.connection, 'name', params)` as a `@store` field (see `views/Overview.tsx`) or `app.connection.subscribe(...)` + `dispose()`. Default delta = shallow merge; pass `applyDelta` otherwise. Sub status: `syncing | live | stale | error`.

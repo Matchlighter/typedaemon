@@ -98,7 +98,7 @@ function registerAll({ topics, actions }: Registries, hypervisor: DashboardHost,
     ];
 }
 
-export const DASHBOARD_DIST = path.join(__package_dir, 'dist', 'dashboard');
+export const DASHBOARD_DIST = path.join(__package_dir, 'dist', 'dashboard-ui');
 const STARTED_AT = Date.now() - process.uptime() * 1000;
 
 /**
