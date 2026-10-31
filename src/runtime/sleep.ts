@@ -1,7 +1,7 @@
 
 import { current } from "../hypervisor/current";
 import { ResumablePromise } from "./resumable";
-import { CancellableResumablePromise, SerializeContext } from "./resumable/resumable_promise";
+import { CancellableResumablePromise, SerializeContext, type ResumableWait } from "./resumable/resumable_promise";
 
 class SleeperPromise extends CancellableResumablePromise<number>{
     constructor(readonly sleep_until: number) {
@@ -19,6 +19,10 @@ class SleeperPromise extends CancellableResumablePromise<number>{
                 return new this(data.sleep_until);
             },
         })
+    }
+
+    describeWait(): ResumableWait {
+        return { kind: 'sleep', until: this.sleep_until };
     }
 
     protected do_suspend(): void {

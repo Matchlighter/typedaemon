@@ -35,6 +35,7 @@ describe.each(["kill", "suspend", "wait"])("@script queue cancellation (shutdown
         const local = new Map();
         (current as any).application = {
             operating_directory: tmp.dir,
+            scripts: { define: () => { }, attach: () => { }, detach: () => { } },
             getLocalStore: (cls, factory) => {
                 if (!local.has(cls)) local.set(cls, factory());
                 return local.get(cls);
@@ -123,6 +124,7 @@ describe("@script shutdown: 'wait'", () => {
         cleanups = new LifecycleHelper();
         (current as any).application = {
             operating_directory: tmp.dir,
+            scripts: { define: () => { }, attach: () => { }, detach: () => { } },
             cleanups,
         };
         await h.boot();
@@ -184,7 +186,7 @@ describe("@script shutdown: 'wait' once shutting down", () => {
     let app: any;
 
     beforeEach(async () => {
-        app = { operating_directory: tmp.dir, cleanups: new LifecycleHelper(), state: "started" };
+        app = { operating_directory: tmp.dir, scripts: { define: () => { }, attach: () => { }, detach: () => { } }, cleanups: new LifecycleHelper(), state: "started" };
         (current as any).application = app;
         await h.boot();
     });

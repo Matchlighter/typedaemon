@@ -1,0 +1,31 @@
+{
+  "name": "typedaemon-dashboard",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@matchlighter/meta_components": "^0.6.13",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "happy-dom": "^18",
+    "mobx": "^6.13",
+    "mobx-react": "^9",
+    "react": "^19",
+    "react-dom": "^19",
+    "typescript": "~5.9",
+    "vite": "^7",
+    "vitest": "^3"
+  },
+  "dependencies": {
+    "@fontsource/roboto": "^5.3.0",
+    "@fontsource/roboto-mono": "^5.3.0",
+    "@mdi/js": "^7.4.47",
+    "@tanstack/react-virtual": "^3"
+  }
+}

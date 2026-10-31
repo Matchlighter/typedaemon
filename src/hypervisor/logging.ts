@@ -11,6 +11,7 @@ require('winston-daily-rotate-file');
 import { mapStackTrace } from "../app_transformer/source_maps";
 import { has_default_to_string, pojso } from "../common/util";
 import { current } from "./current";
+import { logTap, TapTransport, type LogChannel, type LogSource } from "./log_tap";
 import { HyperWrapper } from "./managed_apps";
 import { PluginInstance } from "./plugin_instance";
 
@@ -112,6 +113,10 @@ export interface LoggerOptions {
     domain?: string;
     level?: LogLevel;
     file?: string;
+    /** Who the logger speaks for. Given: everything it logs is also kept for the dashboard (see `logTap`) */
+    source?: LogSource;
+    /** Which of the source's loggers this is. Defaults to `user` */
+    channel?: LogChannel;
 }
 
 export type Logger = winston.Logger;
@@ -223,6 +228,10 @@ export function createDomainLogger(opts: LoggerOptions) {
         transports.push(ftransport);
     }
 
+    if (opts.source) {
+        transports.push(new TapTransport(logTap, opts.source, opts.channel ?? 'user'));
+    }
+
     const logger = winston.createLogger({
         level: opts.level,
         levels: NUMERIC_LOG_LEVELS,
@@ -322,7 +331,7 @@ export function logMessage(level: LogLevel, ...rest: any[]) {
     logger.logMessage(level, rest);
 }
 
-export let UNKNOWN_LOGGER = createDomainLogger({ domain: chalk.yellow("???") });
+export let UNKNOWN_LOGGER = createDomainLogger({ domain: chalk.yellow("???"), source: { kind: 'system', id: 'unknown' } });
 export function setFallbackLogger(logger: ExtendedLoger) {
     UNKNOWN_LOGGER?.close();
     UNKNOWN_LOGGER = logger;

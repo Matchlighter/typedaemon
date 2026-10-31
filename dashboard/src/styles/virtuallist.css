@@ -1,0 +1,5 @@
+/* Virtualized list (VirtualList): rows are positioned by the virtualizer and measured, so they may wrap */
+.vlist { height: clamp(320px, 70vh, 800px); overflow: auto; }
+.vlist:focus-visible { outline: 2px solid var(--pri); outline-offset: 1px; }
+.vlist-body { position: relative; width: 100%; }
+.vlist-row { position: absolute; top: 0; left: 0; width: 100%; }

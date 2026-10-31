@@ -8,6 +8,10 @@ import { promisify } from "util";
 import { TD_VERSION_PRECISE } from "../../common/util";
 import { Plugin } from "../base";
 import { AppHttpStore, HttpApi, httpApi } from "./api";
+import { HttpRouteRegistry } from "./routes";
+
+/** The port the plugin listens on (`HttpPluginConfig.port` is not honoured yet) */
+export const HTTP_PORT = 9000;
 
 export interface HttpPluginConfig {
     type: "http";
@@ -17,12 +21,36 @@ export interface HttpPluginConfig {
 export class HttpPlugin extends Plugin<HttpPluginConfig> {
     readonly api: HttpApi = httpApi(this);
 
+    /** What apps serve, by app uuid (shown in the dashboard) */
+    readonly routes = new HttpRouteRegistry();
+    readonly port = HTTP_PORT;
+
+    get connectionState() {
+        return this.server?.listening ? 'listening' as const : 'disconnected' as const;
+    }
+
+    get connectionTarget() { return `:${this.port}` }
+
+    get statusSummary() {
+        const all = this.routes.list();
+        const statics = all.filter(r => r.kind === 'static').length;
+        const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+        const parts = [plural(all.length - statics, 'route')];
+        if (statics) parts.push(plural(statics, 'static mount'));
+        return [{ label: 'Routes', value: parts.join(' · ') }];
+    }
+
     private server: Server;
     private app: Express;
 
     async initialize() {
+        const onRoutes = () => this.connectionChanged();
+        this.routes.on('change', onRoutes);
+        this.addCleanup(() => this.routes.off('change', onRoutes));
         this.server = createServer();
-        this.server.listen(9000);
+        this.server.on('listening', () => this.connectionChanged());
+        this.server.on('close', () => this.connectionChanged());
+        this.server.listen(this.port);
         this.app = express();
         this.server.on('request', this.app);
 

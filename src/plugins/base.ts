@@ -1,7 +1,9 @@
 
+import { TypedEmitter } from "tiny-typed-emitter";
 import { Constructor } from "type-fest";
 
 import { LifecycleHelper } from "../common/lifecycle_helper";
+import type { PluginConnectionState } from "../common/shared_types";
 import type { ApplicationInstance } from "../hypervisor/application_instance";
 import type { BasePluginConfig } from "../hypervisor/config_plugin";
 import { current } from "../hypervisor/current";
@@ -22,6 +24,7 @@ const PluginAnnotationsSymbol = Symbol("PluginAnnotations")
  * Retrieve the plugin instance for the given Plugin id
  */
 export const get_plugin = <T = Plugin>(identifier: string): T => {
+    current.application?.usedPlugins.add(identifier);
     return current.hypervisor.getPlugin(identifier)?.instance as any;
 }
 
@@ -54,8 +57,29 @@ export async function flushPluginAnnotations(self: any) {
     }
 }
 
+export type { PluginConnectionState };
+
 export abstract class Plugin<C = any> extends BaseInstanceClient<PluginInstance> {
     abstract configuration_updated(new_config: C, old_config: C);
+
+    /** Drop and re-establish the plugin's link. Throws when the plugin has no link or cannot reconnect (the default) */
+    reconnect(): void | Promise<void> {
+        throw new Error('This plugin does not support reconnecting');
+    }
+
+    /** Fires (no arguments) when `connectionState`, `connectionTarget` or `statusSummary` may have changed */
+    readonly connectionEvents = new TypedEmitter<{ change: () => void }>();
+
+    /** Live link state; undefined for plugins without a link (or while there is nothing to measure) */
+    get connectionState(): PluginConnectionState | undefined { return undefined }
+
+    /** What the plugin connects to / listens on, for display */
+    get connectionTarget(): string | undefined { return undefined }
+
+    /** One status line for the dashboard (eg `{ label: 'Routes', value: '2 routes' }`); undefined when there is nothing to say. Call `connectionChanged()` when it changes */
+    get statusSummary(): { label: string; value: string }[] | undefined { return undefined }
+
+    protected connectionChanged() { this.connectionEvents.emit('change') }
 
     get config() {
         return this[HyperWrapper].options as any as BasePluginConfig & C;
@@ -139,6 +163,11 @@ type PluginStores = WeakMap<PluginInstance, StoresByType>
 type AppPluginStores = WeakMap<ApplicationInstance, PluginStores>
 
 const LocalDatas: AppPluginStores = new WeakMap();
+
+/** Like `getOrCreateLocalData`, but never creates */
+export function peekLocalData<T>(plugin: Plugin, app: ApplicationInstance, key: any): T | undefined {
+    return LocalDatas.get(app)?.get(plugin[HyperWrapper])?.get(key);
+}
 
 export function getOrCreateLocalData<T, P extends Plugin>(plugin: P, app: ApplicationInstance, key: any, builder: (plugin: P, app: ApplicationInstance) => T): T {
     const app_data = getOrMakeMapEntry(LocalDatas, app, () => new WeakMap());

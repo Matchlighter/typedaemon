@@ -1,13 +1,7 @@
-import * as fs from "fs";
-import * as path from "path";
-
 import { current } from "../../hypervisor/current";
 import { ResumableMethod } from "../resumable/resumable_method";
 import { resumableCallbackFactory } from "../resumable/resumable_promise";
 import { ScriptOptions, ScriptQueueItem, ScriptStateStore } from "./store";
-
-/** Queued script runs. Distinct from the ResumableStore file, which has a different shape */
-export const SCRIPT_STATE_FILE = ".script_state.json";
 
 export class ResumableScriptStoreManager {
     protected application = current.application;
@@ -16,26 +10,17 @@ export class ResumableScriptStoreManager {
         return current.application.getLocalStore(ResumableScriptStoreManager, () => new ResumableScriptStoreManager());
     }
 
-    private loaded_state;
     private defined_stores: Record<string, ScriptOptions> = {};
     private loaded_stores: Record<string, ScriptStateStore> = {};
 
-    constructor() {
-        this.application.cleanups.append(() => this.save());
-    }
-
-    get store_file() {
-        return path.join(this.application.operating_directory, SCRIPT_STATE_FILE)
-    }
+    // NB: Runs (running or queued) are NOT persisted here. They are ResumableMethods, saved with the
+    //   ResumableStore; `hookScriptCallback` re-registers them with their store when they resume.
 
     async defineSubStore(sid: string, config: ScriptOptions) {
         this.defined_stores[sid] = config;
-        await this.ensureLoaded();
     }
 
     lookupStore(sid: string, ukey: string): ScriptStateStore {
-        this.assertLoaded();
-
         const key = `${sid}:${ukey}`;
         let store = this.loaded_stores[key];
         if (store) return store;
@@ -43,50 +28,14 @@ export class ResumableScriptStoreManager {
         const cfg = this.defined_stores[sid];
         if (!cfg) throw new Error(`No such script defined: ${sid}`);
 
-        store = this.loaded_stores[key] ??= new SelfCleaningScriptStateStore(cfg, () => {
+        const created = store = this.loaded_stores[key] ??= new SelfCleaningScriptStateStore(cfg, () => {
             delete this.loaded_stores[key];
+            this.application.scripts.detach(sid, created);
         });
 
-        store.pendingScripts = this.loaded_state[key] ?? [];
-        delete this.loaded_state[key];
+        this.application.scripts.attach(sid, store);
 
         return store;
-    }
-
-    protected async save() {
-        const saved_state = { ...this.loaded_state };
-        for (let key in this.loaded_stores) {
-            const store = this.loaded_stores[key];
-            if (store.pendingScripts.length > 0) {
-                saved_state[key] = store.pendingScripts;
-            }
-        }
-        await fs.promises.writeFile(this.store_file, JSON.stringify(saved_state));
-    }
-
-    protected async load() {
-        try {
-            const restore_json = await fs.promises.readFile(this.store_file);
-            this.loaded_state = JSON.parse(restore_json.toString());
-        } catch (err) {
-            if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-                this.loaded_state = {};
-            } else {
-                throw err;
-            }
-        }
-    }
-
-    protected async ensureLoaded() {
-        if (this.loaded_state === undefined) {
-            await this.load();
-        }
-    }
-
-    protected assertLoaded() {
-        if (this.loaded_state === undefined) {
-            throw new Error("ResumableScriptStoreManager not loaded!");
-        }
     }
 }
 

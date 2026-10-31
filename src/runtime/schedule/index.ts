@@ -7,6 +7,7 @@ import moment from "moment-timezone";
 import { _getGlobalState, createAtom } from "mobx";
 
 import { current } from "../../hypervisor/current";
+import { callbackName } from "../../common/util";
 import { callback_or_decorator2 } from "../../plugins/util";
 
 import { sleep } from "../sleep";
@@ -17,6 +18,7 @@ import { ResumableCallbackPromise } from "../resumable/resumable_method";
 import { sleep_until } from "../sleep";
 
 import grammar_cmp from "./schedule2_grammar";
+import type { ScheduleDefinition, ScheduleTracker } from "./registry";
 
 const grammar = ne.Grammar.fromCompiled(grammar_cmp)
 
@@ -95,20 +97,20 @@ export const schedule = callback_or_decorator2((func: SchedulerHandler, sched: S
             return scheduleRecurring(() => {
                 parsed.reset(Date.now());
                 return parsed.next().toDate();
-            }, func)
+            }, func, { expression: sched, kind: 'cron', method: callbackName(func) })
         } else {
             const get_next = _parseTDFormat(sched, options);
 
             return scheduleRecurring(() => {
                 const nextCronDate = get_next();
                 return nextCronDate?.toDate();
-            }, func)
+            }, func, { expression: sched, kind: get_next.sunRelative ? 'sun' : 'cron', method: callbackName(func) })
         }
     }
 
     // Run once at the date
     if (sched instanceof Date) {
-        return scheduleTimer(sched, func);
+        return scheduleOnce(sched, func, { expression: sched.toISOString(), kind: 'at', method: callbackName(func) });
     }
 })
 
@@ -221,7 +223,7 @@ export const parseDuration = (dur: string) => {
 
 export const _parseTDFormat = (sched: string, options?: ScheduleOpts) => {
     const parsed = _parseTDFormatInternal(sched, options);
-    return () => parsed.nextAfter(Date.now());
+    return Object.assign(() => parsed.nextAfter(Date.now()), { sunRelative: parsed.sunRelative });
 }
 
 export const _parseTDFormatInternal = (sched: string, options?: ScheduleOpts) => {
@@ -301,6 +303,7 @@ export const _parseTDFormatInternal = (sched: string, options?: ScheduleOpts) =>
         }
 
         return {
+            sunRelative: true,
             nextAfter(date: number) {
                 srel_cron.reset(date);
 
@@ -348,6 +351,7 @@ export const _parseTDFormatInternal = (sched: string, options?: ScheduleOpts) =>
         // TODO In Cron, day-of-month w/ day-of-week is OR. Here, AND is wanted. Need to handle that here.
 
         return {
+            sunRelative: false,
             nextAfter(date: number) {
                 cron_time.reset(date);
                 try {
@@ -425,17 +429,28 @@ function runAtDate(date: Date, func: () => any) {
         return setTimeout(func, diff);
 }
 
-/** Arm a timer for `callback`. `after` continues once the callback has run, successfully or not. */
-function scheduleTimer(when: Date, callback: () => any, after?: () => void) {
+const trackSchedule = (def: ScheduleDefinition) => current.application.schedules.add(def);
+
+/**
+ * Arm a timer for `callback`. A `track`ed timer reports when it is waiting for, and how the callback went.
+ * `after` continues once the callback has run, successfully or not.
+ */
+function scheduleTimer(when: Date, callback: () => any, track?: ScheduleTracker, after?: () => void) {
     const bound = bind_callback_env(callback);
 
+    track?.armed(when);
     const handle = runAtDate(when, async () => {
+        track?.armed(undefined);
+        let result: 'ok' | 'error' = 'ok';
+        const startedAt = Date.now();
         try {
             await bound();
         } catch (e) {
             // Logged for the app instead of escaping as an unhandled rejection that would end a recurring schedule
+            result = 'error';
             handle_client_error(e);
         }
+        track?.fired(result, Date.now() - startedAt);
         after?.();
     });
     return schedule_cleanups().addExposed(() => {
@@ -443,7 +458,17 @@ function scheduleTimer(when: Date, callback: () => any, after?: () => void) {
     })
 }
 
-function scheduleRecurring(computeNext: () => Date, callback: () => any) {
+function scheduleOnce(when: Date, callback: () => any, def: ScheduleDefinition) {
+    const track = trackSchedule(def);
+    const dispose = scheduleTimer(when, callback, track);
+    return () => {
+        dispose();
+        track.remove();
+    }
+}
+
+function scheduleRecurring(computeNext: () => Date, callback: () => any, def: ScheduleDefinition) {
+    const track = trackSchedule(def);
     let cancelled = false;
     let currentDisposer: () => void;
 
@@ -454,12 +479,13 @@ function scheduleRecurring(computeNext: () => Date, callback: () => any) {
 
         if (!nextTime) {
             currentDisposer = null;
+            track.armed(undefined);
             return
         }
 
         // ctx.logMessage('debug', `Scheduling recurring callback at ${nextTime.toISOString()}`)
 
-        currentDisposer = scheduleTimer(nextTime, callback, schedule_next);
+        currentDisposer = scheduleTimer(nextTime, callback, track, schedule_next);
     }
 
     schedule_next();
@@ -467,6 +493,7 @@ function scheduleRecurring(computeNext: () => Date, callback: () => any) {
     return () => {
         cancelled = true;
         currentDisposer?.();
+        track.remove();
     }
 }
 
@@ -476,7 +503,7 @@ function scheduleRecurring(computeNext: () => Date, callback: () => any) {
 export function run_in(period: string) {
     const parsed = parse_duration(period);
 
-    const func = (cb) => scheduleTimer(new Date(Date.now() + parsed), cb)
+    const func = (cb) => scheduleOnce(new Date(Date.now() + parsed), cb, { expression: `run_in('${period}')`, kind: 'at', method: callbackName(cb) })
 
     func.persisted = (action: string) => {
         const sleep_prom = sleep(parsed);
@@ -494,7 +521,7 @@ export function run_at(time: string, options?: ScheduleOpts) {
     const parsed = _parseTDFormat(time, options);
 
     const run_time: Date = parsed().toDate();
-    const func = (cb) => scheduleTimer(run_time, cb);
+    const func = (cb) => scheduleOnce(run_time, cb, { expression: time, kind: parsed.sunRelative ? 'sun' : 'at', method: callbackName(cb) });
 
     func.persisted = (action: string) => {
         const sleep_prom = sleep_until(run_time);
@@ -514,7 +541,7 @@ export function run_every(period: string) {
     const parsed = parse_duration(period);
 
     const func = (cb) => {
-        return scheduleRecurring(() => new Date(Date.now() + parsed), cb)
+        return scheduleRecurring(() => new Date(Date.now() + parsed), cb, { expression: `run_every('${period}')`, kind: 'interval', method: callbackName(cb) })
     }
 
     return func;

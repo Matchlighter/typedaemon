@@ -1,0 +1,43 @@
+/* Entity row. */
+.entity-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(0, 120px) auto auto auto; align-items: center; column-gap: 12px; padding: 10px 14px; background: var(--card); border: 1px solid var(--div); border-radius: 8px; }
+.entity-selected { background: var(--prib); border-color: var(--pri); }
+.entity-icon { width: 28px; height: 28px; border-radius: 50%; background: var(--sunk); color: var(--text2); display: grid; place-items: center; }
+.entity-id { display: flex; flex-direction: column; min-width: 0; }
+.entity-eid { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entity-eid-link { color: inherit; text-decoration: none; }
+.entity-eid-link:hover { color: var(--pri); text-decoration: underline; }
+.entity-sub { font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entity-owner-orphan { color: var(--warnf); }
+.entity-state { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entity-state-muted { color: var(--text2); }
+.entity-flags { display: flex; gap: 6px; flex-wrap: wrap; }
+.entity-actions { display: flex; align-items: center; gap: 8px; }
+.entity-ha-link { display: grid; place-items: center; color: var(--pri); text-decoration: none; }
+/* Entity table (app detail Entities tab): reuses the entity-* cell styles; `.entity-row` is a <tr> there, not the card grid */
+.enttbl { min-width: 900px; }
+.enttbl .entity-row { display: table-row; padding: 0; background: none; border: 0; border-radius: 0; }
+.enttbl .entity-id { max-width: 380px; }
+.enttbl-narrow { min-width: 0; }
+.enttbl-ident { display: flex; align-items: center; gap: 10px; }
+.enttbl-ident .entity-icon { flex: none; }
+/* Sized by its rows up to a cap, so the footer sits right under the last row */
+.enttbl-virtual { max-height: clamp(320px, 70vh, 800px); overflow: auto; }
+.enttbl-virtual:focus-visible { outline: 2px solid var(--pri); outline-offset: -2px; }
+.enttbl-virtual thead th { position: sticky; top: 0; z-index: 1; background: var(--card); box-shadow: 0 1px 0 var(--div); }
+.enttbl .entity-selected, .enttbl .entity-selected:hover { background: var(--prib); }
+.enttbl .entity-owner { font-size: 13px; text-decoration: none; }
+.enttbl a.entity-owner:hover { text-decoration: underline; }
+.enttbl .entity-owner-orphan { color: var(--warnf); }
+.enttbl-actions { width: 170px; text-align: right; white-space: nowrap; }
+.enttbl-actions > * { vertical-align: middle; margin-left: 8px; }
+.enttbl .entity-ha-link { display: inline-grid; }
+@media (max-width: 640px) {
+    .entity-row { grid-template-columns: 28px minmax(0, 1fr) auto; row-gap: 8px; }
+    .entity-state { grid-column: 2; grid-row: 2; }
+    .entity-flags:not(:empty) { grid-column: 2 / -1; }
+    .entity-row > .badge { grid-column: 3; grid-row: 1; }
+    .entity-actions { grid-column: 2 / -1; }
+}
+
+/* Owning HA plugin is down: same dimming as a stale list */
+.entity-stale { opacity: .6; }

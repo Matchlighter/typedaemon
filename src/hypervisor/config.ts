@@ -39,6 +39,14 @@ export interface Configuration {
         plugins_file?: string;
     };
 
+    /** The dashboard's own HTTP listener (separate from the `http` plugin) */
+    dashboard?: {
+        /** @default 8099 */
+        port?: number;
+        /** Opt-in shared secret granting direct access (`Authorization: Bearer` or `?token=`). By default only the HA supervisor ingress proxy is accepted. */
+        token?: string;
+    };
+
     sentry?: {
         dsn: string;
     }
@@ -86,6 +94,9 @@ export const defaultConfig: NormalizedConfiguration = {
         system: "warn",
         // system_file: "./logs/%DATE%.log",
     },
+    dashboard: {
+        port: 8099,
+    },
     plugins: {},
     apps: {},
 }
@@ -95,6 +106,7 @@ export const ConfigMerger = merger<NormalizedConfiguration>({
         watch: merger(),
     }),
     logging: merger(),
+    dashboard: merger(),
 })
 
 export const readConfigFile = async (file: string) => {

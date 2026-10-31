@@ -25,7 +25,7 @@ describe('ApplicationInstance', () => {
         jest.advanceTimersByTime(2500);
 
         expect(namespace.reinitializeInstance).toHaveBeenCalledTimes(2);
-        expect(namespace.reinitializeInstance).toHaveBeenCalledWith(appA);
-        expect(namespace.reinitializeInstance).toHaveBeenCalledWith(appB);
+        expect(namespace.reinitializeInstance).toHaveBeenCalledWith(appA, 'source_change');
+        expect(namespace.reinitializeInstance).toHaveBeenCalledWith(appB, 'source_change');
     });
 });

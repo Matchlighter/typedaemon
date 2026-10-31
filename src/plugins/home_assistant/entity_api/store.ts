@@ -3,10 +3,21 @@ import type { HomeAssistantPlugin } from "../plugin";
 import { ApplicationInstance } from "../../../hypervisor/application_instance";
 import { logPluginClientMessage } from "../../../hypervisor/logging";
 import { HyperWrapper } from "../../../hypervisor/managed_apps";
+import { getOrCreateLocalData, peekLocalData } from "../../base";
 import { MqttPlugin } from "../../mqtt/plugin";
 import { HAEntititesDestroyer, autocleanEntities } from "./auto_cleaning";
 
 export class EntityStore {
+    /** The app's store for `plugin`, created on first use */
+    static forApplication(plugin: HomeAssistantPlugin, application: ApplicationInstance) {
+        return getOrCreateLocalData(plugin, application, "entities", (plg, app) => new EntityStore(plg, app));
+    }
+
+    /** The app's store, if it has registered anything with `plugin` yet */
+    static peek(plugin: HomeAssistantPlugin, application: ApplicationInstance) {
+        return peekLocalData<EntityStore>(plugin, application, "entities");
+    }
+
     constructor(readonly plugin: HomeAssistantPlugin, readonly application: ApplicationInstance) {
         this.mqttPlugin = plugin.mqttPlugin();
         this.mqttConnection(); // Force MQTT cleanup to run after store cleanup
@@ -42,12 +53,14 @@ export class EntityStore {
         })
 
         this.tracked_entities.add(entity);
+        this.plugin.entityEvents.emit('change', this.application);
 
         await entity['_register_in_ha']();
     }
 
     protected _untrackEntity(entity: TDEntity<any>) {
         this.tracked_entities.delete(entity);
+        this.plugin.entityEvents.emit('change', this.application);
     }
 
     mqttApi() {

@@ -37,6 +37,7 @@ export class TDSensor extends EntityClass<number, {}, SensorOptions> {
 
     protected discovery_data() {
         const dd = super.discovery_data();
+        const state_class = this.options?.state_class || "measurement";
         Object.assign(dd, {
             ...discoveryPassOptions(this.options, [
                 "device_class",
@@ -46,10 +47,12 @@ export class TDSensor extends EntityClass<number, {}, SensorOptions> {
                 "unit_of_measurement",
             ]),
 
-            state_class: this.options?.state_class || "measurement",
-
-            last_reset_value_template: "{{ value_json.last_reset or state_attr(entity_id, 'last_reset') }}",
+            state_class,
         })
+        // HA only accepts last_reset_value_template together with state_class "total".
+        if (state_class === "total") {
+            dd.last_reset_value_template = "{{ value_json.last_reset or state_attr(entity_id, 'last_reset') }}";
+        }
         return dd;
     }
 

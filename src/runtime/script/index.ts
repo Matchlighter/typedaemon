@@ -42,6 +42,9 @@ export function script(options: ScriptOptions) {
 
         let lookupStore: (ukey: string) => ScriptStateStore;
 
+        // Known to the dashboard from app start, not only after the first call (`define` is idempotent)
+        if (context) notePluginAnnotation(context, () => { current.application.scripts.define(sid, options) });
+
         if (options.shutdown == "suspend") {
             if (!context) throw new Error("May only use script({ shutdown: 'suspend' }) as a decorator!");
 
@@ -53,19 +56,23 @@ export function script(options: ScriptOptions) {
             }
 
             // Make sure to save/load the queue on shutdown/startup
-            notePluginAnnotation(context, async (self) => {
+            notePluginAnnotation(context, async () => {
                 const superStore = ResumableScriptStoreManager.current();
                 await superStore.defineSubStore(sid, options);
             })
         } else {
             const local_store = {};
             lookupStore = (ukey: string) => {
-                local_store[ukey] ??= new ScriptStateStore(options);
+                if (!local_store[ukey]) {
+                    local_store[ukey] = new ScriptStateStore(options);
+                    current.application.scripts.attach(sid, local_store[ukey]);
+                }
                 return local_store[ukey];
             }
         }
 
         function start_wrapped(...args): false | (PromiseLike<any> & ICancellablePromise) {
+            current.application.scripts.define(sid, options);
             const ukey = typeof options.mode_key === "function" ? options.mode_key(args) : context?.name.toString() ?? "-";
             const store = lookupStore(ukey);
 
@@ -87,6 +94,7 @@ export function script(options: ScriptOptions) {
                     method: context.name as string,
                     parameters: args,
                 }
+                rmthd.markAsScript();
 
                 // Apply a special `then` that persists/manages the counting state
                 hookScriptCallback(rmthd, { sid, ukey });
@@ -120,7 +128,7 @@ export function script(options: ScriptOptions) {
                     }
                 }
 
-                store.trackPending(executor);
+                store.trackPending(executor, args);
                 store.refill();
 
                 return {

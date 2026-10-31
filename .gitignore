@@ -41,3 +41,4 @@ dist
 test_setup
 experiments
 __pycache__/
+/dashboard/node_modules

@@ -1,3 +1,4 @@
+import { ENTITY_STATE_KEY_PREFIX } from "./storage_keys";
 
 import {
     Connection,
@@ -9,22 +10,32 @@ import {
     MessageBase,
     createConnection as _createConnection,
     callService,
+    getConfig,
     createLongLivedTokenAuth
 } from 'home-assistant-js-websocket';
 import * as ws from "ws";
 import objectHash from 'object-hash';
 
 import { HAMobXStore } from '@matchlighter/ha-mobx-store';
+import { comparer, reaction, toJS } from 'mobx';
+import { TypedEmitter } from 'tiny-typed-emitter';
 
+import type { ApplicationInstance } from '../../hypervisor/application_instance';
+import type { PersistentStorage } from '../../hypervisor/persistent_storage';
 import { logPluginClientMessage } from '../../hypervisor/logging';
 import { HyperWrapper } from '../../hypervisor/managed_apps';
 import { ResumablePromise } from "../../runtime/resumable";
 import { CancellableResumablePromise, SerializeContext } from '../../runtime/resumable/resumable_promise';
+import { startHeartbeat } from './heartbeat';
 import { internal_sleep } from '../../util';
-import { Plugin, get_plugin, handle_client_error } from '../base';
+import { Plugin, get_plugin, handle_client_error, type PluginConnectionState } from '../base';
 import { MqttPlugin } from '../mqtt/plugin';
 import { HomeAssistantApi, homeAssistantApi } from './api';
 import { EntityTypesConfig, HassEntityServiceTarget, syncEntityTypes } from './entity_ids';
+import { autoCleanEntitiesKey, destroyUnlinkedEntity } from './entity_api/auto_cleaning';
+import { pickHaBaseUrl } from './base_url';
+import { listEntityRows, type AppEntityInfo, type EntityStateInfo } from './entity_api/inspect';
+import { EntityStore } from './entity_api/store';
 
 // @ts-ignore
 global.WebSocket ||= ws.WebSocket
@@ -133,7 +144,7 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     async shutdown() {
         this.stopEntityTypes?.();
         this._ha_api?.close();
-        clearInterval(this.pingInterval);
+        this.heartbeat?.stop();
     }
 
     private stopEntityTypes: () => void;
@@ -158,6 +169,71 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     async callService(serviceStr: string, data: any, target?: HassEntityServiceTarget) {
         const [domain, service] = serviceStr.split('.')
         return await callService(this._ha_api, domain, service, data, target);
+    }
+
+    /** Fires when an app's tracked entities change (not for state changes - see `observeAppEntities`) */
+    readonly entityEvents = new TypedEmitter<{ change: (app: ApplicationInstance) => void }>();
+
+    /** Entities `app` has registered here (linked) plus the ones only its autoclean registry remembers (unlinked) */
+    appEntities(app: ApplicationInstance): AppEntityInfo[] {
+        const storage = app.persistedStorage;
+        // Storage is loaded early in the app's startup; before that there is nothing to know
+        if (!storage) return [];
+        return this.entityRows(storage, EntityStore.peek(this, app));
+    }
+
+    /** The entities remembered in an app's store, none of them linked: for an app that is not running (an orphan) */
+    storedEntities(storage: PersistentStorage): AppEntityInfo[] {
+        return this.entityRows(storage, undefined);
+    }
+
+    private entityRows(storage: PersistentStorage, store: EntityStore | undefined): AppEntityInfo[] {
+        const tracked = [...(store?.tracked_entities ?? [])].map((e: any) => ({ uuid: e.uuid as string, domain: e.domain as string, entity_kind: e.entity_kind as string | undefined, name: e.name as string | undefined }));
+        return listEntityRows({
+            pluginId: this[HyperWrapper].id,
+            tracked,
+            registry: storage.getValue(autoCleanEntitiesKey(this)) ?? {},
+            haEntities: (this._synced_store?.get("entity") ?? {}) as any,
+            haStates: (this._synced_store?.get("state") ?? {}) as any,
+            persistedStateUuids: new Set(storage.keys.filter(k => k.startsWith(ENTITY_STATE_KEY_PREFIX)).map(k => k.slice(ENTITY_STATE_KEY_PREFIX.length))),
+        });
+    }
+
+    /** Call `cb` whenever `appEntities(app)` may have changed (tracking, registry, HA state). Returns a disposer. */
+    observeAppEntities(app: ApplicationInstance, cb: () => void): () => void {
+        const onEntities = (a: ApplicationInstance) => { if (a === app) cb() };
+        this.entityEvents.on('change', onEntities);
+
+        const registryKey = autoCleanEntitiesKey(this);
+        const onStorage = (c: { key: string }) => { if (c.key === registryKey || c.key.startsWith(ENTITY_STATE_KEY_PREFIX)) cb() };
+        const storage = app.persistedStorage;
+        storage?.on('change', onStorage);
+
+        // HA-side changes (state, entity_id assignment) arrive through the synced MobX store
+        const offReaction = reaction(() => this.appEntities(app), () => cb(), { equals: comparer.structural });
+
+        return () => {
+            this.entityEvents.off('change', onEntities);
+            storage?.off('change', onStorage);
+            offReaction();
+        };
+    }
+
+    /** HA's live state object of an entity (by entity_id), if it has one */
+    entityState(entityId: string): EntityStateInfo | undefined {
+        const st = this.state?.[entityId] as any;
+        if (!st) return undefined;
+        return { attributes: toJS(st.attributes ?? {}), lastChanged: st.last_changed, lastUpdated: st.last_updated };
+    }
+
+    /** Call `cb` whenever `entityState(entityId)` may have changed. Returns a disposer. */
+    observeEntityState(entityId: string, cb: () => void): () => void {
+        return reaction(() => this.entityState(entityId), () => cb(), { equals: comparer.structural });
+    }
+
+    /** Delete an unlinked entity (see `appEntities`) from HA and `app`'s autoclean registry. `cuid` = the registry key. */
+    async deleteUnlinkedEntity(app: ApplicationInstance, cuid: string) {
+        await destroyUnlinkedEntity(EntityStore.forApplication(this, app), cuid);
     }
 
     mqttPlugin() {
@@ -192,8 +268,34 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
     get areas() { return this._synced_store.get("area") }
     get labels() { return this._synced_store.get("label") }
 
+    private _connectionState: PluginConnectionState = 'disconnected';
+    get connectionState() { return this._connectionState }
+    get statusSummary() {
+        if (this._connectionState !== 'connected' || !this._synced_store) return undefined;
+        return [{ label: 'WebSocket', value: `subscribed · ${Object.keys(this.entities ?? {}).length} entities` }];
+    }
+    get connectionTarget() { return this.config.url || ('SUPERVISOR_TOKEN' in process.env ? "http://supervisor/core" : undefined) }
+
+    private _haBaseUrl: string | undefined;
+    /** Where a browser can open HA (see `pickHaBaseUrl`); known once connected, refreshed on every reconnect */
+    get haBaseUrl() { return this._haBaseUrl }
+
+    private async refreshBaseUrl() {
+        const config = await getConfig(this._ha_api).catch(() => undefined);
+        const url = pickHaBaseUrl(config, this.config.url);
+        if (url === this._haBaseUrl) return;
+        this._haBaseUrl = url;
+        this.connectionChanged();
+    }
+
+    private setConnectionState(state: PluginConnectionState) {
+        if (this._connectionState === state) return;
+        this._connectionState = state;
+        this.connectionChanged();
+    }
+
     _ha_api: SubCountingConnection;
-    private pingInterval;
+    private heartbeat: ReturnType<typeof startHeartbeat>;
 
     // awaitForEvent(pattern) {
     //     const app = current.application;
@@ -234,37 +336,50 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
             }
         }
 
-        let lastEvent;
-        this.pingInterval = setInterval(() => {
-            if (!lastEvent || lastEvent < Date.now() - 30000) {
-                this[HyperWrapper].logMessage("warn", `No events received for 30s!`)
-                this[HyperWrapper].logMessage("warn", this._ha_api.connected, this._ha_api.options, this._ha_api.oldSubscriptions);
-                this[HyperWrapper].logMessage("warn", this._ha_api['subscription_counts']);
-                this[HyperWrapper].logMessage("warn", this._ha_api);
-            }
-            if (this._ha_api.connected) this._ha_api.ping();
-        }, 30000);
+        this.heartbeat = startHeartbeat({
+            ping: () => this._ha_api.ping(),
+            isConnected: () => this._ha_api.connected,
+            onDead: () => {
+                this[HyperWrapper].logMessage("warn", `No pong from Home Assistant; reconnecting`);
+                this._ha_api.reconnect(true);
+            },
+        });
 
         this._synced_store = new HAMobXStore(this._ha_api);
         this._synced_store.enableEntityIndex();
         this.startEntityTypes();
+        this.addCleanup(reaction(() => Object.keys(this.entities ?? {}).length, () => this.connectionChanged()));
 
         this._ha_api.subscribeMessage(() => {
-            lastEvent = Date.now();
+            this.heartbeat.touch();
         }, { type: "subscribe_events" });
+
+        this.setConnectionState('connected');
+        void this.refreshBaseUrl();
+        this.addCleanup(() => this.setConnectionState('disconnected'));
 
         this._ha_api.addEventListener("ready", () => {
             this[HyperWrapper].logMessage("info", `HA Websocket Ready`)
+            this.setConnectionState('connected');
+            void this.refreshBaseUrl();
             this._ha_api.forceResubscribe();
         })
         this._ha_api.addEventListener("disconnected", () => {
             this[HyperWrapper].logMessage("warn", `HA Websocket Disconnected`)
+            // The library keeps retrying on its own
+            this.setConnectionState('reconnecting');
         })
         this._ha_api.addEventListener("reconnect-error", (conn, err) => {
             this[HyperWrapper].logMessage("warn", `HA Websocket Reconnect Error (${HA_WS_ERRORS[err] || err})`)
+            this.setConnectionState('reconnecting');
         })
 
         // TODO Await for the _synced_store before marking Plugin as ready
+    }
+
+    reconnect() {
+        if (!this._ha_api) throw new Error('Home Assistant is not connected yet; nothing to reconnect');
+        this._ha_api.reconnect(true);
     }
 
     configuration_updated(new_config: HomeAssistantPluginConfig, old_config: HomeAssistantPluginConfig) {

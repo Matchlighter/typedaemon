@@ -15,7 +15,7 @@ import { MultiMap } from "@matchlighter/common_library/data/multimap";
 import { deep_get } from "@matchlighter/common_library/deep/index";
 
 import { LifecycleHelper } from "../common/lifecycle_helper";
-import { DeepReadonly, fileExists, operationsDirectory, resolveSourceFile, timeoutPromise, watchFile } from "../common/util";
+import { cloneTree, DeepReadonly, fileExists, operationsDirectory, resolveSourceFile, timeoutPromise, watchFile } from "../common/util";
 
 import { controlSocketPath } from "../common/control_socket";
 import { saveAppRegistry, saveGeneratedTsconfig } from "../common/generate_tsconfig";
@@ -27,12 +27,17 @@ import { ConfigMerger, Configuration, NormalizedConfiguration, defaultConfig, re
 import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
 import { ControlServer } from "./control_server";
+import { startDashboardListener, type DashboardListener } from "../dashboard/listener";
 import { CrossCallStore } from "./cross_call";
 import { current } from "./current";
+import { logTap, type LogSource } from "./log_tap";
 import { ExtendedLoger, LogLevel, ORIGINAL_CONSOLE, createDomainLogger, setFallbackLogger } from "./logging";
 import { AppNamespace } from "./managed_apps";
+import { appDirectory, environmentsDirectory, persistenceFile } from "./app_paths";
+import { assertOrphan, destroyOrphan, listOrphanIds, recordRemoval } from "./orphan_apps";
 import { installConfigDependencies } from "./packages";
 import { SharedStorages } from "./persistent_storage";
+import { registerPluginManifests } from "../plugins/manifest";
 import { PluginInstance } from "./plugin_instance";
 import { ReplOptions, startRepl } from "./repl";
 
@@ -44,7 +49,17 @@ const CONFIG_FILE_NAMES = /^typedaemon(_config)?\.(js|ts|json|ya?ml)$/;
 
 export type HypervisorEvents = {
     app_lifecycle: (app: ApplicationInstance, event: AppLifecycle) => void;
+    plugin_lifecycle: (plugin: PluginInstance, event: AppLifecycle) => void;
+    /** An app picked up resumables its previous run suspended (`methods`: their names) */
+    app_resumed: (app: ApplicationInstance, methods: string[]) => void;
+    /** An app's runtime stop override was set/cleared */
+    app_override_changed: (id: string) => void;
+    /** An orphan was cleaned up (the set of orphans changed) */
+    orphans_changed: () => void;
 }
+
+/** Log source of the hypervisor itself (what the dashboard calls "system") */
+const HYPERVISOR_LOG_SOURCE: LogSource = { kind: 'system', id: 'hypervisor' };
 
 export class Hypervisor extends TypedEmitter<HypervisorEvents> {
     constructor(private options: {
@@ -53,6 +68,8 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         no_watching?: boolean,
     }) {
         super();
+        // Built-in plugins' internal key prefixes must be known even when their plugin is not configured (and so never loaded)
+        registerPluginManifests();
     }
 
     private _state: "running" | "shutting_down" = "running";
@@ -66,6 +83,16 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
     private _currentConfig: NormalizedConfiguration;
     get currentConfig() {
         return this._currentConfig as DeepReadonly<typeof this._currentConfig>;
+    }
+
+    private _configFile: string | undefined;
+    /** Path of the loaded config file; undefined before it is loaded */
+    get configFile() { return this._configFile }
+
+    private _rawConfig: DeepReadonly<Partial<Configuration>> | undefined;
+    /** An app's config exactly as the config file gives it (before defaults and normalization); undefined if the file has no such app */
+    rawAppConfig(id: string): DeepReadonly<Partial<AppConfiguration>> | undefined {
+        return this._rawConfig?.apps?.[id];
     }
 
     getConfigEntry<T>(entry: string) {
@@ -89,6 +116,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
     private _logger: ExtendedLoger = createDomainLogger({
         level: "info",
         domain: chalk.cyan`Hypervisor`,
+        source: HYPERVISOR_LOG_SOURCE,
     });
     get logger() { return this._logger }
 
@@ -105,12 +133,14 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
             level: cfg.system,
             domain: chalk.cyan`Hypervisor`,
             file: path.resolve(this.working_directory, sys_file),
+            source: HYPERVISOR_LOG_SOURCE,
         });
 
         setFallbackLogger(
             createDomainLogger({
                 domain: chalk.yellow("???"),
                 file: path.resolve(this.working_directory, sys_file),
+                source: { kind: 'system', id: 'unknown' },
             })
         );
     }
@@ -118,6 +148,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
     sharedStorages: SharedStorages;
     crossCallStore: CrossCallStore;
     controlServer: ControlServer;
+    dashboardListener: DashboardListener;
 
     async start() {
         return await CurrentHypervisor.run(this, () => {
@@ -154,6 +185,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         }
 
         await this.startControlServer();
+        await this.startDashboard();
 
         process.on('SIGINT', async () => {
             if (this.sigint_count == 0) {
@@ -228,6 +260,9 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         })
 
         this.logMessage("info", "Starting Plugins");
+        this.pluginInstances.on("instance_lifecycle", (instance, levent) => {
+            this.emit("plugin_lifecycle", instance, levent);
+        });
         const proms = this.pluginInstances.sync(this.currentConfig.plugins || {});
 
         await timeoutPromise(10000, Promise.allSettled(proms), () => {
@@ -264,8 +299,17 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         this.appInstances.on("instance_lifecycle", (instance, levent) => {
             this.emit("app_lifecycle", instance, levent);
         });
+        this.appInstances.on("override_changed", id => this.emit("app_override_changed", id));
         await this.appInstances.sync(this.currentConfig.apps || {});
-        this.watchConfigEntry("apps", () => this.appInstances.sync(this.currentConfig.apps));
+        let knownApps = new Set(Object.keys(this.currentConfig.apps || {}));
+        this.watchConfigEntry("apps", () => {
+            const now = new Set(Object.keys(this.currentConfig.apps || {}));
+            const removed = [...knownApps].filter(id => !now.has(id));
+            knownApps = now;
+            // Dashboard shows when orphans were removed; the directory's mtime alone changes on any touch
+            Promise.all(removed.map(id => recordRemoval(this, id))).catch(e => this.logMessage("warn", `Could not record removal of apps: ${e}`)).then(() => this.emit("orphans_changed"));
+            return this.appInstances.sync(this.currentConfig.apps);
+        });
     }
 
     /** Install pre-installed packages (`dependencies` config) into the config root's node_modules */
@@ -283,6 +327,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         this._state = 'shutting_down';
 
         await this.controlServer?.dispose();
+        await this.dashboardListener?.dispose();
 
         // Shutdown apps
         this.logMessage("info", "Stopping apps");
@@ -337,6 +382,8 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         }
     });
     getPlugin(id: string) { return this.pluginInstances.getInstance(id); }
+    /** Currently live plugin instances */
+    listPlugins(): PluginInstance[] { return this.pluginInstances.listInstances(); }
 
     protected appInstances = new AppNamespace<AppConfiguration, Application, ApplicationInstance>(this, "Application", {
         Host: ApplicationInstance,
@@ -344,44 +391,71 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         summarizeInstance: (options) => chalk`{green ${options.export}} from {green ${options.source}}`,
     });
     getApplication(id: string) { return this.appInstances.getInstance(id); }
+    /** Currently live application instances (mid-restart apps are absent between instances) */
+    listApplications(): ApplicationInstance[] { return this.appInstances.listInstances(); }
 
-    get app_environments_directory() { return path.resolve(this.operations_directory, "app_environments") }
+    /** Run `fn` while no instance of the app can start; `live` is the app's instance if it is up. Use for work on the app's files while it may be down. */
+    withApplicationExclusive<R>(id: string, fn: (live: ApplicationInstance | undefined) => Promise<R> | R) { return this.appInstances.withExclusiveAccess(id, fn); }
 
-    defaultAppOperatingDirectory(id: string) {
-        return path.resolve(this.app_environments_directory, id);
-    }
-
-    /** IDs of apps that left resources behind, but are no longer configured */
-    async findOrphanedApplications() {
-        let entries: fs.Dirent[];
-        try {
-            entries = await fs.promises.readdir(this.app_environments_directory, { withFileTypes: true });
-        } catch (ex) {
-            if (ex.code == "ENOENT") return [];
-            throw ex;
-        }
-        return entries.filter(e => e.isDirectory() && !this.currentConfig.apps?.[e.name]).map(e => e.name);
-    }
-
-    private async assertDestroyable(id: string) {
-        if (!id || path.basename(id) != id || id == "." || id == "..") throw new Error(`Invalid app '${id}'`);
-        if (this.currentConfig.apps?.[id]) throw new Error(`App '${id}' is still configured. Remove it from the config first.`);
-        if (!await fileExists(this.defaultAppOperatingDirectory(id))) throw new Error(`No resources found for app '${id}'`);
-    }
-
-    /** Remove all resources (eg entities, persistence) left behind by an app that is no longer configured */
-    async destroyApplication(id: string) {
-        await this.assertDestroyable(id);
-
+    /**
+     * An instance used only to run an app's destroyers: not registered in the namespace, so nothing else sees it.
+     * The app's own logs are about to be deleted, so it logs to the Hypervisor's.
+     */
+    private transientDestroyInstance(id: string) {
         const { logging } = this.currentConfig;
-        const instance = new ApplicationInstance({ id, hypervisor: this, namespace: this.appInstances }, {
+        return new ApplicationInstance({ id, hypervisor: this, namespace: this.appInstances }, {
             ...defaultAppConfig,
-            // The app's own logs are about to be deleted
             logging: { file: logging.system_file, level: logging.application, system_level: logging.system },
         });
+    }
 
+    /** Apps that left the config but still have an operating directory (see `destroyApplication`) */
+    listOrphanApplications() { return listOrphanIds(this); }
+
+    /**
+     * Clean up an app that is no longer in the config: run the destroyers it registered (eg remove its entities from HA),
+     * then delete its operating directory. Rejects, leaving everything in place, if any destroyer fails or the app is
+     * configured/running. Exclusive and symlink-safe. Never touches the app's source or the config.
+     */
+    async destroyApplication(id: string) {
         this.logMessage("info", `Destroying Application '${id}'`);
-        await instance.destroy_all();
+        await destroyOrphan(this, id, async () => {
+            await this.transientDestroyInstance(id).run_destroyers();
+        });
+        logTap.drop({ kind: 'app', id });
+        this.emit("orphans_changed");
+    }
+
+    /** Stop an app until it is started/restarted or the config is next reloaded */
+    stopApplication(id: string) { return this.appInstances.stopInstance(id); }
+    /** Start an app (clearing a stop override) if not running */
+    startApplication(id: string) { return this.appInstances.startInstance(id); }
+    /** Re-initialize an app now; also starts a stopped one */
+    restartApplication(id: string) { return this.appInstances.restartInstance(id); }
+    /** True while an app is stopped by a runtime override (see `stopApplication`) */
+    isApplicationStopped(id: string) { return this.appInstances.isStoppedOverride(id); }
+
+    get app_environments_directory() { return environmentsDirectory(this.operations_directory) }
+
+    /** The default operating directory of app `id` (rejects ids that are not a plain directory name) */
+    defaultAppOperatingDirectory(id: string) {
+        return appDirectory(this.operations_directory, id);
+    }
+
+    /** The persisted-storage file of app `id` when it uses the default operating directory */
+    defaultAppPersistenceFile(id: string) {
+        return persistenceFile(this.defaultAppOperatingDirectory(id));
+    }
+
+    private async startDashboard() {
+        const { port, token } = this.currentConfig.dashboard ?? {};
+        try {
+            this.dashboardListener = await startDashboardListener(this, { port, token });
+            this.logMessage("info", `Dashboard listening on :${this.dashboardListener.port}`);
+        } catch (ex) {
+            // Not critical to running apps
+            this.logMessage("warn", `Failed to start dashboard on port ${port}:`, ex);
+        }
     }
 
     private async startControlServer() {
@@ -390,8 +464,12 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         server.handle("repl", (args: ReplOptions, socket) => startRepl(this, socket, args), { stream: true });
 
         server.handle("apps.destroyable", async ({ ids }: { ids?: string[] } = {}) => {
-            ids ??= await this.findOrphanedApplications();
-            for (let id of ids) await this.assertDestroyable(id);
+            const orphans = await this.listOrphanApplications();
+            ids ??= orphans;
+            for (let id of ids) {
+                assertOrphan(this, id);
+                if (!orphans.includes(id)) throw new Error(`No resources found for app '${id}'`);
+            }
             return ids.map(id => ({ id, operating_directory: this.defaultAppOperatingDirectory(id) }));
         });
 
@@ -410,6 +488,9 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
 
         const _loadConfig = async () => {
             let parsed = await readConfigFile(file);
+            this._configFile = file;
+            // The merges below reuse (and replace entries of) the parsed objects
+            this._rawConfig = cloneTree(parsed);
 
             const cfg = ConfigMerger.mergeConfigs(defaultConfig, parsed);
 
@@ -479,6 +560,10 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
 
             const prevConfig = this.currentConfig;
             this._currentConfig = cfg;
+
+            // Runtime stop overrides last only until that app's config entry changes (the "apps" watcher then re-syncs)
+            const appIds = new Set([...Object.keys(prevConfig?.apps || {}), ...Object.keys(cfg.apps)]);
+            this.appInstances.clearOverrides([...appIds].filter(id => !deep_eql(prevConfig?.apps?.[id], cfg.apps[id])));
 
             // Apply watchers top-down. Do not run watchers that are removed or added by broader watchers
             const watchedKeys = new Set<string>();

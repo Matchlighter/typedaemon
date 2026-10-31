@@ -1,0 +1,6 @@
+/* App HTTP tab. Generic table styles (.tbl) live in app.css. */
+.http-table { min-width: 640px; }
+.http-table td { font-size: 13px; }
+.http-handler { color: var(--text2); }
+.http-url { font-size: 12px; color: var(--text2); word-break: break-all; }
+.http-copy { width: 60px; text-align: right; }

@@ -1,0 +1,37 @@
+/* Storage key row. */
+.skey-row { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr) 72px 96px auto auto; align-items: start; column-gap: 12px; padding: 10px 14px; background: var(--card); border: 1px solid var(--div); border-radius: 8px; }
+.skey-row-internal { background: var(--sunk); border-style: dashed; }
+.skey-key { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 20px; }
+.skey-row-internal .skey-key { color: var(--text2); }
+.skey-value { min-width: 0; overflow-x: auto; }
+.skey-size, .skey-written { color: var(--text2); line-height: 20px; white-space: nowrap; }
+.skey-size { text-align: right; }
+.skey-tags { display: flex; gap: 6px; align-items: center; min-height: 20px; }
+.skey-actions { display: flex; align-items: center; }
+@media (max-width: 640px) {
+    .skey-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+    .skey-value { grid-column: 1 / -1; grid-row: 2; }
+    .skey-size, .skey-written { grid-row: 3; text-align: left; }
+    .skey-tags { grid-column: 1; grid-row: 1; justify-self: end; }
+    .skey-actions { grid-column: 2; grid-row: 1; }
+}
+
+/* Table layout (`layout="table"`): head + divided rows inside a card */
+.skey-table { --skey-cols: minmax(0, 300px) minmax(0, 1fr) 72px 170px 72px; overflow-x: auto; }
+.skey-head, .skey-row-table { display: grid; grid-template-columns: var(--skey-cols); column-gap: 12px; align-items: start; }
+.skey-head { padding: 10px 16px; border-bottom: 1px solid var(--div); }
+.skey-head .skey-size { text-align: right; }
+.skey-row-table { background: transparent; border: 0; border-bottom: 1px solid var(--div); border-radius: 0; padding: 12px 16px; }
+.skey-row-table:last-child { border-bottom: 0; }
+.skey-row-table.skey-row-internal { background: var(--sunk); }
+.skey-keycell { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.skey-preview { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; line-height: 20px; }
+.skey-row-table .skey-value { overflow-x: visible; }
+.skey-row-table .json-viewer { background: transparent; padding: 0; }
+.skey-row-table .skey-written { display: inline-flex; align-items: center; gap: 6px; }
+.skey-row-table .skey-actions { justify-content: flex-end; }
+@media (max-width: 640px) {
+    .skey-head { display: none; }
+    .skey-row-table { grid-template-columns: minmax(0, 1fr) auto; }
+    .skey-row-table .skey-written { grid-column: 1; }
+}

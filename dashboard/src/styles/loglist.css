@@ -1,0 +1,8 @@
+/* Virtualized log list. Rows are positioned by the virtualizer; sizes come from the lines themselves. */
+.loglist-frame { background: var(--card); border: 1px solid var(--div); border-radius: 12px; overflow: hidden; }
+.loglist { height: clamp(320px, 65vh, 760px); overflow: auto; }
+.loglist:focus-visible { outline: 2px solid var(--pri); outline-offset: 1px; }
+.loglist-body { position: relative; width: 100%; }
+.loglist-row { position: absolute; top: 0; left: 0; width: 100%; }
+/* Overlay, not a background: the child .log-line paints its own (error) background over the row's */
+.loglist-row.log-focus::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: color-mix(in srgb, var(--pri) 16%, transparent); box-shadow: inset 4px 0 0 var(--pri), inset 0 0 0 1px var(--pri); }

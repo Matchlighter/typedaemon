@@ -4,6 +4,7 @@ import { ha } from "../..";
 import { plgmobx } from "../../mobx";
 import { setAutocleaner } from "./auto_cleaning";
 import { TDDevice, TDEntity } from "./base";
+import { HA_DISCOVERY_PREFIX } from "../../mqtt/constants";
 import { EntityStore } from "./store";
 
 // Will need to give some thought to unique_ids.
@@ -127,7 +128,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
 
         // Remove from HA and cleanup MQTT topics
         const clear_topics = [
-            `homeassistant/${this.domain}/${this.uuid}/config`,
+            `${HA_DISCOVERY_PREFIX}/${this.domain}/${this.uuid}/config`,
             `${this.mqtt_topic}/status`,
             this.mqtt_state_topic,
             // With the `retain` option HA publishes commands retained. Clear them so a stale command (e.g. `OPEN`) isn't
@@ -225,7 +226,7 @@ abstract class TDAbstractEntity<T> extends TDEntity<T> {
     async reconfigure() {
         const mqtt = this._bound_store.mqttApi();
         const dd = this.discovery_data();
-        mqtt.publish(`homeassistant/${this.domain}/${this.uuid}/config`, JSON.stringify(dd), {
+        mqtt.publish(`${HA_DISCOVERY_PREFIX}/${this.domain}/${this.uuid}/config`, JSON.stringify(dd), {
             retain: true,
         });
     }

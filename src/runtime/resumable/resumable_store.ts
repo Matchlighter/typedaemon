@@ -1,31 +1,46 @@
 import * as fs from 'fs';
+import { TypedEmitter } from 'tiny-typed-emitter';
 
 import { Batcher } from '../../common/batched';
 import { fileExists, timeoutPromise } from "../../common/util";
 import { logPluginClientMessage } from "../../hypervisor/logging";
 import { ResumableOwnerLookup, resumable } from "./resumable_method";
-import { FailedResume, ResumablePromise, SettledPromise } from "./resumable_promise";
+import { objectId } from "../../common/object_id";
+import { CancellableResumablePromise, FailedResume, ResumablePromise, SettledPromise, type ResumableDescription } from "./resumable_promise";
+
+/** A user-visible resumable of the store. `id` is unique for the lifetime of the process (never reused by another store) */
+export interface ResumableInfo extends ResumableDescription {
+    id: number;
+    status: 'running' | 'suspended' | 'failed';
+}
 
 interface TrackerEntry {
     resumable: ResumablePromise;
     tracking_callbacks: Promise<any>;
 }
 
+/** Suspended resumables, written by ResumableStore */
+export const RESUMABLE_STATE_FILE = ".resumable_state.json";
+
 interface StoreOptions {
     file: string,
 }
 
-export class ResumableStore {
+export class ResumableStore extends TypedEmitter<{
+    /** The list of user-visible resumables (or what one waits on) may have changed */
+    change: () => void;
+}> {
     constructor(readonly opts: StoreOptions, readonly context: ResumableOwnerLookup) {
-
+        super();
     }
 
     get store_file() {
         return this.opts.file;
     }
 
-    async load() {
-        if (!await fileExists(this.store_file)) return;
+    /** Resume what a previous run suspended. Returns the user-visible resumables that resumed (failed ones stay persisted and are not included) */
+    async load(): Promise<ResumableInfo[]> {
+        if (!await fileExists(this.store_file)) return [];
 
         logPluginClientMessage("Resumable", "info", "Found stored Resumables; resuming them")
         const restore_json = await fs.promises.readFile(this.store_file);
@@ -35,7 +50,7 @@ export class ResumableStore {
             const legacy = this.store_file + ".legacy";
             logPluginClientMessage("Resumable", "warn", `${this.store_file} is not in the expected format; moved to ${legacy}`);
             await fs.promises.rename(this.store_file, legacy);
-            return;
+            return [];
         }
 
         const loaded = await this._loadWithLookups(restore_list);
@@ -49,6 +64,7 @@ export class ResumableStore {
         }
 
         await fs.promises.unlink(this.store_file)
+        return this.list().filter(r => r.status !== 'failed');
     }
 
     async save() {
@@ -61,9 +77,64 @@ export class ResumableStore {
     private _state: 'active' | 'shutdown_requested' | 'suspending' | 'suspended' = 'active';
     get state() { return this._state }
 
+    private setState(state: ResumableStore['_state']) {
+        this._state = state;
+        this.emit('change');
+    }
+
+    /** The resumables worth showing a user (running, suspended by a shutdown, or failed to resume) */
+    list(): ResumableInfo[] {
+        const rows: ResumableInfo[] = [];
+        for (const p of this.tracked_tasks.keys()) {
+            const d = p.describe();
+            if (!d) continue;
+            const status = p instanceof FailedResume ? 'failed' : this._state !== 'active' && p.suspended ? 'suspended' : 'running';
+            rows.push({ ...d, id: objectId(p), status });
+        }
+        return rows;
+    }
+
+    private find(id: number) {
+        for (const p of this.tracked_tasks.keys()) {
+            if (p.describe() && objectId(p) === id) return p;
+        }
+        throw new Error("That resumable no longer exists");
+    }
+
+    /** Stop a running resumable; it fails with a cancellation, as if it had been cancelled by its own code */
+    cancel(id: number, reason: string) {
+        const p = this.find(id);
+        if (p instanceof FailedResume) throw new Error("A failed resume can't be cancelled; discard it instead");
+        if (this._state !== 'active') throw new Error("The app is shutting down");
+        if (!(p instanceof CancellableResumablePromise) || !p.isCancellable()) throw new Error("This resumable can't be cancelled");
+        p.cancel(reason);
+    }
+
+    /** Give up on a failed resume: it (and failures that only wait on it) stops being persisted, so it is not retried at the next start */
+    discard(id: number) {
+        const p = this.find(id);
+        if (!(p instanceof FailedResume)) throw new Error("This resumable has not failed");
+        if (this._state !== 'active') throw new Error("The app is shutting down");
+        // Collect before rejecting: settled dependencies are swapped out of the dependents' lists
+        const doomed = new Set<FailedResume>([p]);
+        for (let grew = true; grew;) {
+            grew = false;
+            for (const t of this.tracked_tasks.keys()) {
+                if (t instanceof FailedResume && !doomed.has(t) && t.dependencies.some(d => d instanceof FailedResume && doomed.has(d))) {
+                    doomed.add(t);
+                    grew = true;
+                }
+            }
+        }
+        doomed.forEach(f => f.discard());
+    }
+
     private onNonSuspendableClear: () => void;
 
     protected tracked_tasks = new Map<ResumablePromise, TrackerEntry>();
+
+    /** Number of resumables currently tracked (running or suspended) */
+    get size() { return this.tracked_tasks.size }
 
     readonly computeBatcher = new Batcher(() => {
         this.checkAllSuspended();
@@ -79,6 +150,7 @@ export class ResumableStore {
         const untrack = () => {
             this.tracked_tasks.delete(promise);
             this.checkAllSuspended();
+            this.emit('change');
         }
         // NB: Not `finally()` - that re-throws rejections into a Promise nobody handles
         const track_promise = promise.then(untrack, untrack, true);
@@ -87,6 +159,22 @@ export class ResumableStore {
             resumable: promise,
             tracking_callbacks: track_promise,
         })
+        this.announceTracked();
+    }
+
+    private announcePending = false;
+    /**
+     * `track` runs from the `ResumablePromise` constructor, before the subclass (and whoever called `new`, eg
+     * `@resumable` setting `scope`) has finished setting it up. Listeners (`list()`) must not see it half-built, so
+     * new entries are announced once the current synchronous work is done; a burst of them is one `change`.
+     */
+    private announceTracked() {
+        if (this.announcePending) return;
+        this.announcePending = true;
+        queueMicrotask(() => {
+            this.announcePending = false;
+            this.emit('change');
+        });
     }
 
     private checkAllSuspended() {
@@ -116,7 +204,7 @@ export class ResumableStore {
     }
 
     private async _suspendAndSerialize({ timeout = 5 }: { timeout?: number } = {}) {
-        this._state = 'shutdown_requested';
+        this.setState('shutdown_requested');
         logPluginClientMessage("Resumable", "debug", "Shutting down resumables")
 
         const track_states = [...this.tracked_tasks.values()];
@@ -140,7 +228,7 @@ export class ResumableStore {
             logPluginClientMessage("Resumable", "warn", "ResumablePromises failed to resolve. Force Suspending.")
         })
 
-        this._state = 'suspending';
+        this.setState('suspending');
         logPluginClientMessage("Resumable", "debug", "Suspending remaining resumables")
 
         // Force cleanup unsuspended Resumables
@@ -170,7 +258,7 @@ export class ResumableStore {
         Case is solved - x is not serializable
         */
 
-        this._state = 'suspended';
+        this.setState('suspended');
         logPluginClientMessage("Resumable", "debug", "Resumables suspended")
 
         // Serialize and return

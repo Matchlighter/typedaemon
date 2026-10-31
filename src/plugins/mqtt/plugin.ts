@@ -6,6 +6,8 @@ import { BaseInstance, HyperWrapper } from "../../hypervisor/managed_apps";
 import { Plugin } from "../base";
 import { SUPERVISOR_API } from "../supervisor";
 import { mqttApi } from "./api";
+import { HA_DISCOVERY_PREFIX } from "./constants";
+import { aggregateMqttState } from "./connection_state";
 import './mqtt_patches';
 
 type ExtMqttClient = mqtt.MqttClient & { shutdown: () => Promise<any> };
@@ -23,6 +25,20 @@ export class MqttPlugin extends Plugin<MQTTPluginConfig> {
     readonly api = mqttApi(this);
 
     private applicationConnections = new Map<BaseInstance<any>, ExtMqttClient>()
+
+    get connectionState() {
+        return aggregateMqttState([this._ownConnection, ...this.applicationConnections.values()].filter(Boolean));
+    }
+
+    get statusSummary() {
+        const rows = [{ label: 'Discovery', value: `prefix ${HA_DISCOVERY_PREFIX}/` }];
+        if (!this.shouldSilenceSystem()) rows.push({ label: 'System topic', value: `${this.td_system_topic}/` });
+        return rows;
+    }
+
+    get connectionTarget() {
+        return this.config.url || this.resolveConnectionConfig().host;
+    }
 
     private _ownConnection: ExtMqttClient;
     private establishOwnConnection() {
@@ -135,6 +151,10 @@ export class MqttPlugin extends Plugin<MQTTPluginConfig> {
         // Avoid re-logging duplicate traces while reconnecting
         let last_message;
 
+        for (const event of ["connect", "close", "offline", "reconnect", "end"] as const) {
+            client.on(event as any, () => this.connectionChanged());
+        }
+
         client.on("connect", () => {
             if (client.disconnecting || client.disconnected) return;
 
@@ -206,6 +226,12 @@ export class MqttPlugin extends Plugin<MQTTPluginConfig> {
                 this.ownConnection.once("connect", () => resolve(undefined));
             })
         }
+    }
+
+    reconnect() {
+        const conns = [this._ownConnection, ...this.applicationConnections.values()].filter(Boolean);
+        if (!conns.length) throw new Error('No MQTT connections to reconnect');
+        for (const conn of conns) conn.reconnect();
     }
 
     configuration_updated(new_config: MQTTPluginConfig, old_config: MQTTPluginConfig) {

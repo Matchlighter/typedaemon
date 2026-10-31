@@ -13,6 +13,7 @@ export class PluginInstance extends BaseInstance<PluginConfiguration, Plugin> {
         const file = lopts.file && path.resolve(this.hypervisor.working_directory, lopts.file);
         return {
             tag: chalk.blueBright`Plugin: ${this.id}`,
+            source: { kind: 'plugin', id: this.id },
             manager: { file, level: lopts?.level },
             user: { file, level: lopts?.level },
         }

@@ -1,0 +1,6 @@
+/* App Config tab */
+.cfg { display: grid; gap: 12px; }
+.cfg-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.cfg-file { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cfg-path { min-width: 0; color: var(--text2); font-size: 13px; overflow-wrap: anywhere; }
+.cfg-title { color: var(--text); font-weight: 600; font-size: 15px; margin-right: 4px; }

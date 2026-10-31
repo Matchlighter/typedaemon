@@ -1,0 +1,7 @@
+/* ProportionBar: thin stacked state bar */
+.pbar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 2px; }
+.pbar > span { min-width: 0; }
+.pbar-ok { background: var(--okf); }
+.pbar-run { background: var(--runf); }
+.pbar-err { background: var(--errf); }
+.pbar-off { background: var(--offf); }

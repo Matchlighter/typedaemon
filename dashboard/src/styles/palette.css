@@ -1,0 +1,19 @@
+/* Command palette */
+.pal { width: min(560px, calc(100vw - 32px)); max-height: 70vh; margin: 12vh auto auto; padding: 0; border-radius: 14px; box-shadow: var(--shadow-modal); overflow: hidden; color: var(--text); }
+.pal[open] { display: flex; flex-direction: column; }
+.pal::backdrop { background: var(--scrim); }
+.pal-input { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--div); color: var(--text2); }
+.pal-input input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font: 400 15px var(--font); outline: 0; }
+.pal-input kbd { font: 500 11px var(--mono); padding: 2px 6px; border: 1px solid var(--div); border-radius: 4px; color: var(--text2); }
+.pal-list { overflow-y: auto; padding-bottom: 8px; }
+.pal-group-lbl { padding: 12px 16px 4px; }
+.pal-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 16px; cursor: pointer; }
+.pal-row[aria-selected="true"] { background: var(--prib); }
+.pal-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-label mark { background: transparent; color: inherit; font-weight: 700; text-decoration: underline; }
+.pal-sub { color: var(--text2); font-size: 12.5px; white-space: nowrap; }
+.pal-empty { padding: 16px; color: var(--text2); }
+@media (max-width: 640px) { .pal { margin-top: 8vh; } }
+
+/* Failed palette action: floats over the page until clicked */
+.pal-toast { position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 30; max-width: min(480px, calc(100vw - 32px)); padding: 8px 12px; border-radius: 8px; background: var(--errb); color: var(--errf); box-shadow: 0 4px 16px rgba(0, 0, 0, .3); cursor: pointer; }

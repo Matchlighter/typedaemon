@@ -11,6 +11,7 @@ beforeEach(() => {
     (current as any).application = {
         cleanups: { unorderedGroup: () => ({ addExposed: (f: () => void) => f }) },
         logClientMessage,
+        schedules: { add: () => ({ armed() { }, fired() { }, remove() { } }) },
         invoke: (f: () => any) => f(),
     };
 });

@@ -1,5 +1,7 @@
 
+import { mapStackTrace } from "../app_transformer/source_maps";
 import chalk from 'chalk';
+import type { AppLifecycle } from '../common/shared_types';
 import deepEqual from 'deep-eql';
 import extract_comments from 'extract-comments';
 import * as fs from 'fs';
@@ -13,10 +15,14 @@ import { debounce } from "@matchlighter/common_library/limit";
 import { TYPEDAEMON_PATH, fileExists, timeoutPromise, trim, watchFile } from '../common/util';
 import { PluginNotStartedError, flushPluginAnnotations } from '../plugins/base';
 import { Application } from '../runtime/application';
-import { ResumableStore, resumable } from '../runtime/resumable';
+import { RESUMABLE_STATE_FILE, ResumableStore, resumable } from '../runtime/resumable';
+import { ScheduleRegistry } from '../runtime/schedule/registry';
+import { ScriptRegistry } from '../runtime/script/registry';
 import { getOrMakeMapEntry } from '../util';
 import { AppConfiguration } from "./config_app";
+import { persistenceFile } from './app_paths';
 import { DestroyerStore } from './destroyer';
+import { logTap } from './log_tap';
 import { BaseInstance, InstanceLogConfig } from './managed_apps';
 import { RequireRestart, configChangeHandler } from './managed_config_events';
 import { installDependencies } from './packages';
@@ -29,7 +35,7 @@ export interface ApplicationMetadata {
     dependencies?: any;
 }
 
-export type AppLifecycle = 'initializing' | 'compiling' | 'starting' | 'started' | 'stopping' | 'stopped' | 'dead';
+export type { AppLifecycle };
 
 export type MyConditionalKeys<Base, Condition> = {
     [Key in keyof Base]: Base[Key] extends Condition ? Base[Key] : never;
@@ -58,7 +64,13 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
     }
 
     resumableStore: ResumableStore;
+    /** The scripts the app defines and their runs */
+    readonly scripts = new ScriptRegistry();
+    /** The schedules the app registered (`schedule`, `run_every`, `run_in`, `run_at`) and when they fire */
+    readonly schedules = new ScheduleRegistry();
     persistedStorage: PersistentStorage;
+    /** Ids of the plugins this instance has asked for (what it depends on, as far as it has run) */
+    readonly usedPlugins = new Set<string>();
     destroyerStore: DestroyerStore;
 
     private _weakLocalStores: WeakMap<any, any> = new WeakMap();
@@ -82,6 +94,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         const file = this.loggerFile();
         return {
             tag: chalk.blue`App: ${this.id}`,
+            source: { kind: 'app', id: this.id },
             manager: {
                 file: file,
                 level: lopts?.system_level,
@@ -125,7 +138,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
     @debounce({ timeToStability: 2000, unref: true })
     private restartAfterSourceChange() {
         this.logMessage("info", `Source dependency updated. Restarting`)
-        this.namespace.reinitializeInstance(this);
+        this.namespace.reinitializeInstance(this, 'source_change');
     }
 
     lifecycle_hooks: Partial<Record<LifecycleHookType, (() => void)[]>> = {};
@@ -147,7 +160,13 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
     appModule: any;
 
+    private _lastError?: { message: string; phase: AppLifecycle; stack?: string[]; logId?: number };
+    /** Why startup failed and in which phase. Instances are not reused across restarts, so this is only ever set while `dead` */
+    get lastError() { return this._lastError }
+
     async _start() {
+        // Log records at or below this id predate this start; the failure's log line is among the later ones
+        const logMark = logTap.lastId;
         try {
             if (!await fileExists(this.entrypoint)) {
                 throw new Error(`Application entrypoint '${this.entrypoint}' not found`)
@@ -252,7 +271,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             this.transitionState("starting");
 
             this.resumableStore = new ResumableStore({
-                file: path.join(this.operating_directory, ".resumable_state.json"),
+                file: path.join(this.operating_directory, RESUMABLE_STATE_FILE),
             }, {});
 
             if (this.options.export || module[this.options.export || 'default']) {
@@ -300,7 +319,8 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             await this.invoke(async () => {
                 // TODO Skip if initialize already did this
                 await flushPluginAnnotations(this.instance);
-                await this.resumableStore.load();
+                const resumed = await this.resumableStore.load();
+                if (resumed.length) this.hypervisor.emit('app_resumed', this, resumed.map(r => r.method));
             })
 
             // We want this to run before the userspace app has completely shutdown
@@ -333,6 +353,10 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
                 });
             }
 
+            // The newest error this app logged during this start (usually the line above; a plugin error logs its own)
+            const logRecord = logTap.findLast({ sources: [{ kind: 'app', id: this.id }], afterId: logMark, match: r => r.level === 'error' });
+            this._lastError = { message: ex?.message ?? String(ex), phase: this.state, stack: ex instanceof Error ? mapStackTrace(ex) : undefined, logId: logRecord?.id };
+
             // There's "dead" and "mostly dead" - we go for "mostly dead" so that watchers are kept live and can trigger a restart
             this.transitionState("dead");
             await this.cleanups.cleanup({ except_tags: ["watcher"] });
@@ -343,19 +367,17 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
 
     private async loadPersistedStorage() {
         this.logMessage("debug", `Loading PersistentStorage`);
-        this.persistedStorage = new PersistentStorage(path.join(this.operating_directory, ".persistence.jkv"));
+        this.persistedStorage = new PersistentStorage(this.persistence_file);
         await this.persistedStorage.load();
         this.cleanups.append(() => this.persistedStorage.dispose());
     }
 
     /**
-     * Cleanup all traces of the application. The instance must not have been started.
-     *
-     * The app's own logs are deleted too, so the instance should be configured to log elsewhere (eg the Hypervisor log).
+     * Run the destroyers an earlier run registered for this app (eg remove its entities from HA), then release what they
+     * acquired. The instance must not have been started. Rejects if any destroyer failed. Does not delete the operating directory.
      */
-    async destroy_all() {
+    async run_destroyers() {
         if (this.state != "initializing") throw new Error(`Cannot destroy an application that has been started`);
-        if (!await exists(this.operating_directory)) return;
 
         try {
             await this.loadPersistedStorage();
@@ -371,8 +393,6 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             // Release anything acquired by the destroyers (eg MQTT connections) and flush storage before deleting it
             await this._shutdown();
         }
-
-        await fs.promises.rm(this.operating_directory, { recursive: true, force: true });
     }
 
     private generateOpPackageJson({ dependencies }) {
@@ -425,6 +445,11 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
         return this.hypervisor.defaultAppOperatingDirectory(this.id);
     }
 
+    /** The file this app's persisted storage lives in */
+    get persistence_file() {
+        return persistenceFile(this.operating_directory);
+    }
+
     get source_directory() {
         return path.dirname(this.entrypoint);
     }
@@ -455,7 +480,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             const handler = (state: AppLifecycle) => {
                 if (state == "started") {
                     plh.off("lifecycle", handler);
-                    this.namespace.reinitializeInstance(this);
+                    this.namespace.reinitializeInstance(this, 'plugin_started');
                 }
             }
 

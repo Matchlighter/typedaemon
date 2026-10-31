@@ -1,6 +1,7 @@
 
 import deepEqual from "deep-eql";
 
+import { changedPaths } from "../common/changed_paths";
 import { BaseInstance, BaseInstanceClient } from "./managed_apps";
 
 export interface CCHBaseInstanceClient<C> extends BaseInstanceClient<BaseInstance<C>> {
@@ -60,7 +61,7 @@ export function configChangeHandler<C>(instance: BaseInstance<C, CCHBaseInstance
             await prehandle(prehandleContext);
         } catch (ex) {
             if (ex instanceof RequireRestart) {
-                await instance.namespace.reinitializeInstance(instance);
+                await instance.namespace.reinitializeInstance(instance, 'config_change', changedPaths(ocfg, ncfg));
                 return;
             } else {
                 throw ex;

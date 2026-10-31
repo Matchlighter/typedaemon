@@ -11,7 +11,29 @@ export interface FullySerializedResumable {
     type: string;
     dependencies?: string[];
     sideeffect_free?: boolean;
+    /** Times a resume of this failed so far; kept so the dashboard can say how long it has been failing */
+    failed_attempts?: number;
     data: any;
+}
+
+/** What a resumable is blocked on */
+export type ResumableWait =
+    | { kind: 'sleep'; until: number }
+    | { kind: 'condition'; condition: string; since: number };
+
+/** User-visible description of a resumable (a `@resumable` method call, a suspend-script run, or one that failed to resume) */
+export interface ResumableDescription {
+    type: 'resumable' | 'script';
+    /** Resumable context id of the owner (`APPLICATION` for the app itself) */
+    owner: string;
+    method: string;
+    params: unknown[];
+    /** epoch ms */
+    startedAt: number;
+    /** App restarts survived */
+    restarts: number;
+    wait?: ResumableWait;
+    failure?: { error: string; attempts: number };
 }
 
 type PromiseReference = number;
@@ -80,7 +102,8 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
                     loaded = new FailedResume(
                         ex,
                         pdata,
-                        pdata.dependencies.map(dep => load(dep))
+                        pdata.dependencies.map(dep => load(dep)),
+                        (pdata.failed_attempts ?? 0) + 1,
                     );
                 }
 
@@ -162,6 +185,7 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
                 sdata = new SettledPromise({ result: "reject_error", value: "Error serializing promise during suspension" }).serialize(context);
             }
             srepr.data = sdata;
+            if (obj instanceof FailedResume) srepr.failed_attempts = obj.attempts;
 
             for (let aw of obj.awaited_by()) {
                 discover(aw);
@@ -212,6 +236,20 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
     }
 
     protected readonly _store: ResumableStore;
+
+    /** Plumbing (sleepers, callbacks, `all`) is nothing a user started: only resumables worth listing describe themselves */
+    describe(): ResumableDescription | undefined { return undefined }
+
+    /** What this is blocked on, if it is: its own wait, else that of whatever it awaits */
+    describeWait(): ResumableWait | undefined {
+        for (const p of this.awaiting_for()) {
+            const w = p instanceof ResumablePromise ? p.describeWait() : undefined;
+            if (w) return w;
+        }
+    }
+
+    /** epoch ms this promise was created (or, if resumed, loaded) */
+    readonly createdAt = Date.now();
 
     then<TResult1 = T, TResult2 = never>(
         onfulfilled?: (value: T) => TResult1 | PromiseLike<TResult1>,
@@ -564,6 +602,8 @@ export class FailedResume extends ResumablePromise<any> {
         readonly error: Error,
         protected readonly serialized: FullySerializedResumable,
         protected readonly loaded_dependencies: ResumablePromise[],
+        /** Resume attempts so far, this one included */
+        readonly attempts = 1,
     ) {
         super();
 
@@ -571,6 +611,28 @@ export class FailedResume extends ResumablePromise<any> {
         trackPromiseList(loaded_dependencies, null, {
             always_swap: true,
         });
+    }
+
+    /** Other failed resumes that wait on this one */
+    get dependencies(): readonly ResumablePromise[] { return this.loaded_dependencies }
+
+    describe(): ResumableDescription | undefined {
+        const data = this.serialized.data;
+        if (!data?.scope?.method) return undefined;
+        return {
+            type: data.script ? 'script' : 'resumable',
+            owner: String(data.scope.owner),
+            method: data.scope.method,
+            params: data.scope.parameters ?? [],
+            startedAt: data.started_at ?? this.createdAt,
+            restarts: data.restarts ?? 0,
+            failure: { error: this.error?.message ?? String(this.error), attempts: this.attempts },
+        };
+    }
+
+    /** Give up on it: whatever awaits it sees a cancellation, and it is no longer persisted */
+    discard() {
+        if (!this.settled) this.reject(new PromiseCancelled("Discarded"));
     }
 
     serialize(ctx: SerializeContext) {

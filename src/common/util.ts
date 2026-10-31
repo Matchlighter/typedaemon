@@ -70,6 +70,15 @@ export function pojso(value: any) {
     )
 }
 
+/** Copy of the plain objects and arrays in `value`; anything else (functions, class instances) is shared */
+export function cloneTree<T>(value: T): T {
+    if (Array.isArray(value)) return value.map(cloneTree) as T;
+    if (value && typeof value == 'object' && pojso(value)) {
+        return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, cloneTree(v)])) as T;
+    }
+    return value;
+}
+
 /** Whether `String(value)` would just yield the `[object Tag]` fallback (eg class instances without a `toString`) */
 export function has_default_to_string(value: object) {
     // Compare results instead of functions so objects from other realms (eg the app sandbox) are handled
@@ -328,3 +337,6 @@ export class SimpleStore<T extends {}> {
         this.savedHash = hash;
     }
 }
+
+/** Name of a callback as the dashboard shows it (a bound method is still the method) */
+export const callbackName = (func: Function) => func.name.replace(/^bound /, '') || 'anonymous';

@@ -13,7 +13,7 @@ import { Hypervisor } from "./hypervisor";
 import { logMessage } from "./logging";
 import { PersistentStorage } from "./persistent_storage";
 
-interface CrossAppCall {
+export interface CrossAppCall {
     uuid: string;
     source_app: string;
     target_app: string;
@@ -24,6 +24,8 @@ interface CrossAppCall {
     status: "pending" | "started" | "returning";
     awaited: boolean;
     start_by?: number;
+    /** epoch ms the call was made (absent on calls persisted by older versions) */
+    created_at?: number;
 }
 
 export interface CrosscallConfig {
@@ -47,6 +49,25 @@ class AppScopedStore {
 export class CrossCallStore {
     constructor(readonly hypervisor: Hypervisor) {
         this.storage = new PersistentStorage(path.join(hypervisor.operations_directory, ".cross_calls.jkv"))
+    }
+
+    /** Every persisted call that has not completed yet */
+    listCalls(): CrossAppCall[] {
+        return this.storage.keys.map(k => this.storage.getValue<CrossAppCall>(k)).filter(Boolean);
+    }
+
+    /** Give up a call still `pending` (not yet run by its target); the caller's promise rejects. Throws when it is not pending */
+    cancelCall(uuid: string) {
+        const call = this.storage.getValue<CrossAppCall>(uuid);
+        if (!call) throw new UnknownCrossCallError(`No such cross-app call: ${uuid}`);
+        if (call.status != "pending") throw new CrossCallError(`Call is ${call.status}, only pending calls can be cancelled`);
+        this._awaiterCompleted(uuid, "reject", new Error("Cancelled from the dashboard"));
+    }
+
+    /** `cb` fires whenever a call is created, changes status or is dropped; returns a disposer */
+    onChange(cb: () => void): () => void {
+        this.storage.on('change', cb);
+        return () => { this.storage.off('change', cb) };
     }
 
     private _appData = new WeakMap<ApplicationInstance, AppScopedStore>();
@@ -142,6 +163,7 @@ export class CrossCallStore {
             parameters,
             status: "pending",
             awaited: !config.fire_and_forget,
+            created_at: Date.now(),
         }
 
         if (config.pending_timeout) {
