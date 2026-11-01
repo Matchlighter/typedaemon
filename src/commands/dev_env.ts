@@ -13,93 +13,84 @@ import { dev_types as RUNTIME_DEPENDENCIES } from "../runtime/runtime";
 
 const INSTALL_MODE: 'download' | 'copy' | 'link' = 'copy';
 
-// Packages to keep but skip following their dependencies (to avoid e.g. babel)
-const KEEP_WITHOUT_DEPS = ['typedaemon'];
-const INCLUDE_DEPS = false;
+// Packages whose type definitions are exposed to user code (deps are intentionally not followed, to avoid e.g. babel)
+const TYPE_PACKAGES = [...RUNTIME_DEPENDENCIES, 'typedaemon'];
 
-async function buildPackageList(nmPath: string) {
-    const keptPackages = new Set<string>();
-    for (const pkg of KEEP_WITHOUT_DEPS) {
-        keptPackages.add(pkg);
-    }
+// Records what was copied (pkg -> version) so syncs only touch packages that changed
+const TYPES_MANIFEST = '.td-types.json';
 
-    async function keepPackage(pkgName: string) {
-        if (keptPackages.has(pkgName)) return;
-
-        keptPackages.add(pkgName);
-
-        if (INCLUDE_DEPS) {
-            const pkgpath = path.join(nmPath, pkgName);
-            const pkgjson = path.join(pkgpath, "package.json");
-            if (await fse.pathExists(pkgjson)) {
-                const pkgdata = JSON.parse(await fs.promises.readFile(pkgjson, "utf8"));
-                const deps = { ...pkgdata.dependencies }; //, ...pkgdata.peerDependencies, ...pkgdata.optionalDependencies };
-                for (const dep of Object.keys(deps || {})) {
-                    await keepPackage(dep);
-                }
-            }
-        }
-    }
-
-    for (const pkg of RUNTIME_DEPENDENCIES) {
-        await keepPackage(pkg);
-    }
-
-    return keptPackages;
-}
-
-async function listPackages(nmPath: string) {
-    const dircontents = await fse.readdir(nmPath);
-    const packages = new Set<string>();
-    for (const item of dircontents) {
-        if (item.startsWith('.')) continue;
-        const itempath = path.join(nmPath, item);
-        if ((await fse.stat(itempath)).isDirectory()) {
-            if (item.startsWith('@')) {
-                const subcontents = await fse.readdir(itempath);
-                for (const subitem of subcontents) {
-                    if (subitem.startsWith('.')) continue;
-                    const subitempath = path.join(itempath, subitem);
-                    if ((await fse.stat(subitempath)).isDirectory()) {
-                        packages.add(`${item}/${subitem}`);
-                    }
-                }
-            } else {
-                packages.add(item);
-            }
-        }
-    }
-    return packages;
-}
-
+/** Copy only `.d.ts` and `package.json` files, skipping nested node_modules. Async to keep the event loop free. */
 async function copyPackageTypeDefs(srcpkg: string, destpkg: string) {
-    await fse.mkdirp(destpkg);
-
-    await fse.copy(srcpkg, destpkg, {
-        filter: (src, dest) => {
-            if (src.endsWith('.d.ts') || src.endsWith('package.json')) {
-                return true;
-            }
-            if (fs.statSync(src).isDirectory()) {
-                return true;
-            }
-            return false;
+    for (const entry of await fs.promises.readdir(srcpkg, { withFileTypes: true })) {
+        const src = path.join(srcpkg, entry.name);
+        if (entry.isDirectory()) {
+            if (entry.name !== 'node_modules') await copyPackageTypeDefs(src, path.join(destpkg, entry.name));
+        } else if (entry.name.endsWith('.d.ts') || entry.name === 'package.json') {
+            await fse.mkdirp(destpkg);
+            await fs.promises.copyFile(src, path.join(destpkg, entry.name));
         }
-    });
+    }
 }
 
-async function copyTypeDefs(src: string, dest: string) {
-    const keptPackages = await buildPackageList(src);
-    const packages = await listPackages(src);
-    for (const pkg of packages) {
-        if (!keptPackages.has(pkg)) continue;
+async function readPackageVersion(dir: string): Promise<string | undefined> {
+    try {
+        return JSON.parse(await fs.promises.readFile(path.join(dir, "package.json"), "utf8")).version;
+    } catch {
+        return undefined;
+    }
+}
 
-        const srcpkg = path.join(src, pkg);
-        const destpkg = path.join(dest, pkg);
+/** Map of package name -> {source dir, version} that should be present in the dev env */
+async function resolveTypeSources(nmpath: string) {
+    const srcRoot = TD_DEVELOPER_MODE ? path.join(__package_dir, 'node_modules') : TD_MODULES_PATH;
+    const sources = new Map<string, { dir: string, version: string }>();
+    for (const pkg of TYPE_PACKAGES) {
+        let dir = path.join(srcRoot, pkg);
+        let version: string | undefined;
+        if (pkg === 'typedaemon' && TD_DEVELOPER_MODE) {
+            // TD isn't installed as a module in dev mode; use the checkout (unless the env already lives inside it)
+            if (nmpath.startsWith(__package_dir)) continue;
+            dir = __package_dir;
+            version = TD_VERSION_PRECISE;
+        } else {
+            version = await readPackageVersion(dir);
+        }
+        if (version) sources.set(pkg, { dir, version });
+    }
+    return sources;
+}
+
+async function syncTypeDefs(nmpath: string) {
+    const manifestPath = path.join(nmpath, TYPES_MANIFEST);
+    let manifest: Record<string, string> = {};
+    try {
+        manifest = JSON.parse(await fs.promises.readFile(manifestPath, "utf8"));
+    } catch {
+        // No/invalid manifest: contents are unknown (e.g. legacy full copy), so start clean
+        await fse.rm(nmpath, { recursive: true, force: true });
+    }
+    await fse.mkdirp(nmpath);
+
+    const sources = await resolveTypeSources(nmpath);
+
+    for (const pkg of Object.keys(manifest)) {
+        if (!sources.has(pkg)) {
+            await fse.rm(path.join(nmpath, pkg), { recursive: true, force: true });
+            delete manifest[pkg];
+        }
+    }
+
+    for (const [pkg, { dir, version }] of sources) {
+        const dest = path.join(nmpath, pkg);
+        if (manifest[pkg] === version && await fse.pathExists(dest)) continue;
 
         console.log(` - Copying type definitions for ${pkg}`);
-        await copyPackageTypeDefs(srcpkg, destpkg);
+        await fse.rm(dest, { recursive: true, force: true });
+        await copyPackageTypeDefs(dir, dest);
+        manifest[pkg] = version;
     }
+
+    await fs.promises.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
 }
 
 export async function syncDevEnv(wdir: string | UtilityHypervisor) {
@@ -130,24 +121,7 @@ export async function syncDevEnv(wdir: string | UtilityHypervisor) {
         }
         await installDependencies(depOpts, deps);
     } else if (INSTALL_MODE == 'copy') {
-        if (await fse.exists(nmpath)) {
-            await fse.rm(nmpath, { recursive: true });
-        }
-        await fse.mkdirp(nmpath);
-
-        if (TD_DEVELOPER_MODE) {
-            if (nmpath.startsWith(__package_dir)) {
-                await copyTypeDefs(path.join(__package_dir, 'node_modules'), nmpath);
-            } else {
-                const tdnmpath = path.join(nmpath, 'typedaemon/node_modules');
-                await copyTypeDefs(tdnmpath, nmpath);
-
-                // TD Itself
-                await copyPackageTypeDefs(__package_dir, path.join(nmpath, 'typedaemon'));
-            }
-        } else {
-            await copyTypeDefs(TD_MODULES_PATH, nmpath);
-        }
+        await syncTypeDefs(nmpath);
     } else if (INSTALL_MODE == 'link') {
         if (await fse.exists(nmpath)) {
             await fse.rm(nmpath, { recursive: true });
