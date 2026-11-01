@@ -53,11 +53,17 @@ interface CountedSubscription {
     callbacks: Set<(...args: any[]) => void>;
     unsubscribe: () => any;
 }
+/**
+ * The wrapper callbacks `SubCountingConnection` registers with the library. On reconnect the library re-issues
+ * `this.subscribeMessage(wrapper, msg)` itself; those calls must reach the library untouched (not be counted).
+ */
+const COUNTER_WRAPPERS = new WeakSet<Function>();
+
 export class SubCountingConnection extends Connection {
     private subscription_counts: Record<string, CountedSubscription> = {};
 
     private async createCounterSubscription(counter: CountedSubscription) {
-        const unsubscribe = await super.subscribeMessage((...args) => {
+        const wrapper = (...args: any[]) => {
             for (let h of counter.callbacks) {
                 try {
                     const result = h(...args) as any;
@@ -68,12 +74,17 @@ export class SubCountingConnection extends Connection {
                     handle_client_error(ex);
                 }
             }
-        }, counter.message, { resubscribe: true });
+        };
+        COUNTER_WRAPPERS.add(wrapper);
+        const unsubscribe = await super.subscribeMessage(wrapper, counter.message, { resubscribe: true });
 
         counter.unsubscribe = unsubscribe;
     }
 
     async subscribeMessage<Result>(callback: (result: Result) => void, subscribeMessage: MessageBase, options?: { resubscribe?: boolean; }): Promise<() => Promise<void>> {
+        // The library's own resubscribe-after-reconnect: pass through (it restores the server-side subscription)
+        if (COUNTER_WRAPPERS.has(callback)) return super.subscribeMessage(callback, subscribeMessage, options);
+
         const hash_key = objectHash(subscribeMessage);
 
         // TODO Support resubscribe: false? Use case?
@@ -100,17 +111,6 @@ export class SubCountingConnection extends Connection {
                 delete this.subscription_counts[hash_key];
                 await counter.unsubscribe();
             }
-        }
-    }
-
-    async forceResubscribe() {
-        for (let counter of Object.values(this.subscription_counts)) {
-            try {
-                await counter.unsubscribe();
-            } catch (ex) {
-                // ignore
-            }
-            await this.createCounterSubscription(counter);
         }
     }
 }
@@ -362,7 +362,6 @@ export class HomeAssistantPlugin extends Plugin<HomeAssistantPluginConfig> {
             this[HyperWrapper].logMessage("info", `HA Websocket Ready`)
             this.setConnectionState('connected');
             void this.refreshBaseUrl();
-            this._ha_api.forceResubscribe();
         })
         this._ha_api.addEventListener("disconnected", () => {
             this[HyperWrapper].logMessage("warn", `HA Websocket Disconnected`)
