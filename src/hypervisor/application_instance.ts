@@ -350,7 +350,7 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
                     tags: {
                         application: this.id,
                     }
-                });
+                }, 'app');
             }
 
             // The newest error this app logged during this start (usually the line above; a plugin error logs its own)

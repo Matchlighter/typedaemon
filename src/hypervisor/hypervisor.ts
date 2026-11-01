@@ -1,6 +1,6 @@
 
-import * as Sentry from "@sentry/node";
-import { captureExceptionWithSourceMaps } from "./sentry";
+import { captureExceptionWithSourceMaps, configureSentry } from "./sentry";
+import { isHaConnectionLost } from "../plugins/home_assistant/errors";
 
 import { AsyncLocalStorage } from "async_hooks";
 import chalk from "chalk";
@@ -178,11 +178,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
             await saveAppRegistry(this)
         })
 
-        if (this.currentConfig.sentry?.dsn) {
-            Sentry.init({
-                dsn: this.currentConfig.sentry.dsn,
-            });
-        }
+        configureSentry(this.currentConfig.sentry);
 
         await this.startControlServer();
         await this.startDashboard();
@@ -240,6 +236,12 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         })
 
         process.on("unhandledRejection", (err: any, origin) => {
+            if (isHaConnectionLost(err)) {
+                // A request was in flight when the HA socket dropped; the plugin reconnects on its own
+                console.warn("Unhandled rejection: Home Assistant connection lost");
+                return;
+            }
+
             const app = current.application;
             if (app) {
                 if (app.state == "dead" || app.state == "stopped") {

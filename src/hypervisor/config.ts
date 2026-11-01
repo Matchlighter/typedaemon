@@ -48,7 +48,10 @@ export interface Configuration {
     };
 
     sentry?: {
-        dsn: string;
+        /** DSN for errors from your applications (failed startups, unhandled errors in app code). App errors are not reported when unset. */
+        dsn?: string;
+        /** DSN for system errors (TypeDaemon itself, plugins). Unset: TypeDaemon's default; `null` or `''`: don't report system errors. */
+        system_dsn?: string | null;
     }
 
     /**
