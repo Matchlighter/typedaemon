@@ -246,6 +246,7 @@ export async function createApplicationVM(app: ApplicationInstance) {
             app.cleanups.append(sourceMapCleanup);
 
             const transpiled = result.code + `;\n` + STD_APPEND;
+            // console.log(filename, transpiled);
             return transpiled;
         },
 

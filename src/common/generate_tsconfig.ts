@@ -101,7 +101,7 @@ export async function saveGeneratedTsconfig(hv: Hypervisor) {
     })
 
     let tscfg: TsConfigJson = {
-        compilerOptions: {
+        "compilerOptions": {
             "allowSyntheticDefaultImports": false,
             "lib": [
                 "es6",
@@ -121,8 +121,10 @@ export async function saveGeneratedTsconfig(hv: Hypervisor) {
             "resolveJsonModule": true,
             "paths": paths,
         },
-        // Dot-directories are skipped by default; pull in generated types and keep the default of including everything else
-        "include": ["../**/*", "./gen.*.d.ts"],
+        "exclude": [
+            "./source_environments",
+            "./app_environments",
+        ]
     }
     tscfg = tsconfigMerger.mergeConfigs(tscfg, { compilerOptions: { paths: cfg.path_maps || {} } }, cfg.tsconfig || {});
     await fse.mkdirp(hv.operations_directory);

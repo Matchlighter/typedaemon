@@ -42,3 +42,13 @@ test_setup
 experiments
 __pycache__/
 /dashboard/node_modules
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
+
+# bv (b9s) local config and caches
+.bv/
