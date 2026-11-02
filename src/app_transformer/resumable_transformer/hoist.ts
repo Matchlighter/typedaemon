@@ -23,6 +23,11 @@ export function hoist(funPath: NodePath<Function>, contextId) {
 
   const stateMemExpr = t.memberExpression(contextId, t.identifier("state"))
 
+  // Identifier nodes that refer to a hoisted binding. Resolved up-front, while scope info
+  // is still accurate (hoisting below removes the bindings), so the rewrite pass only
+  // touches real references and leaves shadowing nested-function params/locals alone.
+  const hoistedRefs = resolveHoistedRefs(funPath);
+
   function varDeclToExpr({ node: vdec, scope }, includeIdentifiers) {
     t.assertVariableDeclaration(vdec);
     // TODO assert.equal(vdec.kind, "var");
@@ -95,10 +100,13 @@ export function hoist(funPath: NodePath<Function>, contextId) {
       let node = path.node;
       vars[node.id.name] = node.id;
 
+      const assignId = t.clone(node.id);
+      if (hoistedRefs.has(node.id)) hoistedRefs.add(assignId);
+
       let assignment = t.expressionStatement(
         t.assignmentExpression(
           "=",
-          t.clone(node.id),
+          assignId,
           t.functionExpression(
             path.scope.generateUidIdentifierBasedOnNode(node),
             node.params,
@@ -178,7 +186,7 @@ export function hoist(funPath: NodePath<Function>, contextId) {
   funPath.get("body").traverse({
     Identifier: {
       exit: function (path) {
-        if (!vars[path.node.name] || !isVariableUse(path)) return;
+        if (!hoistedRefs.has(path.node) || !isVariableUse(path)) return;
         const parent = path.parent;
         // `{ x }` -> `{ x: state.x }` (value side only; the key was skipped above)
         if (t.isObjectProperty(parent) && parent.shorthand) parent.shorthand = false;
@@ -214,3 +222,52 @@ export function hoist(funPath: NodePath<Function>, contextId) {
   // return t.variableDeclaration("var", declarations);
   return null;
 };
+
+// Bindings declared by the resumable fn's own body (not nested functions): these become `state.<name>`.
+function collectHoistedBindings(funPath) {
+  const t = util.getTypes();
+  const bindings = new Set();
+  const add = (path, ids) => {
+    for (const name of Object.keys(ids)) {
+      const binding = path.scope.getBinding(name);
+      if (binding) bindings.add(binding);
+    }
+  };
+  funPath.get("body").traverse({
+    VariableDeclaration(path) {
+      for (const dec of path.node.declarations) add(path, t.getBindingIdentifiers(dec.id));
+    },
+    FunctionDeclaration(path) {
+      add(path.parentPath, { [path.node.id.name]: true });
+      path.skip();
+    },
+    FunctionExpression(path) { path.skip(); },
+    ArrowFunctionExpression(path) { path.skip(); },
+  });
+  return bindings;
+}
+
+// Hoisting flattens every binding into one `state` namespace, so bindings that share a name
+// (e.g. a block-scoped `let x` shadowing an outer `x`) get unique names first. Then resolves
+// every Identifier in the body (nested functions included) to the hoisted binding it refers to.
+function resolveHoistedRefs(funPath) {
+  const bindings = collectHoistedBindings(funPath);
+
+  const seen = new Set();
+  for (const binding of bindings) {
+    const name = binding.identifier.name;
+    if (seen.has(name)) {
+      binding.scope.rename(name, binding.scope.generateUid(name));
+    }
+    seen.add(binding.identifier.name);
+  }
+
+  const refs = new Set();
+  funPath.get("body").traverse({
+    Identifier(path) {
+      const binding = path.scope.getBinding(path.node.name);
+      if (binding && bindings.has(binding)) refs.add(path.node);
+    },
+  });
+  return refs;
+}

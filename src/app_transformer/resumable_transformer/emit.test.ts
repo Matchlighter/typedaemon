@@ -169,7 +169,6 @@ const cases: Case[] = [
     },
     {
         name: "catch param shadows an outer hoisted var",
-        bug: "td-pmb",
         body: `const e = await gate(0); try { throw 1; } catch (e) { await gate(1); this.out = [e]; return; }`,
         values: ["outer", 0], expected: [1],
     },
@@ -329,7 +328,6 @@ const cases: Case[] = [
     },
     {
         name: "let shadowing in nested blocks",
-        bug: "td-lu4",
         body: `let x = await gate(0); { let x = 2; await gate(1); this.out = [x]; } this.out.push(x);`,
         values: [1, 0], expected: [2, 1],
     },
