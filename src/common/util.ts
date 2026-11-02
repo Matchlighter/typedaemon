@@ -97,44 +97,57 @@ export function deep_pojso(value: any) {
     return true;
 }
 
-export function serializable(value: any, serializer_keys: (string | symbol | ((v: any) => boolean))[]) {
+/**
+ * Whether `value` is plain data (primitives, plain objects, arrays) or matches one of `serializer_keys`.
+ * Cyclic values are rejected (not JSON-serializable) unless `options.cycles` (eg. for `encodeGraph`).
+ */
+export function serializable(value: any, serializer_keys: (string | symbol | ((v: any) => boolean))[], options: { cycles?: boolean } = {}) {
+    // Objects already checked (true) or being checked (false - revisiting one means a cycle)
+    const visited = new Map<object, boolean>();
+
     function has_key(obj: any) {
         for (let k of serializer_keys) {
             if (typeof k == "function") {
                 if (k(obj)) return true;
             } else {
-                if (value[k]) return true;
+                if (obj[k]) return true;
             }
         }
         return false;
     }
 
-    if (Array.isArray(value)) {
-        for (let av of value) {
-            if (!serializable(av, serializer_keys)) return false;
+    function check(value: any): boolean {
+        if (value === null) return true;
+
+        if (typeof value == "object") {
+            if (visited.has(value)) return visited.get(value) || !!options.cycles;
+
+            let entries: Iterable<any>;
+            if (Array.isArray(value)) {
+                entries = value;
+            } else if (pojso(value)) {
+                entries = Object.values(value);
+            } else {
+                return has_key(value);
+            }
+
+            visited.set(value, false);
+            for (let v of entries) {
+                if (!check(v)) return false;
+            }
+            visited.set(value, true);
+            return true;
         }
+
+        if (typeof value == "function") {
+            return has_key(value);
+        }
+
+        // Primitive
         return true;
     }
 
-    if (value === null) return true;
-
-    if (typeof value == "object") {
-        if (pojso(value)) {
-            for (let [k, v] of Object.entries(value)) {
-                if (!serializable(v, serializer_keys)) return false;
-            }
-            return true;
-        } else {
-            return has_key(value);
-        }
-    }
-
-    if (typeof value == "function") {
-        return has_key(value);
-    }
-
-    // Primitive
-    return true;
+    return check(value);
 }
 
 export class PromiseTimedout extends Error { }

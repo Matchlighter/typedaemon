@@ -30,4 +30,17 @@ describe("serializable", () => {
         expect(serializable({ x: Object.assign(new Thing(), { [custom]: true }) }, [custom])).toBe(true);
         expect(serializable(new Thing(), [v => v instanceof Thing])).toBe(true);
     });
+
+    it("accepts shared (non-cyclic) references", () => {
+        const shared = { a: 1 };
+        expect(serializable({ x: shared, y: [shared] }, [])).toBe(true);
+    });
+
+    it("rejects cycles unless allowed", () => {
+        const cyclic: any = { a: [] };
+        cyclic.a.push(cyclic);
+        expect(serializable(cyclic, [])).toBe(false);
+        expect(serializable(cyclic, [], { cycles: true })).toBe(true);
+        expect(serializable({ c: cyclic, f: () => 1 }, [], { cycles: true })).toBe(false);
+    });
 });

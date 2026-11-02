@@ -2,6 +2,7 @@
 import { ExtensiblePromise } from "@matchlighter/common_library/promises";
 
 import { ResumableStore } from ".";
+import { decodeGraph } from "../../common/graph_json";
 import { serializable } from "../../common/util";
 import { current } from "../../hypervisor/current";
 import { logMessage } from "../../hypervisor/logging";
@@ -623,7 +624,8 @@ export class FailedResume extends ResumablePromise<any> {
             type: data.script ? 'script' : 'resumable',
             owner: String(data.scope.owner),
             method: data.scope.method,
-            params: data.scope.parameters ?? [],
+            // `@resumable` data (see resumable_method decodeResumableFrame); older data has them in `scope`
+            params: (data.frame ? decodeGraph(data.frame).parameters : data.scope.parameters) ?? [],
             startedAt: data.started_at ?? this.createdAt,
             restarts: data.restarts ?? 0,
             failure: { error: this.error?.message ?? String(this.error), attempts: this.attempts },

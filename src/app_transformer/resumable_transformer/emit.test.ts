@@ -40,7 +40,6 @@ const cases: Case[] = [
     // --- loops containing await (td-20n) ---
     {
         name: "for-of with await in body",
-        suspendBug: "td-5et",
         body: `const r = []; for (const x of [1, 2]) { r.push(x + await gate(x - 1)); } this.out = r;`,
         values: [10, 20], expected: [11, 22],
     },
@@ -51,25 +50,21 @@ const cases: Case[] = [
     },
     {
         name: "for-of destructured left with await",
-        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const [a, b] of [[1, 2], [3, 4]]) { r.push(a + b + await gate(i++)); } this.out = r;`,
         values: [100, 200], expected: [103, 207],
     },
     {
         name: "for-of with existing-variable left",
-        suspendBug: "td-5et",
         body: `let x; const r = []; for (x of [1, 2]) { r.push(x * await gate(x - 1)); } this.out = [r, x];`,
         values: [10, 10], expected: [[10, 20], 2],
     },
     {
         name: "for-of break/continue",
-        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const x of [1, 2, 3, 4]) { if (x == 2) continue; if (x == 4) break; r.push(await gate(i++)); } this.out = r;`,
         values: ["a", "b"], expected: ["a", "b"],
     },
     {
         name: "for-of over a Map and a string (non-array iterables)",
-        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const [k, v] of new Map([["a", 1]])) r.push(k + v + await gate(i++)); for (const c of "xy") r.push(c + await gate(i++)); this.out = r;`,
         values: ["!", "1", "2"], expected: ["a1!", "x1", "y2"],
     },
@@ -82,7 +77,6 @@ const cases: Case[] = [
     },
     {
         name: "nested for-of with labeled continue",
-        suspendBug: "td-5et",
         body: `const r = []; let i = 0; outer: for (const a of [1, 2]) { for (const b of [1, 2]) { if (b == 2) continue outer; r.push(a * 10 + b + await gate(i++)); } } this.out = r;`,
         values: [0, 0], expected: [11, 21],
     },
@@ -93,7 +87,6 @@ const cases: Case[] = [
     },
     {
         name: "for-in with await in body",
-        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const k in { a: 1, b: 2 }) r.push(k + await gate(i++)); this.out = r;`,
         values: [1, 2], expected: ["a1", "b2"],
     },
@@ -104,7 +97,6 @@ const cases: Case[] = [
     },
     {
         name: "for-in break",
-        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (var k in { a: 1, b: 2, c: 3 }) { r.push(await gate(i++)); if (k == "b") break; } this.out = [r, k];`,
         values: [1, 2], expected: [[1, 2], "b"],
     },
@@ -149,7 +141,6 @@ const cases: Case[] = [
     },
     {
         name: "optional catch binding + finally",
-        suspendBug: "td-5et",
         body: `const r = []; try { await gate(0); throw 1; } catch { r.push("c"); } finally { r.push(await gate(1)); } this.out = r;`,
         values: [0, "f"], expected: ["c", "f"],
     },
@@ -171,7 +162,6 @@ const cases: Case[] = [
     },
     {
         name: "finally runs on return",
-        suspendBug: "td-5et",
         body: `const r = []; try { await gate(0); r.push("t"); return; } finally { r.push(await gate(1)); this.out = r; }`,
         values: [0, "f"], expected: ["t", "f"],
     },
@@ -182,13 +172,11 @@ const cases: Case[] = [
     },
     {
         name: "break out of try/finally in loop",
-        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const x of [1, 2, 3]) { try { if (x == 2) break; r.push(await gate(i++)); } finally { r.push("f" + x); } } this.out = r;`,
         values: ["a"], expected: ["a", "f1", "f2"],
     },
     {
         name: "continue through finally",
-        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const x of [1, 2]) { try { if (x == 1) continue; r.push(await gate(i++)); } finally { r.push("f" + x); } } this.out = r;`,
         values: ["a"], expected: ["f1", "a", "f2"],
     },
@@ -211,7 +199,6 @@ const cases: Case[] = [
     },
     {
         name: "switch fallthrough with await",
-        suspendBug: "td-5et",
         body: `const r = []; switch (1) { case 1: r.push(await gate(0)); case 2: r.push(await gate(1)); break; case 3: r.push("no"); } this.out = r;`,
         values: ["a", "b"], expected: ["a", "b"],
     },
@@ -222,7 +209,6 @@ const cases: Case[] = [
     },
     {
         name: "continue inside switch inside loop",
-        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const x of [1, 2, 3]) { switch (x) { case 2: continue; default: r.push(await gate(i++)); } } this.out = r;`,
         values: ["a", "b"], expected: ["a", "b"],
     },

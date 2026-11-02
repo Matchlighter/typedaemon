@@ -1,4 +1,5 @@
 import { Deferred, compileApp, flushMicrotasks, useResumableHarness } from "../../../test/helpers/resumable";
+import { decodeResumableFrame } from "./resumable_method";
 import { PromiseCancelled } from "./resumable_promise";
 
 const APP_SOURCE = `
@@ -107,6 +108,16 @@ export class Worker {
     }
 
     @resumable
+    async aliased() {
+        const r = [];
+        const holder = { r, self: null };
+        holder.self = holder;
+        await Deferred.get("b");
+        r.push(1);
+        return this.finish([holder.r.length, holder.self === holder]);
+    }
+
+    @resumable
     async versioned() {
         await Deferred.get("b");
         return this.finish("v1");
@@ -189,11 +200,12 @@ describe("@resumable", () => {
                 expect.objectContaining({
                     type: "@resumable",
                     data: expect.objectContaining({
-                        scope: { owner: "APP", method: "addAfter", parameters: [1] },
+                        scope: { owner: "APP", method: "addAfter" },
                     }),
                 }),
                 expect.objectContaining({ type: "test:deferred" }),
             ]));
+            expect(decodeResumableFrame(persisted.find(p => p.type == "@resumable").data).parameters).toEqual([1]);
             expect(w1.events).toEqual([]);
 
             const w2 = await bootWorker();
@@ -255,6 +267,39 @@ describe("@resumable", () => {
             new Deferred("b");
             w1.compound(1);
             await h.shutdown();
+
+            const w2 = await bootWorker();
+            Deferred.get("b").resolve(2);
+            await flushMicrotasks();
+            expect(w2.events).toEqual([3]);
+        });
+
+        it("preserves shared references and cycles across locals and temporaries", async () => {
+            const w1 = await bootWorker();
+            new Deferred("b");
+            w1.aliased();
+            await h.shutdown();
+
+            const w2 = await bootWorker();
+            Deferred.get("b").resolve(null);
+            await flushMicrotasks();
+            expect(w2.events).toEqual([[1, true]]);
+        });
+
+        it("resumes executor data persisted in the pre-reference-preserving format", async () => {
+            const w1 = await bootWorker();
+            new Deferred("b");
+            w1.compound(1);
+            await h.shutdown();
+
+            // Rewrite as an older version wrote it: state/temporaries/completions/arg/sent/rval as independent plain values
+            const persisted = h.persisted();
+            const entry = persisted.find(p => p.type == "@resumable");
+            const { frame, ...rest } = entry.data;
+            expect(frame).toBeDefined();
+            const { parameters, ...parts } = decodeResumableFrame(entry.data);
+            entry.data = { ...rest, ...parts, scope: { ...rest.scope, parameters } };
+            require("fs").writeFileSync(h.file, JSON.stringify(persisted));
 
             const w2 = await bootWorker();
             Deferred.get("b").resolve(2);
@@ -347,9 +392,9 @@ describe("@resumable", () => {
             await flushMicrotasks();
             resolveNative("native");
 
-            expect(await shutdown).toEqual([
-                expect.objectContaining({ type: "@resumable", data: expect.objectContaining({ arg: "native" }) }),
-            ]);
+            const persisted = await shutdown;
+            expect(persisted).toEqual([expect.objectContaining({ type: "@resumable" })]);
+            expect(decodeResumableFrame(persisted[0].data).arg).toBe("native");
             expect(w1.events).toEqual([]);
 
             const w2 = await bootWorker();
