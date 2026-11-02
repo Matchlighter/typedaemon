@@ -213,12 +213,11 @@ function collectHoistedBindings(funPath) {
     VariableDeclaration(path) {
       for (const dec of path.node.declarations) add(path, t.getBindingIdentifiers(dec.id));
     },
-    FunctionDeclaration(path) {
-      add(path.parentPath, { [path.node.id.name]: true });
+    // Nested functions/methods own their declarations (and stay plain JS, td-epy)
+    Function(path) {
+      if (path.isFunctionDeclaration()) add(path.parentPath, { [path.node.id.name]: true });
       path.skip();
     },
-    FunctionExpression(path) { path.skip(); },
-    ArrowFunctionExpression(path) { path.skip(); },
   });
   return bindings;
 }

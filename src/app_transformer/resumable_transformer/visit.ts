@@ -25,7 +25,11 @@ const regen_import = template(`
 export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<any> => {
   // let root;
   let importedRuntime = false;
+  // Only the decorated method's body is regenerated. Nested async fns/arrows/methods/generators
+  // inside it stay plain JS (td-epy); they still close over the hoisted `state.<name>` vars.
+  const regenTargets = new WeakSet();
   return {
+    // Not reached by traversal: index.ts calls it on the decorated method, then traverses with `Function` only.
     Method(path, state) {
       let node = path.node;
 
@@ -50,6 +54,7 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<
         node.generator,
         node.async,
       );
+      regenTargets.add(container);
 
       path.get("body").set("body", [
         t.returnStatement(
@@ -71,7 +76,7 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<
       exit: util.wrapWithTypes(t, function (path, state) {
         let node = path.node;
 
-        if (!shouldRegenerate(node, state)) return;
+        if (!regenTargets.has(node) || !shouldRegenerate(node, state)) return;
 
         // if this is an ObjectMethod, we need to convert it to an ObjectProperty
         path = replaceShorthandObjectMethod(path);

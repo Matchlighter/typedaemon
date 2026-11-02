@@ -346,7 +346,8 @@ const cases: Case[] = [
     },
     {
         name: "await in return argument",
-        bug: "td-epy",
+        // Suspends while awaiting a pending plain-async inner promise, which blocks save
+        suspendBug: "td-639",
         body: `this.out = await (async () => (await gate(0)) + 1)();`,
         values: [1], expected: 2,
     },
@@ -370,7 +371,8 @@ const cases: Case[] = [
     },
     {
         name: "arrow and nested async fn capture hoisted vars",
-        bug: "td-epy",
+        // Suspends while awaiting a pending plain-async inner promise, which blocks save
+        suspendBug: "td-639",
         body: `let c = await gate(0); const inc = async () => { c += await gate(1); }; await inc(); this.out = c;`,
         values: [1, 2], expected: 3,
     },
@@ -524,7 +526,7 @@ describe("resumable transformer: emit", () => {
             expect(w.out).toBe(11);
         });
 
-        itKnown("nested async object-literal method", "td-epy", async () => {
+        itKnown("nested async object-literal method", undefined, async () => {
             const W = build(`@resumable async m() { const o = { async inner() { return await gate(0); } }; this.out = await o.inner(); }`);
             const w = new W();
             await h.boot({ APP: w });
