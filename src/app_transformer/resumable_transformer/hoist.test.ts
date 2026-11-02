@@ -318,6 +318,31 @@ export class W {
                 await new Promise(r => setTimeout(r, 10));
                 expect(w.out).toEqual([1, 2]);
             });
+
+            it("binds defaulted/destructured params from the call's args, without re-running defaults per evaluation", async () => {
+                const calls = { n: 0 };
+                const W = compileApp(`
+import { resumable } from "typedaemon";
+export class W {
+    out;
+    get ready() { return ready.get(); }
+    @resumable async m(a, { b } = { b: 2 }, c = (calls.n++, 3)) { await wait(() => this.ready && a + b + c === 6); this.out = [a, b, c]; }
+}`, { ready, wait, calls }).W;
+                let w = new W();
+                await h.boot({ APP: w });
+                w.m(1);
+                await flushMicrotasks();
+                await h.shutdown();
+                w = new W();
+                await h.boot({ APP: w });
+                await flushMicrotasks();
+                // Once by the call, once by the resume re-binding the method's params; none by evaluating the condition
+                expect(calls.n).toBe(2);
+                mobx.runInAction(() => ready.set(true));
+                await new Promise(r => setTimeout(r, 10));
+                expect(w.out).toEqual([1, 2, 3]);
+                expect(calls.n).toBe(2);
+            });
         });
     });
 

@@ -26,21 +26,15 @@ const tick = () => new Promise(r => setImmediate(r));
  * `values[i]` resolves the i-th gate reached. Every case runs straight through, and again with a full suspend/resume at each gate.
  */
 type Case = {
-    name: string; body: string; values?: any[]; args?: any[]; expected: any;
-    /** Known-broken in both modes: runs as `it.failing` until the bead is fixed */
-    bug?: string;
-    /** Known-broken only across a suspend/resume */
-    suspendBug?: string;
+    name: string; body: string; values?: any[]; expected: any;
+    /** The method's parameter list, and the args it is called with */
+    params?: string; args?: any[];
     /**
      * Legitimately can't be persisted at some await (eg. a closure held in a local): the suspend variant instead expects the
      *   shutdown there to give up on the method (not persisted) and report why, matching this.
      */
     suspendFails?: RegExp;
 };
-
-/** `it`, or `it.failing` (bounded, as some known bugs hang) tagged with the bead when `bug` is set */
-const itKnown = (name: string, bug: string | undefined, fn: () => Promise<void>) =>
-    bug ? it.failing(`${name} [known: ${bug}]`, fn, 3000) : it(name, fn);
 
 const cases: Case[] = [
     // --- loops containing await (td-20n) ---
@@ -151,10 +145,15 @@ const cases: Case[] = [
     },
     {
         name: "for-await-of over array of Deferreds",
-        suspendFails: /temporaries\.t0\[0\] is a Deferred instance/,
-        // Holds the not-yet-awaited gate(1) across a suspend; a ResumablePromise held in a local isn't persistable (as in `const p = gate(1); await gate(0); await p`)
+        // Holds the not-yet-awaited gate(1) (in a temporary) across a suspend: persisted as a dependency
         body: `const r = []; for await (const x of [gate(0), gate(1)]) r.push(x); this.out = r;`,
         values: [1, 2], expected: [1, 2],
+    },
+    {
+        name: "created-but-not-yet-awaited promise held across an await",
+        // g0 (held in `p`) is still pending at the first suspend and settled at the second; both persisted as dependencies
+        body: `const p = gate(); const q = { p }; const a = await gate(); this.out = [a, await p, q.p === p];`,
+        values: ["p", "a"], expected: ["a", "p", true],
     },
     {
         name: "classic for with await in init, test, update and body",
@@ -276,6 +275,12 @@ const cases: Case[] = [
         name: "await in new expression",
         body: `this.out = new Array(await gate(0)).length;`,
         values: [3], expected: 3,
+    },
+    {
+        name: "param reassigned in later args after being read as receiver",
+        // A reassigned param isn't a constant binding, so its value as receiver is held before the args run
+        body: `this.out = o.concat(await (o = [9], gate(0)));`,
+        params: "o", args: [[1]], values: [2], expected: [1, 2],
     },
     {
         name: "global callee, receiver and tag read after an await (not held in a temporary)",
@@ -440,9 +445,7 @@ const cases: Case[] = [
 
 describe("resumable transformer: emit", () => {
     const h = useResumableHarness();
-    /** A timed-out (known-hanging) case keeps running in the background; it must not resolve later cases' same-named gates */
-    let runId = 0;
-    beforeEach(() => { sink.v = undefined; gates = 0; runId++; });
+    beforeEach(() => { sink.v = undefined; gates = 0; });
 
     const defaultTimeout = ResumableStore.SUSPEND_TIMEOUT_MS;
     // Cases that can't suspend would otherwise wait out the full timeout
@@ -453,17 +456,15 @@ describe("resumable transformer: emit", () => {
     const NOT_PERSISTED = Symbol("not persisted");
 
     const runCase = async (c: Case, suspend: boolean) => {
-        const W = build(`self = this;\n@resumable async m() { ${c.body} }`);
+        const W = build(`self = this;\n@resumable async m(${c.params ?? ""}) { ${c.body} }`);
         let w = new W();
         await h.boot({ APP: w });
         w.m(...(c.args ?? []));
-        const id = runId;
         const values = c.values ?? [];
         for (let i = 0; i < values.length; i++) {
             await tick();
             if (suspend) {
                 const persisted = await h.shutdown();
-                if (id !== runId) return;
                 if (h.lastSave.failed.length) {
                     expect(h.lastSave.failed.map(f => f.error.message)).toContainEqual(expect.stringMatching(c.suspendFails ?? /^$/));
                     expect((persisted ?? []).filter(s => s.type === "@resumable")).toEqual([]);
@@ -473,7 +474,6 @@ describe("resumable transformer: emit", () => {
                 await h.boot({ APP: w });
                 await tick();
             }
-            if (id !== runId) return;
             Deferred.get("g" + i).resolve(values[i]);
         }
         await tick();
@@ -483,7 +483,7 @@ describe("resumable transformer: emit", () => {
     describe.each([["straight through", false], ["suspend/resume at every await", true]])("%s", (_, suspend) => {
         for (const c of cases) {
             const fails = suspend && c.suspendFails;
-            itKnown(c.name + (fails ? " (can't be persisted: not resumed, reported)" : ""), suspend ? c.bug ?? c.suspendBug : c.bug, async () => {
+            it(c.name + (fails ? " (can't be persisted: not resumed, reported)" : ""), async () => {
                 expect(await runCase(c, suspend as boolean)).toEqual(fails ? NOT_PERSISTED : c.expected);
             });
         }
@@ -562,6 +562,17 @@ describe("resumable transformer: emit", () => {
             expect(w.out).toEqual([1, 2]);
         });
 
+        it("param reassigned in later args after being read as callee", async () => {
+            const W = build(`@resumable async m(f) { this.out = f(await (f = (x) => -x, gate(0))); }`);
+            const w = new W();
+            await h.boot({ APP: w });
+            w.m((x) => x * 100);
+            await tick();
+            Deferred.get("g0").resolve(2);
+            await tick();
+            expect(w.out).toBe(200);
+        });
+
         it("resumable calling another resumable", async () => {
             const W = build(`@resumable async m() { this.out = await this.other(await gate(0)); } @resumable async other(x) { return await gate(1) + x; }`);
             const w = new W();
@@ -590,7 +601,7 @@ describe("resumable transformer: emit", () => {
             expect(w.out).toBe(11);
         });
 
-        itKnown("nested async object-literal method", undefined, async () => {
+        it("nested async object-literal method", async () => {
             const W = build(`@resumable async m() { const o = { async inner() { return await gate(0); } }; this.out = await o.inner(); }`);
             const w = new W();
             await h.boot({ APP: w });

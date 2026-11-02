@@ -949,7 +949,7 @@ export class Emitter {
     if (this.isStableAcrossLeaps(calleePath)) return calleePath.node;
     const callee = this.explodeViaTempVar(null, calleePath, hasLeapingChildren);
     // A temporary is a member of the context; `(0, context.tN)` keeps it from being invoked with the context as `this`
-    return t.isMemberExpression(callee) ? t.sequenceExpression([t.numericLiteral(0), t.cloneDeep(callee)]) : callee;
+    return t.isMemberExpression(callee) ? unqualified(callee) : callee;
   };
 
   /** Explodes the object of a member that is used after later siblings leap (e.g. as `this` for a call) */
@@ -979,53 +979,59 @@ export class Emitter {
    *   link's object/callee is nullish. Returns the link's (not yet evaluated) value expression.
    */
   explodeOptionalChainLink(path, nullishLoc) {
-    const t = util.getTypes();
-    const isChainLink = p => p.isOptionalMemberExpression() || p.isOptionalCallExpression();
-    /** Value of an inner link (or the chain's base), held so later leaps can't reorder its evaluation */
-    const explodeObject = (objectPath) => isChainLink(objectPath)
+    if (path.isOptionalMemberExpression()) return this.explodeChainMember(path, nullishLoc).member;
+    assert.ok(path.isOptionalCallExpression());
+    return this.explodeOptionalCall(path, nullishLoc);
+  };
+
+  /** The value of the object of a chain link (an inner link, or the chain's base), held so later leaps can't reorder its evaluation */
+  explodeChainObject(objectPath, nullishLoc) {
+    const isChainLink = objectPath.isOptionalMemberExpression() || objectPath.isOptionalCallExpression();
+    return isChainLink
       ? this.emitAssign(this.makeTempVar(), this.explodeOptionalChainLink(objectPath, nullishLoc))
       : this.explodeReceiver(objectPath, true);
-    const jumpIfNullish = (value, optional) => {
-      if (optional) this.jumpIf(t.binaryExpression("==", t.cloneDeep(value), t.nullLiteral()), nullishLoc);
-    };
-    const explodeMember = (memberPath) => {
-      const object = explodeObject(memberPath.get("object"));
-      jumpIfNullish(object, memberPath.node.optional);
-      const property = memberPath.node.computed
-        ? this.explodeViaTempVar(null, memberPath.get("property"), true)
-        : memberPath.node.property;
-      return { object, member: t.memberExpression(t.cloneDeep(object), property, memberPath.node.computed) };
-    };
+  };
 
-    if (path.isOptionalMemberExpression()) {
-      return explodeMember(path).member;
-    }
+  jumpIfNullish(value, nullishLoc) {
+    const t = util.getTypes();
+    this.jumpIf(t.binaryExpression("==", t.cloneDeep(value), t.nullLiteral()), nullishLoc);
+  };
 
-    assert.ok(path.isOptionalCallExpression());
+  /** A member link of a chain: its held `object`, and the `member` read on it */
+  explodeChainMember(memberPath, nullishLoc) {
+    const t = util.getTypes();
+    const object = this.explodeChainObject(memberPath.get("object"), nullishLoc);
+    if (memberPath.node.optional) this.jumpIfNullish(object, nullishLoc);
+    const property = memberPath.node.computed
+      ? this.explodeViaTempVar(null, memberPath.get("property"), true)
+      : memberPath.node.property;
+    return { object, member: t.memberExpression(t.cloneDeep(object), property, memberPath.node.computed) };
+  };
+
+  explodeOptionalCall(path, nullishLoc) {
+    const t = util.getTypes();
     const calleePath = path.get("callee");
     let callee;
     let thisArg = null;
     if (calleePath.isMemberExpression() || calleePath.isOptionalMemberExpression()) {
-      const { object, member } = explodeMember(calleePath);
-      thisArg = object;
-      callee = member;
+      ({ object: thisArg, member: callee } = this.explodeChainMember(calleePath, nullishLoc));
     } else {
-      callee = explodeObject(calleePath);
+      callee = this.explodeChainObject(calleePath, nullishLoc);
     }
 
     const args = () => path.get("arguments").map(argPath => t.cloneDeep(this.explodeElement(argPath, true)));
     if (!path.node.optional) {
       // As for CallExpression, a member callee is read on its held object after the arguments
-      return t.callExpression(thisArg ? callee : t.sequenceExpression([t.numericLiteral(0), t.cloneDeep(callee)]), args());
+      return t.callExpression(thisArg ? callee : unqualified(callee), args());
     }
 
     // An optional callee is read and tested before the arguments, which it may skip
     callee = this.emitAssign(this.makeTempVar(), callee);
-    jumpIfNullish(callee, true);
+    this.jumpIfNullish(callee, nullishLoc);
     if (thisArg) {
       return t.callExpression(t.memberExpression(t.cloneDeep(callee), t.identifier("call")), [t.cloneDeep(thisArg), ...args()]);
     }
-    return t.callExpression(t.sequenceExpression([t.numericLiteral(0), t.cloneDeep(callee)]), args());
+    return t.callExpression(unqualified(callee), args());
   };
 
   /** Explodes an array element / call argument / object spread: an expression, a `SpreadElement`, or a hole */
@@ -1384,6 +1390,12 @@ export class Emitter {
   };
 }
 
+/** `(0, callee)`: the callee as a value, so that a member callee is not invoked with its object as `this` */
+function unqualified(callee) {
+  const t = util.getTypes();
+  return t.sequenceExpression([t.numericLiteral(0), t.cloneDeep(callee)]);
+}
+
 function getDeclError(node) {
   return new Error(
     "all declarations should have been transformed into " +
@@ -1399,29 +1411,20 @@ function bindCatchParam(handlerPath, exceptionTemp, makeTempVar) {
   const param = handlerPath.node.param;
 
   const bodyPath = handlerPath.get("body");
-  const temps = {};
-  if (t.isIdentifier(param)) {
-    temps[param.name] = exceptionTemp;
-  } else {
-    for (const name of Object.keys(t.getBindingIdentifiers(param))) temps[name] = makeTempVar();
+  const temps = new Map(); // binding -> temp
+  const names = t.isIdentifier(param) ? [param.name] : Object.keys(t.getBindingIdentifiers(param));
+  for (const name of names) {
+    temps.set(handlerPath.scope.getBinding(name), t.isIdentifier(param) ? exceptionTemp : makeTempVar());
+  }
+  if (!t.isIdentifier(param)) {
     bodyPath.unshiftContainer("body", t.expressionStatement(
       t.assignmentExpression("=", t.cloneDeep(param), t.cloneDeep(exceptionTemp))
     ));
   }
 
-  const bindings = {};
-  for (const name of Object.keys(temps)) bindings[name] = handlerPath.scope.getBinding(name);
-
-  bodyPath.traverse({
-    Identifier(path) {
-      const name = path.node.name;
-      if (!hasOwn.call(temps, name) || !util.isVariableUse(path)) return;
-      // Skip nested scopes that shadow the param with their own declarations.
-      if (path.scope.getBinding(name) !== bindings[name]) return;
-      if (t.isObjectProperty(path.parent) && path.parent.shorthand) path.parent.shorthand = false;
-      util.replaceWithOrRemove(path, t.cloneDeep(temps[name]));
-    }
-  });
+  for (const { path, binding } of util.findBindingUses(bodyPath, temps)) {
+    util.replaceVariableUse(path, t.cloneDeep(temps.get(binding)));
+  }
 }
 
 function isValidCompletion(record) {

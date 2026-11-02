@@ -375,25 +375,19 @@ describe("ResumableStore suspend timeouts", () => {
     });
 
     it("waits up to SUSPEND_TIMEOUT_MS for everything to suspend, then gives up on what didn't and saves the rest", async () => {
-        const log = jest.spyOn(console, "log").mockImplementation(() => { });
-        try {
-            const stuck = new Stubborn();
-            new Waiter([new Deferred("d")], "w");
+        new Stubborn();
+        new Waiter([new Deferred("d")], "w");
 
-            let saved = false;
-            const saving = h.store.save().then(() => { saved = true; });
-            await jest.advanceTimersByTimeAsync(999);
-            expect(saved).toBe(false);
-            await jest.advanceTimersByTimeAsync(1);
-            await saving;
+        let saved = false;
+        const saving = h.store.save().then(() => { saved = true; });
+        await jest.advanceTimersByTimeAsync(999);
+        expect(saved).toBe(false);
+        await jest.advanceTimersByTimeAsync(1);
+        await saving;
 
-            expect(saved).toBe(true);
-            expect(log).toHaveBeenCalledWith("NOT SUSPENDED:", stuck);
-            expect(h.persisted().map(s => s.type).sort()).toEqual(["test:deferred", "test:waiter"]);
-            expect(h.store.state).toBe("suspended");
-        } finally {
-            log.mockRestore();
-        }
+        expect(saved).toBe(true);
+        expect(h.persisted().map(s => s.type).sort()).toEqual(["test:deferred", "test:waiter"]);
+        expect(h.store.state).toBe("suspended");
     });
 
     it("reports each resumable that failed to suspend, with why", async () => {
@@ -454,6 +448,6 @@ describe("serializing a reference to a non-resumable promise", () => {
         expect(Deferred.get("other")).toBeDefined();
         const o = outcome(PlainRef.made.plain);
         await flushMicrotasks();
-        expect(o.error?.message).toBe("Promise would not suspend"); // (the stand-in itself was not suspended)
+        expect(o.error?.message).toBe("Cannot suspend non-resumable Promise");
     });
 });

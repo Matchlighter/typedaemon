@@ -5,7 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { types } from "@babel/core";
+import { types, NodePath } from "@babel/core";
+import type { Binding } from "@babel/traverse";
 
 export type BabelTypes = typeof types;
 
@@ -36,11 +37,7 @@ export function runtimeProperty(name) {
   );
 }
 
-export function isReference(path) {
-  return path.isReferenced() || path.parentPath.isAssignmentExpression({ left: path.node });
-}
-
-// Whether an Identifier names a variable (read, write, or pattern target), as opposed to
+// Whether an Identifier names a variable (read, write, pattern target or declaration), as opposed to
 // a property/member key or a label, which merely share the spelling.
 export function isVariableUse(path) {
   const { node, parent } = path;
@@ -70,4 +67,28 @@ export function replaceWithOrRemove(path, replacement) {
   } else {
     path.remove();
   }
+}
+
+/**
+ * Every use (see `isVariableUse`) under `root` of one of `bindings`, with the binding it resolves to. Uses in nested
+ * functions are included; a nested declaration shadowing the name is not one.
+ */
+export function findBindingUses(root: NodePath, bindings: { has(b: Binding): boolean }) {
+  const uses: { path: NodePath<types.Identifier>, binding: Binding }[] = [];
+  root.traverse({
+    Identifier(path) {
+      if (!isVariableUse(path)) return;
+      const binding = path.scope.getBinding(path.node.name);
+      if (binding && bindings.has(binding)) uses.push({ path, binding });
+    },
+  });
+  return uses;
+}
+
+/** Replaces a use of a variable (see `isVariableUse`) with `expr`, unfolding a shorthand `{ x }`/`{ x = d }` to `{ x: expr }` */
+export function replaceVariableUse(path: NodePath<types.Identifier>, expr: types.Expression) {
+  const t = getTypes();
+  const prop: any = t.isAssignmentPattern(path.parent) && path.key === "left" ? path.parentPath.parent : path.parent;
+  if (t.isObjectProperty(prop) && prop.shorthand) prop.shorthand = false;
+  path.replaceWith(expr);
 }

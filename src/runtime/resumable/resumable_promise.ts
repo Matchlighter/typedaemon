@@ -165,14 +165,17 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
                 }
             }
 
-            // If not suspended, convert to error SettledPromise
-            if (!obj.suspended || obj.force_suspended) {
+            if (obj.settled) {
+                // Serialize settled promises as SettledPromise. A settled one needn't have been paused: eg. one held (not
+                //   awaited) by a resumable, which nothing re-assesses once it settles
+                if (!SettledPromise.can_suspend(obj)) {
+                    obj = new SettledPromise({ result: "reject_error", value: "Promise result can't be persisted" });
+                } else if (!(obj instanceof SettledPromise)) {
+                    obj = SettledPromise.for_resumable(obj);
+                }
+            } else if (!obj.suspended || obj.force_suspended) {
+                // If not suspended, convert to error SettledPromise
                 obj = new SettledPromise({ result: "reject_error", value: "Promise would not suspend" });
-            }
-
-            // Serialize settled promises as SettledPromise
-            if (obj.settled && !(obj instanceof SettledPromise)) {
-                obj = SettledPromise.for_resumable(obj);
             }
 
             let sdata;
@@ -645,12 +648,24 @@ export class FailedResume extends ResumablePromise<any> {
             type: data.script ? 'script' : 'resumable',
             owner: String(data.scope.owner),
             method: data.scope.method,
-            // `@resumable` data (see resumable_method decodeResumableFrame); older data has them in `scope`
-            params: (data.frame ? decodeGraph(data.frame).parameters : data.scope.parameters) ?? [],
+            params: FailedResume.parameters(data),
             startedAt: data.started_at ?? this.createdAt,
             restarts: data.restarts ?? 0,
             failure: { error: this.error?.message ?? String(this.error), attempts: this.attempts },
         };
+    }
+
+    /**
+     * The call parameters of `@resumable` data (see resumable_method decodeResumableFrame; older data has them in `scope`).
+     *   The data failed to resume, possibly because it is corrupt: listing it must not fail too, so it shows none then.
+     */
+    private static parameters(data: any): unknown[] {
+        try {
+            // Promises in the frame (persisted as dependencies) show as undefined
+            return (data.frame ? decodeGraph(data.frame, () => undefined).parameters : data.scope.parameters) ?? [];
+        } catch {
+            return [];
+        }
     }
 
     /** Give up on it: whatever awaits it sees a cancellation, and it is no longer persisted */

@@ -24,11 +24,13 @@ export function hoist(funPath: NodePath<Function>, contextId) {
 
   const stateMemExpr = t.memberExpression(contextId, t.identifier("state"))
 
+  materializeLoopEnvs(funPath, collectHoistedBindings(funPath));
+  // Collected again on purpose: materializing moved the loop bindings that closures capture into `_env` objects
+  //   (removing those bindings) and declared the `_env`s (and for-of temporaries) as new bindings.
   // Identifier nodes that refer to a hoisted binding. Resolved up-front, while scope info
   // is still accurate (hoisting below removes the bindings), so the rewrite pass only
   // touches real references and leaves shadowing nested-function params/locals alone.
-  materializeLoopEnvs(funPath, collectHoistedBindings(funPath));
-  const hoistedRefs = resolveHoistedRefs(funPath);
+  const hoistedRefs = resolveHoistedRefs(funPath, collectHoistedBindings(funPath));
 
   function varDeclToExpr({ node: vdec, scope }, includeIdentifiers) {
     t.assertVariableDeclaration(vdec);
@@ -164,12 +166,10 @@ export function hoist(funPath: NodePath<Function>, contextId) {
   funPath.get("body").traverse({
     Identifier: {
       exit: function (path) {
-        if (!hoistedRefs.has(path.node) || !util.isVariableUse(path)) return;
-        const parent = path.parent;
-        // `{ x }` -> `{ x: state.x }` (value side only; the key was skipped above)
-        if (t.isObjectProperty(parent) && parent.shorthand) parent.shorthand = false;
-
-        util.replaceWithOrRemove(path, t.memberExpression(stateMemExpr, path.node))
+        // (The replacement reuses the node as `state.<node>`'s property, which is then visited too: not a use)
+        if (hoistedRefs.has(path.node) && util.isVariableUse(path)) {
+          util.replaceVariableUse(path, t.memberExpression(stateMemExpr, path.node));
+        }
       }
     },
   });
@@ -225,11 +225,9 @@ function collectHoistedBindings(funPath) {
 }
 
 // Hoisting flattens every binding into one `state` namespace, so bindings that share a name
-// (e.g. a block-scoped `let x` shadowing an outer `x`) get unique names first. Then resolves
-// every Identifier in the body (nested functions included) to the hoisted binding it refers to.
-function resolveHoistedRefs(funPath) {
-  const bindings = collectHoistedBindings(funPath);
-
+// (e.g. a block-scoped `let x` shadowing an outer `x`) get unique names first. Then finds
+// the uses (see `util.isVariableUse`) in the body, nested functions included, of those bindings.
+function resolveHoistedRefs(funPath, bindings) {
   const seen = new Set();
   for (const binding of bindings) {
     const name = binding.identifier.name;
@@ -239,12 +237,5 @@ function resolveHoistedRefs(funPath) {
     seen.add(binding.identifier.name);
   }
 
-  const refs = new Set();
-  funPath.get("body").traverse({
-    Identifier(path) {
-      const binding = path.scope.getBinding(path.node.name);
-      if (binding && bindings.has(binding)) refs.add(path.node);
-    },
-  });
-  return refs;
+  return new Set(util.findBindingUses(funPath.get("body"), bindings).map(use => use.path.node));
 }

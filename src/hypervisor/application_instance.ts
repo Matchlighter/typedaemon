@@ -326,7 +326,10 @@ export class ApplicationInstance extends BaseInstance<AppConfiguration, Applicat
             // We want this to run before the userspace app has completely shutdown
             this.cleanups.append(async () => {
                 this.logMessage("info", "Suspending Resumables")
-                await this.invoke(() => this.resumableStore.save());
+                const { failed } = await this.invoke(() => this.resumableStore.save());
+                if (failed.length) {
+                    this.logMessage("warn", `${failed.length} resumable(s) could not be suspended and will not be resumed (see the errors above); those started by the app are listed as failed until discarded`);
+                }
             });
 
             // Abort if the app started shutting down

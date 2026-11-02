@@ -2,11 +2,11 @@ import * as fs from 'fs';
 import { TypedEmitter } from 'tiny-typed-emitter';
 
 import { Batcher } from '../../common/batched';
-import { fileExists, timeoutPromise } from "../../common/util";
+import { fileExists, findUnserializable, timeoutPromise } from "../../common/util";
 import { logPluginClientMessage } from "../../hypervisor/logging";
 import { ResumableOwnerLookup, resumable } from "./resumable_method";
 import { objectId } from "../../common/object_id";
-import { CancellableResumablePromise, FailedResume, ResumablePromise, SettledPromise, type ResumableDescription } from "./resumable_promise";
+import { CancellableResumablePromise, FailedResume, ResumablePromise, SettledPromise, type FullySerializedResumable, type ResumableDescription } from "./resumable_promise";
 
 /** A user-visible resumable of the store. `id` is unique for the lifetime of the process (never reused by another store) */
 export interface ResumableInfo extends ResumableDescription {
@@ -35,6 +35,39 @@ export interface SaveResult {
 
 export class SuspendFailedError extends Error {
     name = "SuspendFailedError";
+}
+
+/**
+ * What is persisted of a user-visible resumable given up on at shutdown: just enough for it to be listed as a failed resume
+ *   (shaped like legacy `@resumable` data, see `FailedResume.describe`) until it is discarded. It never resumes.
+ */
+interface SuspendFailureRecord {
+    scope: { owner: string; method: string; parameters: unknown[] };
+    script: boolean;
+    started_at: number;
+    restarts: number;
+    reason: string;
+}
+
+ResumablePromise.defineClass({
+    type: 'suspend_failed',
+    resumer: (data: SuspendFailureRecord) => { throw new SuspendFailedError(data.reason) },
+});
+
+function suspendFailureRecord({ resumable: d, error }: SuspendFailure, index: number): FullySerializedResumable {
+    // Parameters that can't be persisted (possibly why it was given up on) are shown as what they were
+    const parameters = d.params.map(p => {
+        const bad = findUnserializable(p, []);
+        return bad ? `[${bad.path ? `${bad.path} is ` : ''}${bad.what}]` : p;
+    });
+    const data: SuspendFailureRecord = {
+        scope: { owner: d.owner, method: d.method, parameters },
+        script: d.type === 'script',
+        started_at: d.startedAt,
+        restarts: d.restarts,
+        reason: error.message,
+    };
+    return { id: `suspend_failed:${index}`, type: 'suspend_failed', dependencies: [], sideeffect_free: false, data };
 }
 
 interface StoreOptions {
@@ -256,8 +289,13 @@ export class ResumableStore extends TypedEmitter<{
         this.setState('suspended');
         logPluginClientMessage("Resumable", "debug", "Resumables suspended")
 
-        // Serialize and return. What was given up on (force-suspended) is persisted as a rejection, if anything persisted depends on it
-        return { serialized: ResumablePromise.serialize_all(this.allForSerializing()), failed };
+        // Serialize and return. What was given up on (force-suspended) is persisted as a rejection, if anything persisted
+        //   depends on it, and, if user-visible, as a record that lists it as failed after the restart
+        const serialized = [
+            ...ResumablePromise.serialize_all(this.allForSerializing()),
+            ...failed.filter(f => f.resumable).map(suspendFailureRecord),
+        ];
+        return { serialized, failed };
     }
 
     /** Force-suspend whatever didn't suspend in time, reporting those that are why (not those just waiting on another to suspend) */
@@ -275,9 +313,6 @@ export class ResumableStore extends TypedEmitter<{
         }
 
         for (const p of stuck) p.force_suspend();
-        for (const p of stuck) {
-            if (!p.suspended) console.log("NOT SUSPENDED:", p);
-        }
 
         for (const f of failed) {
             logPluginClientMessage("Resumable", "error", f.error.message);

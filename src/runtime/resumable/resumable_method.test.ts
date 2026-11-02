@@ -433,8 +433,8 @@ describe("@resumable", () => {
                 w.pending = new Promise(() => { });
                 w.awaitsPending();
 
-                // Nothing depends on it, so the forcibly-failed method is dropped
-                expect(await shutdownWithTimeout()).toBeNull();
+                // Nothing depends on it, so the forcibly-failed method is dropped (but for a record listing it as failed)
+                expect(await shutdownWithTimeout()).toEqual([expect.objectContaining({ type: "suspend_failed" })]);
                 expect(failures()).toEqual([expect.stringMatching(/APP\.awaitsPending.*awaits a non-resumable Promise/)]);
             });
 
@@ -459,7 +459,7 @@ describe("@resumable", () => {
                 new Deferred("b");
                 w.takesCallback(() => "called");
 
-                expect(await shutdownWithTimeout()).toBeNull();
+                expect(await shutdownWithTimeout()).toEqual([expect.objectContaining({ type: "suspend_failed" })]);
                 expect(failures()).toEqual([expect.stringMatching(/APP\.takesCallback.*parameters\[0\] is a function/)]);
             });
 
@@ -468,7 +468,7 @@ describe("@resumable", () => {
                 new Deferred("b");
                 w.holdsFunction();
 
-                expect(await shutdownWithTimeout()).toBeNull();
+                expect(await shutdownWithTimeout()).toEqual([expect.objectContaining({ type: "suspend_failed" })]);
                 expect(failures()).toEqual([expect.stringMatching(/APP\.holdsFunction.*state\.fn is a function/)]);
             });
 

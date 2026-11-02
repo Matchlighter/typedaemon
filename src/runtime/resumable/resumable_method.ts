@@ -3,7 +3,7 @@ import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weak
 
 import { AsyncLocalStorage } from "async_hooks";
 import { Executor } from "../regen_executor";
-import { decodeGraph, encodeGraph, findUnencodable, type EncodedGraph } from "../../common/graph_json";
+import { decodeGraph, encodeGraph, findUnencodable, type EncodedGraph, type GraphExternals } from "../../common/graph_json";
 import { CancellableResumablePromise, ResumablePromise, SerializeContext, type ResumableDescription } from "./resumable_promise";
 
 const RESUMABLE_CONTEXT_ID = Symbol("resumable_serialized_id");
@@ -19,6 +19,7 @@ interface SerializedScope {
 /**
  * Everything the method's code can reach: persisted as a single graph (`encodeGraph`) so that references shared between
  * them (eg. a local and a temporary holding the same array) or cycles survive a suspend as one object, not copies.
+ * ResumablePromises in it (eg. `const p = sleep(1); await x; await p`) are persisted as dependencies of the method.
  */
 interface ExecutionFrame {
     parameters: any[];
@@ -30,9 +31,14 @@ interface ExecutionFrame {
     rval: any;
 }
 
-/** The persisted frame of a `@resumable`, including from data written before frames were a single graph */
-export function decodeResumableFrame(data: any): ExecutionFrame {
-    if (data.frame) return decodeGraph(data.frame as EncodedGraph);
+const isResumablePromise = (v: object) => v instanceof ResumablePromise;
+
+/**
+ * The persisted frame of a `@resumable`, including from data written before frames were a single graph.
+ * `requireDependency` gives the dependency (by its index) that a ResumablePromise of the frame was persisted as.
+ */
+export function decodeResumableFrame(data: any, requireDependency?: (index: number) => any): ExecutionFrame {
+    if (data.frame) return decodeGraph(data.frame as EncodedGraph, requireDependency);
     // Legacy: each part was serialized independently (plain JSON)
     return {
         parameters: data.scope.parameters,
@@ -62,8 +68,8 @@ ResumablePromise.defineClass<ResumableMethod<any>>({
     type: "@resumable",
     resumer: (data, { require }) => {
         const scope = data.scope;
-        const frame = decodeResumableFrame(data);
         const dep = require(data.pending_promise);
+        const frame = decodeResumableFrame(data, require);
 
         const owner = resumable.lookup_owner(scope.owner);
         const executor: Executor<any> = owner[scope.method][EXECUTOR_FACTORY].call(owner, ...frame.parameters);
@@ -202,7 +208,7 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
             restarts: this.restarts,
             script: this.is_script,
 
-            frame: encodeGraph(this.frame()),
+            frame: encodeGraph(this.frame(), { is: isResumablePromise, encode: (p) => context.ref(p as ResumablePromise) } satisfies GraphExternals),
             actionType: exc.actionType,
 
             marked_locations: exc.options.marked_locs,
@@ -230,7 +236,7 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
 
     /** The first part of the frame (eg. `state.fn`) that can't be persisted, as a message */
     private unpersistable() {
-        const bad = findUnencodable(this.frame());
+        const bad = findUnencodable(this.frame(), undefined, isResumablePromise);
         return bad && `${bad.path} is ${bad.what}, which can't be persisted`;
     }
 
@@ -292,8 +298,10 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
  * Mark a method as resumable. When the app or TypeDaemon shutdown, the current execution
  * state will be saved and reloaded when the app starts again.
  * 
- * NB: All variables must be JSON serializable (Errors are kept as their name, message and stack). One that holds anything else
- * (eg. a function) at shutdown is given up on: it is not persisted, and the shutdown reports why (see `ResumableStore.save`).
+ * NB: All variables must be JSON serializable (Errors are kept as their name, message and stack; ResumablePromises, eg. a
+ * `sleep()` not awaited yet, are persisted with the method). One that holds anything else
+ * (eg. a function) at shutdown is given up on: it will not resume (it is listed as failed until discarded), and the shutdown
+ * reports why (see `ResumableStore.save`).
  */
 export const resumable = (f, context: ClassMethodDecoratorContext) => {
     function start_wrapped(...args) {
