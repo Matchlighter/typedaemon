@@ -1156,6 +1156,18 @@ export class Emitter {
           // If this is a simple assignment, the left hand side does not need
           // to be read before the right hand side is evaluated, so we can
           // avoid the more complicated logic below.
+          if (t.isPattern(expr.left)) {
+            // A destructuring target is evaluated (computed keys, defaults) only after the right hand
+            //   side, so it can stay whole as long as nothing inside it leaps.
+            if (meta.containsLeap(expr.left)) {
+              throw path.get("left").buildCodeFrameError("await inside a destructuring pattern is not supported in resumable functions");
+            }
+            return finish(t.assignmentExpression(
+              expr.operator,
+              expr.left,
+              self.explodeExpression(path.get("right"))
+            ));
+          }
           return finish(t.assignmentExpression(
             expr.operator,
             self.explodeExpression(path.get("left")),

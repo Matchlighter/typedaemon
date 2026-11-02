@@ -31,11 +31,15 @@ export function hoist(funPath: NodePath<Function>, contextId) {
     vdec.declarations.forEach(function (dec) {
       // Note: We duplicate 'dec.id' here to ensure that the variable declaration IDs don't
       // have the same 'loc' value, since that can make sourcemaps and retainLines behave poorly.
-      vars[dec.id.name] = t.identifier(dec.id.name);
+      // `dec.id` may be a pattern; hoist every name it binds and keep the pattern as the
+      // assignment target.
+      for (const name of Object.keys(t.getBindingIdentifiers(dec.id))) {
+        vars[name] = t.identifier(name);
 
-      // Remove the binding, to avoid "duplicate declaration" errors when it will
-      // be injected again.
-      scope.removeBinding(dec.id.name);
+        // Remove the binding, to avoid "duplicate declaration" errors when it will
+        // be injected again.
+        scope.removeBinding(name);
+      }
 
       if (dec.init) {
         exprs.push(t.assignmentExpression(
