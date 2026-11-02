@@ -136,22 +136,20 @@ const cases: Case[] = [
         values: [true], expected: "yes",
     },
 
-    // --- try / catch / finally (td-0gb) ---
+    // --- try / catch / finally ---
     {
         name: "optional catch binding",
-        bug: "td-0gb",
         body: `try { await gate(0); throw new Error("x"); } catch { this.out = "caught"; }`,
         values: [1], expected: "caught",
     },
     {
         name: "optional catch binding with await inside catch",
-        bug: "td-0gb",
         body: `try { throw new Error("x"); } catch { this.out = await gate(0); }`,
         values: ["c"], expected: "c",
     },
     {
         name: "optional catch binding + finally",
-        bug: "td-0gb",
+        suspendBug: "td-5et",
         body: `const r = []; try { await gate(0); throw 1; } catch { r.push("c"); } finally { r.push(await gate(1)); } this.out = r;`,
         values: [0, "f"], expected: ["c", "f"],
     },
@@ -163,7 +161,6 @@ const cases: Case[] = [
     },
     {
         name: "destructured catch binding",
-        bug: "td-pmb",
         body: `try { await gate(0); throw { code: 7, info: [1] }; } catch ({ code, info: [i] }) { this.out = [code, i, await gate(1)]; }`,
         values: [0, "z"], expected: [7, 1, "z"],
     },
@@ -399,7 +396,7 @@ describe("resumable transformer: emit", () => {
             expect(w.out).toBe("rej:no");
         });
 
-        itKnown("awaited rejection caught after suspend/resume", "td-0gb", async () => {
+        it("awaited rejection caught after suspend/resume", async () => {
             const W = build(`@resumable async m() { try { await gate(0); } catch { this.out = "rej"; } }`);
             let w = new W();
             await h.boot({ APP: w });

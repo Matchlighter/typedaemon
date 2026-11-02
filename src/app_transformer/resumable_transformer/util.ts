@@ -40,6 +40,30 @@ export function isReference(path) {
   return path.isReferenced() || path.parentPath.isAssignmentExpression({ left: path.node });
 }
 
+// Whether an Identifier names a variable (read, write, or pattern target), as opposed to
+// a property/member key or a label, which merely share the spelling.
+export function isVariableUse(path) {
+  const { node, parent } = path;
+  switch (parent.type) {
+    case "MemberExpression":
+    case "OptionalMemberExpression":
+      return parent.object === node || parent.computed;
+    case "ObjectProperty":
+    case "ObjectMethod":
+    case "ClassProperty":
+    case "ClassAccessorProperty":
+    case "ClassMethod":
+      return parent.key !== node || parent.computed;
+    case "LabeledStatement":
+    case "BreakStatement":
+    case "ContinueStatement":
+      return parent.label !== node;
+    case "MetaProperty":
+      return false;
+  }
+  return true;
+}
+
 export function replaceWithOrRemove(path, replacement) {
   if (replacement) {
     path.replaceWith(replacement)

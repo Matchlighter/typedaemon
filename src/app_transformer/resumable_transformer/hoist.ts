@@ -159,34 +159,10 @@ export function hoist(funPath: NodePath<Function>, contextId) {
   //   }
   // }
 
-  // Whether an Identifier names a variable (read, write, or pattern target), as opposed to
-  // a property/member key or a label, which merely share the spelling.
-  function isVariableUse(path) {
-    const { node, parent } = path;
-    switch (parent.type) {
-      case "MemberExpression":
-      case "OptionalMemberExpression":
-        return parent.object === node || parent.computed;
-      case "ObjectProperty":
-      case "ObjectMethod":
-      case "ClassProperty":
-      case "ClassAccessorProperty":
-      case "ClassMethod":
-        return parent.key !== node || parent.computed;
-      case "LabeledStatement":
-      case "BreakStatement":
-      case "ContinueStatement":
-        return parent.label !== node;
-      case "MetaProperty":
-        return false;
-    }
-    return true;
-  }
-
   funPath.get("body").traverse({
     Identifier: {
       exit: function (path) {
-        if (!hoistedRefs.has(path.node) || !isVariableUse(path)) return;
+        if (!hoistedRefs.has(path.node) || !util.isVariableUse(path)) return;
         const parent = path.parent;
         // `{ x }` -> `{ x: state.x }` (value side only; the key was skipped above)
         if (t.isObjectProperty(parent) && parent.shorthand) parent.shorthand = false;

@@ -688,10 +688,7 @@ export class Emitter {
         let handler = stmt.handler;
 
         let catchLoc = handler && this.loc();
-        let catchEntry = catchLoc && new leap.CatchEntry(
-          catchLoc,
-          handler.param
-        );
+        let catchEntry = catchLoc && new leap.CatchEntry(catchLoc);
 
         let finallyLoc = stmt.finalizer && this.loc();
         let finallyEntry = finallyLoc &&
@@ -725,13 +722,11 @@ export class Emitter {
             self.updateContextPrevLoc(self.mark(catchLoc));
 
             let bodyPath = path.get("handler.body");
-            let safeParam = self.makeTempVar();
+            // `catch {}` binds nothing, so the exception needn't be kept.
+            let safeParam = handler.param && self.makeTempVar();
             self.clearPendingException(tryEntry.firstLoc, safeParam);
 
-            bodyPath.traverse(catchParamVisitor, {
-              getSafeParam: () => t.cloneDeep(safeParam),
-              catchParamName: handler.param.name
-            });
+            if (safeParam) bindCatchParam(path.get("handler"), safeParam, () => self.makeTempVar());
 
             self.leapManager.withEntry(catchEntry, function () {
               self.explodeStatement(bodyPath);
@@ -1289,21 +1284,38 @@ function getDeclError(node) {
     JSON.stringify(node));
 }
 
-let catchParamVisitor = {
-  Identifier: function (path, state) {
-    if (path.node.name === state.catchParamName && util.isReference(path)) {
-      util.replaceWithOrRemove(path, state.getSafeParam());
-    }
-  },
+// Rewrites the catch clause's param bindings to context temps: an Identifier param becomes the
+// caught-exception temp itself; a pattern param gets a temp per bound name, destructured from
+// the exception temp at the top of the body.
+function bindCatchParam(handlerPath, exceptionTemp, makeTempVar) {
+  const t = util.getTypes();
+  const param = handlerPath.node.param;
 
-  Scope: function (path, state) {
-    if (path.scope.hasOwnBinding(state.catchParamName)) {
-      // Don't descend into nested scopes that shadow the catch
-      // parameter with their own declarations.
-      path.skip();
-    }
+  const bodyPath = handlerPath.get("body");
+  const temps = {};
+  if (t.isIdentifier(param)) {
+    temps[param.name] = exceptionTemp;
+  } else {
+    for (const name of Object.keys(t.getBindingIdentifiers(param))) temps[name] = makeTempVar();
+    bodyPath.unshiftContainer("body", t.expressionStatement(
+      t.assignmentExpression("=", t.cloneDeep(param), t.cloneDeep(exceptionTemp))
+    ));
   }
-};
+
+  const bindings = {};
+  for (const name of Object.keys(temps)) bindings[name] = handlerPath.scope.getBinding(name);
+
+  bodyPath.traverse({
+    Identifier(path) {
+      const name = path.node.name;
+      if (!hasOwn.call(temps, name) || !util.isVariableUse(path)) return;
+      // Skip nested scopes that shadow the param with their own declarations.
+      if (path.scope.getBinding(name) !== bindings[name]) return;
+      if (t.isObjectProperty(path.parent) && path.parent.shorthand) path.parent.shorthand = false;
+      util.replaceWithOrRemove(path, t.cloneDeep(temps[name]));
+    }
+  });
+}
 
 function isValidCompletion(record) {
   let type = record.type;
