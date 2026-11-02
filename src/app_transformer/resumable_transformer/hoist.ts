@@ -9,6 +9,7 @@
 import { NodePath } from "@babel/core";
 import * as util from "./util";
 import { Function } from "@babel/types";
+import { materializeLoopEnvs } from "./loop_envs";
 let hasOwn = Object.prototype.hasOwnProperty;
 
 // The hoist function takes a FunctionExpression or FunctionDeclaration
@@ -26,6 +27,7 @@ export function hoist(funPath: NodePath<Function>, contextId) {
   // Identifier nodes that refer to a hoisted binding. Resolved up-front, while scope info
   // is still accurate (hoisting below removes the bindings), so the rewrite pass only
   // touches real references and leaves shadowing nested-function params/locals alone.
+  materializeLoopEnvs(funPath, collectHoistedBindings(funPath));
   const hoistedRefs = resolveHoistedRefs(funPath);
 
   function varDeclToExpr({ node: vdec, scope }, includeIdentifiers) {

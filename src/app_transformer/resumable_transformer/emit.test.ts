@@ -70,10 +70,53 @@ const cases: Case[] = [
     },
     {
         name: "for-of closure captures per-iteration binding",
-        // Loop-body bindings are hoisted to one shared `state.x`, so closures see the last value. Not for-of specific (any block-scoped binding in a loop)
-        bug: "td-8tr",
+        // Closures held in state across the suspend
+        suspendBug: "td-639",
         body: `const fs = []; let i = 0; for (const x of [1, 2, 3]) { await gate(i++); fs.push(() => x); } this.out = fs.map(f => f());`,
         values: [0, 0, 0], expected: [1, 2, 3],
+    },
+    {
+        name: "classic for-let closure captures per-iteration copy",
+        // Closures held in state across the suspend
+        suspendBug: "td-639",
+        body: `const fs = []; for (let i = 0; i < 3; i++) { await gate(i); fs.push(() => i); } this.out = fs.map(f => f());`,
+        values: [0, 0, 0], expected: [0, 1, 2],
+    },
+    {
+        name: "classic for-let closure mutation carries into next iteration",
+        // Closures held in state across the suspend
+        suspendBug: "td-639",
+        // Per-iteration copy happens before the update, so a closure's write is seen by the update and the next iteration
+        body: `const r = []; for (let i = 0; i < 4; i++) { await gate(i); const bump = () => { i++; }; bump(); r.push(i); } this.out = r;`,
+        values: [0, 0], expected: [1, 3],
+    },
+    {
+        name: "let in loop body captured per iteration",
+        // Closures held in state across the suspend
+        suspendBug: "td-639",
+        body: `const fs = []; let n = 0; while (n < 3) { const y = n * 10; n++; await gate(n - 1); fs.push(() => y); } this.out = fs.map(f => f());`,
+        values: [0, 0, 0], expected: [0, 10, 20],
+    },
+    {
+        name: "closure mutates captured loop binding, seen by loop body",
+        // Closures held in state across the suspend
+        suspendBug: "td-639",
+        body: `const r = []; for (const x of [1, 2]) { let c = x; await gate(x - 1); const inc = () => { c += 10; }; inc(); r.push(c); } this.out = r;`,
+        values: [0, 0], expected: [11, 12],
+    },
+    {
+        name: "nested loops: closure captures both levels",
+        // Closures held in state across the suspend
+        suspendBug: "td-639",
+        body: `const fs = []; let i = 0; for (const a of [1, 2]) { for (let b = 0; b < 2; b++) { await gate(i++); fs.push(() => a * 10 + b); } } this.out = fs.map(f => f());`,
+        values: [0, 0, 0, 0], expected: [10, 11, 20, 21],
+    },
+    {
+        name: "function declaration in loop body captures per iteration",
+        // Closures held in state across the suspend
+        suspendBug: "td-639",
+        body: `const fs = []; for (const x of [1, 2]) { await gate(x - 1); function f() { return x; } fs.push(f); } this.out = fs.map(f => f());`,
+        values: [0, 0], expected: [1, 2],
     },
     {
         name: "nested for-of with labeled continue",

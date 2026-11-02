@@ -1,4 +1,6 @@
+import * as babel from "@babel/core";
 import * as mobx from "mobx";
+import { APP_BABEL_CONFIG } from "..";
 import { Deferred, compileApp, flushMicrotasks, useResumableHarness } from "../../../test/helpers/resumable";
 import { current } from "../../hypervisor/current";
 import { LifecycleHelper } from "../../common/lifecycle_helper";
@@ -316,6 +318,23 @@ export class W {
                 await new Promise(r => setTimeout(r, 10));
                 expect(w.out).toEqual([1, 2]);
             });
+        });
+    });
+
+    describe("per-iteration loop bindings (td-8tr)", () => {
+        const compiled = (body: string) => babel.transformSync(
+            `import { resumable } from "typedaemon"; export class W { @resumable async m() { ${body} } }`,
+            { ...APP_BABEL_CONFIG, filename: "/virtual/app.ts" },
+        )!.code!;
+
+        it("loops without capturing closures get no per-iteration env", () => {
+            const code = compiled(`const r = []; for (let i = 0; i < 2; i++) { const y = i; r.push(y + await Deferred.get("d")); } for (const x of r) { let z = x; r.push(z); }`);
+            expect(code).not.toMatch(/_env/);
+        });
+
+        it("a closure capturing only non-loop bindings gets no per-iteration env", () => {
+            const code = compiled(`const k = 1; const r = []; for (const x of [1]) { await Deferred.get("d"); r.push(() => k); }`);
+            expect(code).not.toMatch(/_env/);
         });
     });
 });
