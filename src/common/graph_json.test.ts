@@ -1,4 +1,4 @@
-import { decodeGraph, encodeGraph } from "./graph_json";
+import { decodeGraph, encodeGraph, findUnencodable } from "./graph_json";
 
 /** Round-trip through actual JSON, as persisted */
 const roundTrip = (value: any) => decodeGraph(JSON.parse(JSON.stringify(encodeGraph(value))));
@@ -33,5 +33,26 @@ describe("encodeGraph/decodeGraph", () => {
         const out = roundTrip(o);
         expect(out.self).toBe(out);
         expect(out.list[0]).toBe(out);
+    });
+
+    it("keeps an Error as a plain Error with its name, message and stack, preserving identity", () => {
+        const e = new TypeError("boom");
+        const out = roundTrip({ e, again: [e] });
+        expect(out.e).toBeInstanceOf(Error);
+        expect([out.e.name, out.e.message, out.e.stack]).toEqual(["TypeError", "boom", e.stack]);
+        expect(out.again[0]).toBe(out.e);
+    });
+});
+
+describe("findUnencodable", () => {
+    it("accepts plain data, cycles and Errors", () => {
+        const o: any = { e: new Error("x") };
+        o.self = o;
+        expect(findUnencodable(o)).toBeUndefined();
+    });
+
+    it("names the path and kind of the first value it can't encode", () => {
+        expect(findUnencodable({ state: { fs: [1, function f() { }] } })).toEqual({ path: "state.fs[1]", what: "a function (f)" });
+        expect(findUnencodable({ "a b": new Map() }, "frame")).toEqual({ path: 'frame["a b"]', what: "a Map instance" });
     });
 });

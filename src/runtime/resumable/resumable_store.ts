@@ -22,6 +22,21 @@ interface TrackerEntry {
 /** Suspended resumables, written by ResumableStore */
 export const RESUMABLE_STATE_FILE = ".resumable_state.json";
 
+/** A resumable that was given up on at shutdown because it didn't reach a point where it could be persisted; it won't be resumed */
+export interface SuspendFailure {
+    /** Set for user-visible resumables (see `ResumablePromise.describe`) */
+    resumable?: ResumableDescription;
+    error: SuspendFailedError;
+}
+
+export interface SaveResult {
+    failed: SuspendFailure[];
+}
+
+export class SuspendFailedError extends Error {
+    name = "SuspendFailedError";
+}
+
 interface StoreOptions {
     file: string,
 }
@@ -67,11 +82,19 @@ export class ResumableStore extends TypedEmitter<{
         return this.list().filter(r => r.status !== 'failed');
     }
 
-    async save() {
-        const suspendeds = await this._suspendAndSerialize({});
-        if (suspendeds.length > 0) {
-            await fs.promises.writeFile(this.store_file, JSON.stringify(suspendeds));
+    /**
+     * How long a shutdown waits for resumables to reach a point where they can be persisted (a running one keeps going
+     *   until it does). Those that haven't by then are given up on: not persisted, and reported by `save()`.
+     */
+    static SUSPEND_TIMEOUT_MS = 5000;
+
+    /** Suspend everything and persist what could be; the rest is reported as `failed` */
+    async save(): Promise<SaveResult> {
+        const { serialized, failed } = await this._suspendAndSerialize();
+        if (serialized.length > 0) {
+            await fs.promises.writeFile(this.store_file, JSON.stringify(serialized));
         }
+        return { failed };
     }
 
     private _state: 'active' | 'shutdown_requested' | 'suspending' | 'suspended' = 'active';
@@ -203,19 +226,18 @@ export class ResumableStore extends TypedEmitter<{
         }
     }
 
-    private async _suspendAndSerialize({ timeout = 5 }: { timeout?: number } = {}) {
+    private async _suspendAndSerialize() {
         this.setState('shutdown_requested');
         logPluginClientMessage("Resumable", "debug", "Shutting down resumables")
 
-        const track_states = [...this.tracked_tasks.values()];
-
         this.computeBatcher.perform(() => {
-            for (let rp of track_states) {
-                rp.resumable.compute_paused();
+            for (let rp of this.tracked_tasks.keys()) {
+                rp.compute_paused();
             }
         })
 
-        // Wait for pending non-suspendable promises to resolve
+        // Wait for everything to suspend: whatever can't yet (eg. it holds something unpersistable, or waits on a plain
+        //   Promise) keeps running, and may get to a point where it can, or finish.
         const flushPromise = new Promise((accept) => {
             this.onNonSuspendableClear = accept as any;
             const hasNonSuspendable = [...this.tracked_tasks.keys()].some(o => !o.suspended);
@@ -224,45 +246,43 @@ export class ResumableStore extends TypedEmitter<{
             }
         });
 
-        await timeoutPromise(timeout * 1000, flushPromise, () => {
-            logPluginClientMessage("Resumable", "warn", "ResumablePromises failed to resolve. Force Suspending.")
+        await timeoutPromise(ResumableStore.SUSPEND_TIMEOUT_MS, flushPromise, () => {
+            logPluginClientMessage("Resumable", "warn", "Some resumables did not suspend in time; giving up on them.")
         })
 
         this.setState('suspending');
-        logPluginClientMessage("Resumable", "debug", "Suspending remaining resumables")
-
-        // Force cleanup unsuspended Resumables
-        for (let state of track_states) {
-            if (!state.resumable.suspended) {
-                state.resumable.force_suspend();
-            }
-        }
-
-        await timeoutPromise(5000, flushPromise, () => {
-            logPluginClientMessage("Resumable", "warn", "Some Resumables still would not suspend.")
-            for (let state of track_states) {
-                if (!state.resumable.suspended) {
-                    console.log("NOT SUSPENDED:", state.resumable)
-                }
-            }
-        });
-
-        /* Edge Case: Deferred awaiting
-        {
-            const x = some_promise();
-            await some_resumable_promise();
-            await x;
-        }
-
-        Line 2 should be recognized as not Suspendable.
-        Case is solved - x is not serializable
-        */
+        const failed = this.giveUpOnUnsuspended();
 
         this.setState('suspended');
         logPluginClientMessage("Resumable", "debug", "Resumables suspended")
 
-        // Serialize and return
-        return ResumablePromise.serialize_all(this.allForSerializing());
+        // Serialize and return. What was given up on (force-suspended) is persisted as a rejection, if anything persisted depends on it
+        return { serialized: ResumablePromise.serialize_all(this.allForSerializing()), failed };
+    }
+
+    /** Force-suspend whatever didn't suspend in time, reporting those that are why (not those just waiting on another to suspend) */
+    private giveUpOnUnsuspended(): SuspendFailure[] {
+        const stuck = [...this.tracked_tasks.keys()].filter(p => !p.suspended);
+
+        // Before forcing: a forced one counts as suspended
+        const failed: SuspendFailure[] = [];
+        for (const p of stuck) {
+            const reason = p.suspendBlocker();
+            if (!reason) continue;
+            const resumable = p.describe();
+            const what = resumable ? `${resumable.type === 'script' ? 'Script' : '@resumable'} ${resumable.owner}.${resumable.method}` : p.constructor.name;
+            failed.push({ resumable, error: new SuspendFailedError(`${what} could not be suspended, so it will not be resumed: ${reason}`) });
+        }
+
+        for (const p of stuck) p.force_suspend();
+        for (const p of stuck) {
+            if (!p.suspended) console.log("NOT SUSPENDED:", p);
+        }
+
+        for (const f of failed) {
+            logPluginClientMessage("Resumable", "error", f.error.message);
+        }
+        return failed;
     }
 
     private *allForSerializing() {

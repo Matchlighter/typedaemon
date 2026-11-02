@@ -946,6 +946,7 @@ export class Emitter {
       return t.memberExpression(t.cloneDeep(object), property, calleePath.node.computed);
     }
 
+    if (this.isStableAcrossLeaps(calleePath)) return calleePath.node;
     const callee = this.explodeViaTempVar(null, calleePath, hasLeapingChildren);
     // A temporary is a member of the context; `(0, context.tN)` keeps it from being invoked with the context as `this`
     return t.isMemberExpression(callee) ? t.sequenceExpression([t.numericLiteral(0), t.cloneDeep(callee)]) : callee;
@@ -953,14 +954,24 @@ export class Emitter {
 
   /** Explodes the object of a member that is used after later siblings leap (e.g. as `this` for a call) */
   explodeReceiver(objectPath, hasLeapingChildren) {
-    const t = util.getTypes();
-    // `this` (or its `_this` alias) can't change across a yield, so it needs no temporary. Skipping one matters here
-    //   because temporaries are persisted when suspending, and the owner instance isn't serializable.
-    if (t.isThisExpression(objectPath.node) || t.isSuper(objectPath.node) ||
-      (t.isIdentifier(objectPath.node) && objectPath.scope.getBinding(objectPath.node.name)?.constant)) {
-      return objectPath.node;
-    }
+    if (this.isStableAcrossLeaps(objectPath)) return objectPath.node;
     return this.explodeViaTempVar(this.makeTempVar(), objectPath, hasLeapingChildren);
+  };
+
+  /**
+   * Whether a callee/receiver can be read after later siblings leap instead of being held in a temporary first. Upstream
+   *   regenerator holds anything but a literal; we also skip `this` (or its `_this` alias), constant bindings (eg. imports,
+   *   module-level consts, unassigned params) and globals (eg. `Array`, `String.raw`). Skipping matters because temporaries
+   *   are persisted when suspending, and these values (the owner instance, functions) can't be. A global reassigned while
+   *   the method is suspended at a leap is the one deviation: the call sees the new value (as it would after a resume anyway).
+   */
+  isStableAcrossLeaps(path) {
+    const t = util.getTypes();
+    const node = path.node;
+    if (t.isThisExpression(node) || t.isSuper(node)) return true;
+    if (!t.isIdentifier(node)) return false;
+    const binding = path.scope.getBinding(node.name);
+    return binding ? binding.constant : true;
   };
 
   /**
@@ -1103,7 +1114,9 @@ export class Emitter {
 
       case "NewExpression":
         return finish(t.newExpression(
-          self.explodeViaTempVar(null, path.get("callee"), hasLeapingChildren),
+          self.isStableAcrossLeaps(path.get("callee"))
+            ? expr.callee
+            : self.explodeViaTempVar(null, path.get("callee"), hasLeapingChildren),
           path.get("arguments").map(argPath => self.explodeElement(argPath, hasLeapingChildren))
         ));
 

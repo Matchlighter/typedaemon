@@ -3,8 +3,7 @@ import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weak
 
 import { AsyncLocalStorage } from "async_hooks";
 import { Executor } from "../regen_executor";
-import { decodeGraph, encodeGraph, type EncodedGraph } from "../../common/graph_json";
-import { serializable } from "../../common/util";
+import { decodeGraph, encodeGraph, findUnencodable, type EncodedGraph } from "../../common/graph_json";
 import { CancellableResumablePromise, ResumablePromise, SerializeContext, type ResumableDescription } from "./resumable_promise";
 
 const RESUMABLE_CONTEXT_ID = Symbol("resumable_serialized_id");
@@ -229,9 +228,19 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
         };
     }
 
+    /** The first part of the frame (eg. `state.fn`) that can't be persisted, as a message */
+    private unpersistable() {
+        const bad = findUnencodable(this.frame());
+        return bad && `${bad.path} is ${bad.what}, which can't be persisted`;
+    }
+
     protected can_suspend() {
         if (!super.can_suspend()) return false;
-        return serializable(this.frame(), [], { cycles: true });
+        return !this.unpersistable();
+    }
+
+    protected cannot_suspend_reason() {
+        return this.unpersistable() ?? super.cannot_suspend_reason();
     }
 
     protected do_unsuspend(): void {
@@ -283,7 +292,8 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
  * Mark a method as resumable. When the app or TypeDaemon shutdown, the current execution
  * state will be saved and reloaded when the app starts again.
  * 
- * NB: All variables must be JSON serializable.
+ * NB: All variables must be JSON serializable (Errors are kept as their name, message and stack). One that holds anything else
+ * (eg. a function) at shutdown is given up on: it is not persisted, and the shutdown reports why (see `ResumableStore.save`).
  */
 export const resumable = (f, context: ClassMethodDecoratorContext) => {
     function start_wrapped(...args) {

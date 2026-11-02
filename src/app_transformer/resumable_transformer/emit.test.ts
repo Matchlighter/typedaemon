@@ -1,4 +1,5 @@
 import { Deferred, compileApp, useResumableHarness } from "../../../test/helpers/resumable";
+import { ResumableStore } from "../../runtime/resumable/resumable_store";
 
 /** Gate keys follow evaluation order (any argument is ignored), so `values[i]` resolves the i-th gate reached */
 let gates = 0;
@@ -30,6 +31,11 @@ type Case = {
     bug?: string;
     /** Known-broken only across a suspend/resume */
     suspendBug?: string;
+    /**
+     * Legitimately can't be persisted at some await (eg. a closure held in a local): the suspend variant instead expects the
+     *   shutdown there to give up on the method (not persisted) and report why, matching this.
+     */
+    suspendFails?: RegExp;
 };
 
 /** `it`, or `it.failing` (bounded, as some known bugs hang) tagged with the bead when `bug` is set */
@@ -70,51 +76,51 @@ const cases: Case[] = [
     },
     {
         name: "for-of closure captures per-iteration binding",
+        suspendFails: /state\.fs\[0\] is a function/,
         // Closures held in state across the suspend
-        suspendBug: "td-639",
         body: `const fs = []; let i = 0; for (const x of [1, 2, 3]) { await gate(i++); fs.push(() => x); } this.out = fs.map(f => f());`,
         values: [0, 0, 0], expected: [1, 2, 3],
     },
     {
         name: "classic for-let closure captures per-iteration copy",
+        suspendFails: /state\.fs\[0\] is a function/,
         // Closures held in state across the suspend
-        suspendBug: "td-639",
         body: `const fs = []; for (let i = 0; i < 3; i++) { await gate(i); fs.push(() => i); } this.out = fs.map(f => f());`,
         values: [0, 0, 0], expected: [0, 1, 2],
     },
     {
         name: "classic for-let closure mutation carries into next iteration",
+        suspendFails: /state\.bump is a function/,
         // Closures held in state across the suspend
-        suspendBug: "td-639",
         // Per-iteration copy happens before the update, so a closure's write is seen by the update and the next iteration
         body: `const r = []; for (let i = 0; i < 4; i++) { await gate(i); const bump = () => { i++; }; bump(); r.push(i); } this.out = r;`,
         values: [0, 0], expected: [1, 3],
     },
     {
         name: "let in loop body captured per iteration",
+        suspendFails: /state\.fs\[0\] is a function/,
         // Closures held in state across the suspend
-        suspendBug: "td-639",
         body: `const fs = []; let n = 0; while (n < 3) { const y = n * 10; n++; await gate(n - 1); fs.push(() => y); } this.out = fs.map(f => f());`,
         values: [0, 0, 0], expected: [0, 10, 20],
     },
     {
         name: "closure mutates captured loop binding, seen by loop body",
+        suspendFails: /state\.inc is a function/,
         // Closures held in state across the suspend
-        suspendBug: "td-639",
         body: `const r = []; for (const x of [1, 2]) { let c = x; await gate(x - 1); const inc = () => { c += 10; }; inc(); r.push(c); } this.out = r;`,
         values: [0, 0], expected: [11, 12],
     },
     {
         name: "nested loops: closure captures both levels",
+        suspendFails: /state\.fs\[0\] is a function/,
         // Closures held in state across the suspend
-        suspendBug: "td-639",
         body: `const fs = []; let i = 0; for (const a of [1, 2]) { for (let b = 0; b < 2; b++) { await gate(i++); fs.push(() => a * 10 + b); } } this.out = fs.map(f => f());`,
         values: [0, 0, 0, 0], expected: [10, 11, 20, 21],
     },
     {
         name: "function declaration in loop body captures per iteration",
+        suspendFails: /state\.f is a function/,
         // Closures held in state across the suspend
-        suspendBug: "td-639",
         body: `const fs = []; for (const x of [1, 2]) { await gate(x - 1); function f() { return x; } fs.push(f); } this.out = fs.map(f => f());`,
         values: [0, 0], expected: [1, 2],
     },
@@ -145,8 +151,8 @@ const cases: Case[] = [
     },
     {
         name: "for-await-of over array of Deferreds",
-        // Holds the not-yet-awaited gate(1) across a suspend, which hangs save (as does `const p = gate(1); await gate(0); await p`)
-        suspendBug: "td-639",
+        suspendFails: /temporaries\.t0\[0\] is a Deferred instance/,
+        // Holds the not-yet-awaited gate(1) across a suspend; a ResumablePromise held in a local isn't persistable (as in `const p = gate(1); await gate(0); await p`)
         body: `const r = []; for await (const x of [gate(0), gate(1)]) r.push(x); this.out = r;`,
         values: [1, 2], expected: [1, 2],
     },
@@ -189,7 +195,6 @@ const cases: Case[] = [
     },
     {
         name: "catch binding used after await in catch",
-        suspendBug: "td-639",
         body: `try { await gate(0); throw new Error("boom"); } catch (e) { await gate(1); this.out = e.message; }`,
         values: [0, 0], expected: "boom",
     },
@@ -225,7 +230,6 @@ const cases: Case[] = [
     },
     {
         name: "nested try rethrow to outer catch",
-        suspendBug: "td-639",
         body: `try { try { await gate(0); throw new Error("in"); } catch (e) { await gate(1); throw new Error("re:" + e.message); } } catch (e2) { this.out = e2.message; }`,
         values: [0, 0], expected: "re:in",
     },
@@ -259,7 +263,7 @@ const cases: Case[] = [
     // --- expressions containing await ---
     {
         name: "await in call arguments and callee",
-        suspendBug: "td-639",
+        suspendFails: /state\.f is a function/,
         body: `const f = (a, b) => a - b; this.out = f(await gate(0), await gate(1));`,
         values: [5, 2], expected: 3,
     },
@@ -270,9 +274,13 @@ const cases: Case[] = [
     },
     {
         name: "await in new expression",
-        suspendBug: "td-639",
         body: `this.out = new Array(await gate(0)).length;`,
         values: [3], expected: 3,
+    },
+    {
+        name: "global callee, receiver and tag read after an await (not held in a temporary)",
+        body: `this.out = [Math.max(await gate(0), 1), String.raw\`a\${await gate(1)}\`, new Array(await gate(2)).length, parseInt(await gate(3))];`,
+        values: [5, "x", 2, "7"], expected: [5, "ax", 2, 7],
     },
     {
         name: "await in short-circuit operators",
@@ -311,7 +319,6 @@ const cases: Case[] = [
     },
     {
         name: "await in spread new arguments",
-        suspendBug: "td-639",
         body: `this.out = new Array(...(await gate(0)));`,
         values: [[5, 6]], expected: [5, 6],
     },
@@ -322,21 +329,21 @@ const cases: Case[] = [
     },
     {
         name: "await in template literal and tagged template",
+        suspendFails: /state\.tag is a function/,
         // The local `tag` arrow is held in state across the awaits
-        suspendBug: "td-639",
         body: `const tag = (s, ...v) => s.join("|") + v.join(","); this.out = [\`a\${await gate(0)}b\${await gate(1)}\`, tag\`x\${await gate(2)}y\`];`,
         values: [1, 2, 3], expected: ["a1b2", "x|y3"],
     },
     {
         name: "tagged template keeps this, raw strings and template object identity",
+        suspendFails: /state\.o\.t is a function/,
         // The tag and its receiver are functions/objects held in state across the await
-        suspendBug: "td-639",
         body: `const o = { p: "P", t(s, ...v) { return [this.p, s.raw[0], v[0], s]; } }; const a = o.t\`a\\n\${await gate(0)}\`; const b = o.t\`a\\n\${await gate(1)}\`; const r = []; for (const i of [2, 3]) r.push(o.t\`z\${await gate(i)}\`[3]); this.out = [a.slice(0, 3), b[2], a[3] !== b[3], r[0] === r[1], String.raw\`q\\n\${await gate(4)}\`];`,
         values: [1, 2, 0, 0, "x"], expected: [["P", "a\\n", 1], 2, true, true, "q\\nx"],
     },
     {
         name: "template literal converts each substitution before evaluating the next",
-        suspendBug: "td-639",
+        suspendFails: /state\.o\.toString is a function/,
         body: `const r = []; const o = { toString() { r.push("s"); return "o"; } }; this.out = [\`\${o}-\${(r.push("e"), await gate(0))}\`, r];`,
         values: [1], expected: ["o-1", ["s", "e"]],
     },
@@ -367,8 +374,8 @@ const cases: Case[] = [
     },
     {
         name: "optional call of a present callee with await argument",
+        suspendFails: /state\.f is a function/,
         // The tested callee is a function held across the await
-        suspendBug: "td-639",
         body: `const f = (x) => x * 2; let g; const a = [1]; this.out = [f?.(await gate(0)), g?.(await gate(9)), a.concat?.(await gate(1)), await gate(2)];`,
         values: [3, 2, "z"], expected: [6, undefined, [1, 2], "z"],
     },
@@ -389,8 +396,8 @@ const cases: Case[] = [
     },
     {
         name: "await in return argument",
-        // Suspends while awaiting a pending plain-async inner promise, which blocks save
-        suspendBug: "td-639",
+        suspendFails: /APP\.m .*awaits a non-resumable Promise/,
+        // Suspends while awaiting a pending plain-async inner promise, which can't be persisted
         body: `this.out = await (async () => (await gate(0)) + 1)();`,
         values: [1], expected: 2,
     },
@@ -408,14 +415,14 @@ const cases: Case[] = [
     },
     {
         name: "function declaration inside resumable fn",
-        suspendBug: "td-639",
+        suspendFails: /state\.dbl is a function/,
         body: `const v = await gate(0); function dbl(n) { return n * 2; } this.out = dbl(v);`,
         values: [4], expected: 8,
     },
     {
         name: "arrow and nested async fn capture hoisted vars",
-        // Suspends while awaiting a pending plain-async inner promise, which blocks save
-        suspendBug: "td-639",
+        suspendFails: /APP\.m .*awaits a non-resumable Promise/,
+        // Suspends while awaiting a pending plain-async inner promise, which can't be persisted
         body: `let c = await gate(0); const inc = async () => { c += await gate(1); }; await inc(); this.out = c;`,
         values: [1, 2], expected: 3,
     },
@@ -437,6 +444,14 @@ describe("resumable transformer: emit", () => {
     let runId = 0;
     beforeEach(() => { sink.v = undefined; gates = 0; runId++; });
 
+    const defaultTimeout = ResumableStore.SUSPEND_TIMEOUT_MS;
+    // Cases that can't suspend would otherwise wait out the full timeout
+    beforeAll(() => { ResumableStore.SUSPEND_TIMEOUT_MS = 50; });
+    afterAll(() => { ResumableStore.SUSPEND_TIMEOUT_MS = defaultTimeout; });
+
+    /** Marks a run whose method was given up on at a shutdown (see `Case.suspendFails`) */
+    const NOT_PERSISTED = Symbol("not persisted");
+
     const runCase = async (c: Case, suspend: boolean) => {
         const W = build(`self = this;\n@resumable async m() { ${c.body} }`);
         let w = new W();
@@ -447,8 +462,13 @@ describe("resumable transformer: emit", () => {
         for (let i = 0; i < values.length; i++) {
             await tick();
             if (suspend) {
-                await h.shutdown();
+                const persisted = await h.shutdown();
                 if (id !== runId) return;
+                if (h.lastSave.failed.length) {
+                    expect(h.lastSave.failed.map(f => f.error.message)).toContainEqual(expect.stringMatching(c.suspendFails ?? /^$/));
+                    expect((persisted ?? []).filter(s => s.type === "@resumable")).toEqual([]);
+                    return NOT_PERSISTED;
+                }
                 w = new W();
                 await h.boot({ APP: w });
                 await tick();
@@ -462,8 +482,9 @@ describe("resumable transformer: emit", () => {
 
     describe.each([["straight through", false], ["suspend/resume at every await", true]])("%s", (_, suspend) => {
         for (const c of cases) {
-            itKnown(c.name, suspend ? c.bug ?? c.suspendBug : c.bug, async () => {
-                expect(await runCase(c, suspend as boolean)).toEqual(c.expected);
+            const fails = suspend && c.suspendFails;
+            itKnown(c.name + (fails ? " (can't be persisted: not resumed, reported)" : ""), suspend ? c.bug ?? c.suspendBug : c.bug, async () => {
+                expect(await runCase(c, suspend as boolean)).toEqual(fails ? NOT_PERSISTED : c.expected);
             });
         }
     });

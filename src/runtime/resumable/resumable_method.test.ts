@@ -118,6 +118,16 @@ export class Worker {
     }
 
     @resumable
+    async catchesThenAwaits() {
+        try {
+            throw new TypeError("boom");
+        } catch (e) {
+            await Deferred.get("b");
+            return this.finish([e instanceof TypeError, e instanceof Error, e.name, e.message, e.stack.includes("boom")]);
+        }
+    }
+
+    @resumable
     async versioned() {
         await Deferred.get("b");
         return this.finish("v1");
@@ -416,6 +426,8 @@ describe("@resumable", () => {
                 return await shutdown;
             }
 
+            const failures = () => h.lastSave.failed.map(f => f.error.message);
+
             it("force-suspends methods blocked on non-resumable promises", async () => {
                 const w = await bootWorker();
                 w.pending = new Promise(() => { });
@@ -423,6 +435,7 @@ describe("@resumable", () => {
 
                 // Nothing depends on it, so the forcibly-failed method is dropped
                 expect(await shutdownWithTimeout()).toBeNull();
+                expect(failures()).toEqual([expect.stringMatching(/APP\.awaitsPending.*awaits a non-resumable Promise/)]);
             });
 
             it("propagates the failure to resumable awaiters", async () => {
@@ -447,6 +460,7 @@ describe("@resumable", () => {
                 w.takesCallback(() => "called");
 
                 expect(await shutdownWithTimeout()).toBeNull();
+                expect(failures()).toEqual([expect.stringMatching(/APP\.takesCallback.*parameters\[0\] is a function/)]);
             });
 
             it("does not suspend methods holding non-serializable locals", async () => {
@@ -455,7 +469,40 @@ describe("@resumable", () => {
                 w.holdsFunction();
 
                 expect(await shutdownWithTimeout()).toBeNull();
+                expect(failures()).toEqual([expect.stringMatching(/APP\.holdsFunction.*state\.fn is a function/)]);
             });
+
+            it("still saves (and resumes) the methods that could suspend", async () => {
+                const w = await bootWorker();
+                new Deferred("b");
+                new Deferred("tick0");
+                w.holdsFunction();
+                w.counter(1);
+
+                const persisted = await shutdownWithTimeout();
+                expect(failures()).toHaveLength(1);
+                expect(persisted.filter(s => s.type === "@resumable").map(s => s.data.scope.method)).toEqual(["counter"]);
+
+                jest.useRealTimers();
+                const w2 = await bootWorker();
+                Deferred.get("tick0").resolve(0);
+                await flushMicrotasks();
+                expect(w2.events).toEqual([0]);
+            });
+        });
+
+        it("persists an Error held in a local, restoring it as an Error", async () => {
+            const w = await bootWorker();
+            new Deferred("b");
+            w.catchesThenAwaits();
+            await h.shutdown();
+            expect(h.lastSave.failed).toEqual([]);
+
+            const w2 = await bootWorker();
+            Deferred.get("b").resolve(0);
+            await flushMicrotasks();
+            // The subclass is not kept: it comes back as a plain Error carrying the original name, message and stack
+            expect(w2.events).toEqual([[false, true, "TypeError", "boom", true]]);
         });
     });
 

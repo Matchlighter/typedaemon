@@ -343,6 +343,27 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
         return true;
     }
 
+    /**
+     * Why this isn't suspended (while the store is shutting down), if it isn't: the first reason it can't be persisted
+     *   as it stands. `undefined` when it is suspended, or only waits for whatever awaits it to suspend.
+     */
+    suspendBlocker(): string | undefined {
+        if (this.suspended && !this.force_suspended) return;
+        if (this.settled) {
+            return SettledPromise.can_suspend(this) ? undefined : "its result can't be persisted";
+        }
+        if (this.has_non_resumable_awaiters) return "it is awaited by non-resumable code (eg. a plain async function, or a .then()/.catch())";
+        for (const awaitee of this.awaiting_for()) {
+            if (!(awaitee instanceof ResumablePromise)) return "it awaits a non-resumable Promise (eg. one returned by a plain async function)";
+        }
+        if (!this.can_suspend()) return this.cannot_suspend_reason();
+    }
+
+    /** Why `can_suspend()` says no */
+    protected cannot_suspend_reason() {
+        return "it can't be suspended";
+    }
+
     private has_non_resumable_awaiters = false;
     private resumable_awaiters: ResumablePromise<any>[] = [];
 
