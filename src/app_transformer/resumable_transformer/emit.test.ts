@@ -247,7 +247,6 @@ const cases: Case[] = [
     },
     {
         name: "await in short-circuit operators",
-        bug: "td-j9y",
         body: `this.out = [(await gate(0)) && (await gate(1)), (await gate(2)) || (await gate(3)), (await gate(4)) ?? (await gate(5))];`,
         values: [1, "a", 0, "b", null, "c"], expected: ["a", "b", "c"],
     },
@@ -255,6 +254,11 @@ const cases: Case[] = [
         name: "short-circuit skips awaits",
         body: `let n = 0; const r = (n && await gate(0)) || (await gate(0)); this.out = r;`,
         values: ["x"], expected: "x",
+    },
+    {
+        name: "?? short-circuits on non-nullish falsy left",
+        body: `this.out = [(await gate(0)) ?? (await gate(9)), (await gate(1)) ?? "r", await gate(2)];`,
+        values: [0, undefined, "z"], expected: [0, "r", "z"],
     },
     {
         name: "await in conditional branches",
@@ -268,15 +272,44 @@ const cases: Case[] = [
     },
     {
         name: "await in array/object literal with spread",
-        bug: "td-y9x",
         body: `this.out = { a: await gate(0), ...(await gate(1)), [await gate(2)]: 3, arr: [...(await gate(3)), await gate(4)] };`,
         values: [1, { b: 2 }, "k", [7], 8], expected: { a: 1, b: 2, k: 3, arr: [7, 8] },
     },
     {
+        name: "await in spread call arguments",
+        body: `const xs = [1]; this.out = [].concat(...xs, ...(await gate(0)), await gate(1));`,
+        values: [[2, 3], 4], expected: [1, 2, 3, 4],
+    },
+    {
+        name: "await in spread new arguments",
+        suspendBug: "td-639",
+        body: `this.out = new Array(...(await gate(0)));`,
+        values: [[5, 6]], expected: [5, 6],
+    },
+    {
+        name: "computed object key evaluated before its awaited value",
+        body: `this.out = { [await gate(0)]: await gate(1) };`,
+        values: ["a", "b"], expected: { a: "b" },
+    },
+    {
         name: "await in template literal and tagged template",
-        bug: "td-x5k",
+        // The local `tag` arrow is held in state across the awaits
+        suspendBug: "td-639",
         body: `const tag = (s, ...v) => s.join("|") + v.join(","); this.out = [\`a\${await gate(0)}b\${await gate(1)}\`, tag\`x\${await gate(2)}y\`];`,
         values: [1, 2, 3], expected: ["a1b2", "x|y3"],
+    },
+    {
+        name: "tagged template keeps this, raw strings and template object identity",
+        // The tag and its receiver are functions/objects held in state across the await
+        suspendBug: "td-639",
+        body: `const o = { p: "P", t(s, ...v) { return [this.p, s.raw[0], v[0], s]; } }; const a = o.t\`a\\n\${await gate(0)}\`; const b = o.t\`a\\n\${await gate(1)}\`; const r = []; for (const i of [2, 3]) r.push(o.t\`z\${await gate(i)}\`[3]); this.out = [a.slice(0, 3), b[2], a[3] !== b[3], r[0] === r[1], String.raw\`q\\n\${await gate(4)}\`];`,
+        values: [1, 2, 0, 0, "x"], expected: [["P", "a\\n", 1], 2, true, true, "q\\nx"],
+    },
+    {
+        name: "template literal converts each substitution before evaluating the next",
+        suspendBug: "td-639",
+        body: `const r = []; const o = { toString() { r.push("s"); return "o"; } }; this.out = [\`\${o}-\${(r.push("e"), await gate(0))}\`, r];`,
+        values: [1], expected: ["o-1", ["s", "e"]],
     },
     {
         name: "await in sequence, unary, binary",
@@ -290,9 +323,25 @@ const cases: Case[] = [
     },
     {
         name: "await in computed member and optional chain",
-        bug: "td-m63",
         body: `const o = { a: { b: 2 } }; this.out = [o[await gate(0)].b, o?.[await gate(1)]?.b, (await gate(2))?.x?.y];`,
         values: ["a", "a", null], expected: [2, 2, undefined],
+    },
+    {
+        name: "optional chain short-circuit skips later awaits",
+        body: `const n = null; const o = { a: { b: 2 } }; this.out = [n?.a[await gate(9)].b.c, o?.a[await gate(0)], (o?.a).b, o.a?.["b"]?.toFixed(await gate(1)), n?.[await gate(9)], await gate(2)];`,
+        values: ["b", 1, "z"], expected: [undefined, 2, 2, "2.0", undefined, "z"],
+    },
+    {
+        name: "optional call with await keeps this and short-circuits",
+        body: `const a = [1]; const n = null; this.out = [a?.concat(await gate(0)), n?.concat(await gate(9)), n?.x.concat(await gate(9)), a.nope?.(await gate(9)), (await gate(1))?.(1), (await gate(2))?.concat(await gate(3)), await gate(4)];`,
+        values: [2, null, [7], 8, "z"], expected: [[1, 2], undefined, undefined, undefined, undefined, [7, 8], "z"],
+    },
+    {
+        name: "optional call of a present callee with await argument",
+        // The tested callee is a function held across the await
+        suspendBug: "td-639",
+        body: `const f = (x) => x * 2; let g; const a = [1]; this.out = [f?.(await gate(0)), g?.(await gate(9)), a.concat?.(await gate(1)), await gate(2)];`,
+        values: [3, 2, "z"], expected: [6, undefined, [1, 2], "z"],
     },
     {
         name: "update expression on hoisted var and member",
