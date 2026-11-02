@@ -347,7 +347,6 @@ const cases: Case[] = [
     },
     {
         name: "class declaration and expression inside body",
-        bug: "td-1im",
         body: `const v = await gate(0); class A { get v() { return v; } } const B = class extends A { m() { return this.v + 1; } }; this.out = new B().m();`,
         values: [1], expected: 2,
     },
