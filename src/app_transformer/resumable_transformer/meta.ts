@@ -65,6 +65,10 @@ function makePredicate(propertyName, knownTypes) {
     if (hasOwn.call(knownTypes, node.type))
       return meta[propertyName] = true;
 
+    // `for await` awaits each value: an implicit leap (and side effect), though no yield/await node appears in it.
+    if (node.type === "ForOfStatement" && node.await)
+      return meta[propertyName] = true;
+
     return meta[propertyName] = onlyChildren(node);
   }
 

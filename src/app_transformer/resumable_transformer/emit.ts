@@ -105,6 +105,27 @@ export class Emitter {
     return lhs;
   };
 
+  // Emits `yield arg` (suspending until resumed at `after`), returning the expression for the value sent back in.
+  emitYield(arg, after = this.loc(), loc?) {
+    const t = util.getTypes();
+    this.emitAssign(this.contextProperty("next"), after);
+
+    let ret = t.returnStatement(t.cloneDeep(arg) || null);
+    // Preserve the `yield` location so that source mappings for the statements
+    // link back to the yield properly.
+    ret.loc = loc;
+    this.emit(ret);
+    this.mark(after);
+
+    return this.contextProperty("sent");
+  };
+
+  // Emits `await arg`, ie. what the AwaitExpression visitor's `yield _awrap(arg)` lowers to.
+  emitAwait(arg) {
+    const t = util.getTypes();
+    return this.emitYield(t.callExpression(util.runtimeProperty("_awrap"), [arg]));
+  };
+
   // Shorthand for an assignment statement.
   assign(lhs, rhs) {
     const t = util.getTypes();
@@ -538,15 +559,21 @@ export class Emitter {
         return self.explodeExpression(path.get("expression"));
 
       case "ForInStatement":
+      case "ForOfStatement":
         head = this.loc();
         after = this.loc();
 
-        // Remaining keys, as a plain array (not an iterator closure) so that it can be persisted when suspending
-        let keysTmpVar = self.makeTempVar();
+        // The remaining keys (for-in) / values (for-of) are materialized up front into a plain array, reversed so the loop can
+        // `pop()` them in order. A live iterator (as upstream regenerator uses) is a closure that can't be persisted when
+        // suspending; an array can.
+        // Tradeoff (for-of): the iterable is drained eagerly before the first iteration, so infinite/lazy iterables hang, and
+        // values produced after the loop starts (eg. a generator reacting to the loop body) aren't seen. `for await` only
+        // supports sync iterables (each value is awaited); async iterables are rejected at runtime.
+        let listTmpVar = self.makeTempVar();
         self.emitAssign(
-          keysTmpVar,
+          listTmpVar,
           t.callExpression(
-            util.runtimeProperty("keys"),
+            util.runtimeProperty(stmt.type == "ForInStatement" ? "keys" : stmt.await ? "awaitValues" : "values"),
             [self.explodeExpression(path.get("right"))]
           )
         );
@@ -554,17 +581,18 @@ export class Emitter {
         self.mark(head);
 
         self.jumpIf(
-          t.unaryExpression("!", t.memberExpression(t.cloneDeep(keysTmpVar), t.identifier("length"), false)),
+          t.unaryExpression("!", t.memberExpression(t.cloneDeep(listTmpVar), t.identifier("length"), false)),
           after
         );
 
-        self.emitAssign(
-          stmt.left,
-          t.callExpression(
-            t.memberExpression(t.cloneDeep(keysTmpVar), t.identifier("pop"), false),
-            []
-          )
+        let item: types.Expression = t.callExpression(
+          t.memberExpression(t.cloneDeep(listTmpVar), t.identifier("pop"), false),
+          []
         );
+        if (stmt.type == "ForOfStatement" && stmt.await) {
+          item = self.emitAwait(item);
+        }
+        self.emitAssign(stmt.left, item);
 
         self.leapManager.withEntry(
           new leap.LoopEntry(after, head, labelId),
@@ -1225,16 +1253,7 @@ export class Emitter {
           return result;
         }
 
-        self.emitAssign(self.contextProperty("next"), after);
-
-        let ret = t.returnStatement(t.cloneDeep(arg) || null);
-        // Preserve the `yield` location so that source mappings for the statements
-        // link back to the yield properly.
-        ret.loc = expr.loc;
-        self.emit(ret);
-        self.mark(after);
-
-        return self.contextProperty("sent");
+        return self.emitYield(arg, after, expr.loc);
 
       case "ClassExpression":
         return finish(self.explodeClass(path));

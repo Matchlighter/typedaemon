@@ -407,6 +407,22 @@ export class Executor<T> {
         return keys.reverse();
     }
 
+    /**
+     * Values of a `for...of` iterable, drained eagerly and reversed so that the transformed loop can `pop()` them in order.
+     * Eager on purpose: a live iterator can't be persisted across a suspend, an array can (see the transformer's ForOfStatement).
+     */
+    static values = (iterable: Iterable<any>): any[] => {
+        return Array.from(iterable).reverse();
+    }
+
+    /** `values()` for `for await...of`; the loop awaits each value. Async iterables can't be drained without awaiting, so aren't supported */
+    static awaitValues = (iterable: Iterable<any> | AsyncIterable<any>): any[] => {
+        if (iterable != null && !(Symbol.iterator in Object(iterable)) && Symbol.asyncIterator in Object(iterable)) {
+            throw new TypeError("for await...of over an async iterable is not supported in resumable functions (only sync iterables of promises)");
+        }
+        return Executor.values(iterable as Iterable<any>);
+    }
+
     static _awrap = (value) => {
         return { __await: value };
     }

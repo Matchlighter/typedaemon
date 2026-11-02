@@ -40,55 +40,54 @@ const cases: Case[] = [
     // --- loops containing await (td-20n) ---
     {
         name: "for-of with await in body",
-        bug: "td-20n",
+        suspendBug: "td-5et",
         body: `const r = []; for (const x of [1, 2]) { r.push(x + await gate(x - 1)); } this.out = r;`,
         values: [10, 20], expected: [11, 22],
     },
     {
         name: "for-of with await in iterable expression",
-        bug: "td-20n",
         body: `const r = []; for (const x of await gate(0)) r.push(x); this.out = r;`,
         values: [[1, 2, 3]], expected: [1, 2, 3],
     },
     {
         name: "for-of destructured left with await",
-        bug: "td-ak1, td-20n",
+        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const [a, b] of [[1, 2], [3, 4]]) { r.push(a + b + await gate(i++)); } this.out = r;`,
         values: [100, 200], expected: [103, 207],
     },
     {
         name: "for-of with existing-variable left",
-        bug: "td-20n",
+        suspendBug: "td-5et",
         body: `let x; const r = []; for (x of [1, 2]) { r.push(x * await gate(x - 1)); } this.out = [r, x];`,
         values: [10, 10], expected: [[10, 20], 2],
     },
     {
         name: "for-of break/continue",
-        bug: "td-20n",
+        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const x of [1, 2, 3, 4]) { if (x == 2) continue; if (x == 4) break; r.push(await gate(i++)); } this.out = r;`,
         values: ["a", "b"], expected: ["a", "b"],
     },
     {
         name: "for-of over a Map and a string (non-array iterables)",
-        bug: "td-ak1, td-20n",
+        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const [k, v] of new Map([["a", 1]])) r.push(k + v + await gate(i++)); for (const c of "xy") r.push(c + await gate(i++)); this.out = r;`,
         values: ["!", "1", "2"], expected: ["a1!", "x1", "y2"],
     },
     {
         name: "for-of closure captures per-iteration binding",
-        bug: "td-20n",
+        // Loop-body bindings are hoisted to one shared `state.x`, so closures see the last value. Not for-of specific (any block-scoped binding in a loop)
+        bug: "td-8tr",
         body: `const fs = []; let i = 0; for (const x of [1, 2, 3]) { await gate(i++); fs.push(() => x); } this.out = fs.map(f => f());`,
         values: [0, 0, 0], expected: [1, 2, 3],
     },
     {
         name: "nested for-of with labeled continue",
-        bug: "td-20n",
+        suspendBug: "td-5et",
         body: `const r = []; let i = 0; outer: for (const a of [1, 2]) { for (const b of [1, 2]) { if (b == 2) continue outer; r.push(a * 10 + b + await gate(i++)); } } this.out = r;`,
         values: [0, 0], expected: [11, 21],
     },
     {
         name: "for-of return from inside loop",
-        bug: "td-20n",
         body: `for (const x of [1, 2, 3]) { if (await gate(x - 1)) { this.out = x; return; } } this.out = "none";`,
         values: [false, true], expected: 2,
     },
@@ -111,7 +110,8 @@ const cases: Case[] = [
     },
     {
         name: "for-await-of over array of Deferreds",
-        bug: "td-20n",
+        // Holds the not-yet-awaited gate(1) across a suspend, which hangs save (as does `const p = gate(1); await gate(0); await p`)
+        suspendBug: "td-639",
         body: `const r = []; for await (const x of [gate(0), gate(1)]) r.push(x); this.out = r;`,
         values: [1, 2], expected: [1, 2],
     },
@@ -182,13 +182,13 @@ const cases: Case[] = [
     },
     {
         name: "break out of try/finally in loop",
-        bug: "td-20n",
+        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const x of [1, 2, 3]) { try { if (x == 2) break; r.push(await gate(i++)); } finally { r.push("f" + x); } } this.out = r;`,
         values: ["a"], expected: ["a", "f1", "f2"],
     },
     {
         name: "continue through finally",
-        bug: "td-20n",
+        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const x of [1, 2]) { try { if (x == 1) continue; r.push(await gate(i++)); } finally { r.push("f" + x); } } this.out = r;`,
         values: ["a"], expected: ["f1", "a", "f2"],
     },
@@ -200,7 +200,6 @@ const cases: Case[] = [
     },
     {
         name: "try in loop, throw on some iterations",
-        bug: "td-20n",
         body: `const r = []; let i = 0; for (const x of [1, 2, 3]) { try { if (await gate(i++)) throw x; r.push("ok" + x); } catch (e) { r.push("err" + e); } } this.out = r;`,
         values: [0, 1, 0], expected: ["ok1", "err2", "ok3"],
     },
@@ -223,7 +222,7 @@ const cases: Case[] = [
     },
     {
         name: "continue inside switch inside loop",
-        bug: "td-20n",
+        suspendBug: "td-5et",
         body: `const r = []; let i = 0; for (const x of [1, 2, 3]) { switch (x) { case 2: continue; default: r.push(await gate(i++)); } } this.out = r;`,
         values: ["a", "b"], expected: ["a", "b"],
     },
@@ -354,22 +353,27 @@ const cases: Case[] = [
 
 describe("resumable transformer: emit", () => {
     const h = useResumableHarness();
-    beforeEach(() => { sink.v = undefined; gates = 0; });
+    /** A timed-out (known-hanging) case keeps running in the background; it must not resolve later cases' same-named gates */
+    let runId = 0;
+    beforeEach(() => { sink.v = undefined; gates = 0; runId++; });
 
     const runCase = async (c: Case, suspend: boolean) => {
         const W = build(`self = this;\n@resumable async m() { ${c.body} }`);
         let w = new W();
         await h.boot({ APP: w });
         w.m(...(c.args ?? []));
+        const id = runId;
         const values = c.values ?? [];
         for (let i = 0; i < values.length; i++) {
             await tick();
             if (suspend) {
                 await h.shutdown();
+                if (id !== runId) return;
                 w = new W();
                 await h.boot({ APP: w });
                 await tick();
             }
+            if (id !== runId) return;
             Deferred.get("g" + i).resolve(values[i]);
         }
         await tick();
