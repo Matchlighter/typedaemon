@@ -17,12 +17,13 @@ const ACTION_PARAMS: { [N in ActionName]: ReadonlyArray<keyof ActionParams<N>> }
     'resumable.discard': ['app', 'key'],
     'script.cancel': ['app', 'script', 'run'],
     'crossCall.cancel': ['uuid'],
+    'config.reload': [] as never[],
 };
 
 /** Throws unless `params` (untrusted, from the socket) is an object with a string for each param the action takes */
 export function validateActionParams<N extends ActionName>(name: N, params: unknown): ActionParams<N> {
     const bad = !params || typeof params !== 'object' ? 'expected an object'
-        : (ACTION_PARAMS[name] as string[]).filter(k => typeof (params as any)[k] !== 'string').map(k => `${k} must be a string`).join(', ');
+        : (ACTION_PARAMS[name] as ReadonlyArray<string>).filter(k => typeof (params as any)[k] !== 'string').map(k => `${k} must be a string`).join(', ');
     if (bad) throw new Error(`Invalid params for ${name}: ${bad}`);
     return params as ActionParams<N>;
 }

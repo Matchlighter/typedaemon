@@ -162,19 +162,31 @@ export function timeoutPromise<T>(timeout: number, promise: Promise<T>, timeoutA
     })
 }
 
-export const watchFile = (file: string, callback: (file: string) => void, config: { throttle: number } = { throttle: 3000 }) => {
-    let md5Previous = null;
+export const watchFile = (file: string, callback: (file: string) => void | Promise<void>, config: { throttle: number } = { throttle: 3000 }) => {
+    let md5Previous: string = null;
 
-    const throttled_callback = debounce({ timeToStability: 100, maxTime: config.throttle }, async (_file: string) => {
-        const md5Current = md5(await fs.promises.readFile(file));
-        if (md5Current === md5Previous) return;
-        md5Previous = md5Current;
+    const throttled_callback = debounce({ timeToStability: 100, maxTime: config.throttle }, async () => {
+        try {
+            const md5Current = md5(await fs.promises.readFile(file));
+            if (md5Current === md5Previous) return;
 
-        await callback(file);
+            await callback(file);
+            // Only record after success, so a failed reload can be retried by re-saving identical content
+            md5Previous = md5Current;
+        } catch (ex) {
+            // ENOENT is expected mid atomic-save; a later event will follow
+            if (ex?.code !== "ENOENT") console.error(`Error handling change of ${file}:`, ex);
+        }
     })
 
-    // TODO Looks like we may only be allowed one watch per file per process, so we may need to do a caching/tracking mechanism
-    return fs.watch(file, throttled_callback);
+    // Watch the directory (filtered by name), not the file: editors that save via rename-over replace the inode,
+    // which would silently kill a file-level watch.
+    const dir = path.dirname(file);
+    const base = path.basename(file);
+    return fs.watch(dir, (_event, filename) => {
+        if (filename && filename !== base) return;
+        throttled_callback();
+    });
 }
 
 export const fileExists = async (file: string) => {

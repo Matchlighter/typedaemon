@@ -89,6 +89,13 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
     /** Path of the loaded config file; undefined before it is loaded */
     get configFile() { return this._configFile }
 
+    private configLoader: (() => Promise<void>) | undefined;
+    /** Re-read and apply the config file now (what the file watcher does). Rejects if it fails to load, keeping the previous config */
+    async reloadConfig() {
+        if (!this.configLoader) throw new Error("Config is not loaded yet");
+        await this.configLoader();
+    }
+
     private _rawConfig: DeepReadonly<Partial<Configuration>> | undefined;
     /** An app's config exactly as the config file gives it (before defaults and normalization); undefined if the file has no such app */
     rawAppConfig(id: string): DeepReadonly<Partial<AppConfiguration>> | undefined {
@@ -591,12 +598,18 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         }
 
         await _loadConfig();
+        this.configLoader = _loadConfig;
 
         if (this.currentConfig.daemon.watch.config) {
             this.logMessage("debug", `Watching config file ${chalk.green(file)}`)
-            const watcher = watchFile(file, () => {
+            const watcher = watchFile(file, async () => {
                 this.logMessage("info", `Reloading Typedaemon Config`)
-                _loadConfig()
+                try {
+                    await _loadConfig();
+                } catch (ex) {
+                    this.logMessage("error", `Failed to reload Typedaemon Config (keeping previous): ${ex?.message ?? ex}`);
+                    throw ex;
+                }
             });
             this.cleanupTasks.append(() => watcher.close());
         }

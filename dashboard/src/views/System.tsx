@@ -68,6 +68,9 @@ export class System extends Component {
     });
 
 
+    /** Break-glass for when the config file watcher misses a change; the server rejects with the load error */
+    private reloading = new ConfirmedAction<null>({ call: () => app.connection.call('config.reload', {}) });
+
     /** Names of the stores whose key list is expanded */
     state = { open: new Set<string>() };
 
@@ -161,6 +164,13 @@ export class System extends Component {
                                         <dt>Timezone</dt><dd>{dash(sys.location?.timezone)}</dd>
                                         <Location location={sys.location} />
                                     </dl>
+                                    <div className="sys-reload">
+                                        <button type="button" className="btn" disabled={this.reloading.busy} onClick={() => void this.reloading.run(null)}>
+                                            {this.reloading.busy ? 'Reloading…' : 'Reload Config'}
+                                        </button>
+                                        <span className="note">Re-read the config file now, if the watcher missed a change.</span>
+                                    </div>
+                                    <ActionError error={this.reloading.error} />
                                 </section>
 
                                 {sys.resolvedConfig && (
