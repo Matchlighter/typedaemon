@@ -451,7 +451,7 @@ describe("resumable transformer: emit", () => {
     });
 
     describe("method shapes", () => {
-        itKnown("default param referencing earlier param", "td-6is", async () => {
+        it("default param referencing earlier param", async () => {
             const W = build(`@resumable async m(a, b = a + 1) { await gate(0); this.out = [a, b]; }`);
             const w = new W();
             await h.boot({ APP: w });

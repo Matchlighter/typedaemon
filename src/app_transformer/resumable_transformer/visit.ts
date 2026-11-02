@@ -158,9 +158,10 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<
           t.objectProperty(t.identifier("try_locs"), emitter.getTryLocsList() || t.nullLiteral()),
           t.objectProperty(t.identifier("marked_locs"), emitter.getLocIndices() || t.nullLiteral()),
           t.objectProperty(t.identifier("context_name"), t.stringLiteral(contextId.name)),
-          t.objectProperty(t.identifier("parameter_names"), t.arrayExpression([
-            ...(state.method_params ?? []).map(p => t.stringLiteral(p.name))
-          ])),
+          // Lazy view of the method's bound parameter identifiers (handles destructuring/defaults/rest)
+          t.objectProperty(t.identifier("parameter_scope"), t.arrowFunctionExpression([], t.objectExpression(
+            paramBindingNames(t, state.method_params).map(name => t.objectProperty(t.identifier(name), t.identifier(name)))
+          ))),
         ]))
 
         let wrapCall = t.callExpression(
@@ -215,6 +216,18 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<
     }
   }
 };
+
+// Names bound by a method's parameter list (identifiers inside patterns, defaults, rest)
+function paramBindingNames(t, params = []) {
+  const names = new Set<string>();
+  for (const param of params) {
+    const p = t.isTSParameterProperty(param) ? param.parameter : param;
+    for (const name of Object.keys(t.getBindingIdentifiers(p))) {
+      if (name !== "this") names.add(name);
+    }
+  }
+  return [...names];
+}
 
 // Check if a node should be transformed by regenerator
 function shouldRegenerate(node, state) {

@@ -1,4 +1,8 @@
-import { Deferred, compileApp, useResumableHarness } from "../../../test/helpers/resumable";
+import * as mobx from "mobx";
+import { Deferred, compileApp, flushMicrotasks, useResumableHarness } from "../../../test/helpers/resumable";
+import { current } from "../../hypervisor/current";
+import { LifecycleHelper } from "../../common/lifecycle_helper";
+import { wait } from "../../runtime/wait";
 
 /** Compile a class whose body is `members`, returning an instance (registered as the APP owner by the caller) */
 const build = (members: string) => {
@@ -255,6 +259,63 @@ describe("resumable transformer: hoisting", () => {
             Deferred.get("d").resolve(3);
             await new Promise(r => setImmediate(r));
             expect(w.out).toBe(6);
+        });
+
+        describe("wait() condition referencing params", () => {
+            // Minimal app context: appmobx binds callbacks/disposers to current.application, and a resumed
+            // (string) wait condition is evaluated via appModule._eval_in_module (mirrors hypervisor/vm.ts)
+            beforeEach(() => {
+                current.application = {
+                    invoke: (cb, ...args) => cb(...args),
+                    cleanups: new LifecycleHelper(),
+                    appModule: {
+                        _eval_in_module: (code: string, scope: any) =>
+                            new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope)),
+                    },
+                } as any;
+            });
+            afterEach(() => {
+                current.application = undefined;
+            });
+
+            const ready = mobx.observable.box(false);
+            beforeEach(() => ready.set(false));
+
+            const buildW = () => compileApp(`
+import { resumable } from "typedaemon";
+export class W {
+    out;
+    get ready() { return ready.get(); }
+    @resumable async m(a, { b }) { await wait(() => this.ready && a + b === 3); this.out = [a, b]; }
+}`, { ready, wait }).W;
+
+            it("straight through", async () => {
+                const W = buildW();
+                const w = new W();
+                await h.boot({ APP: w });
+                const p = w.m(1, { b: 2 });
+                await flushMicrotasks();
+                expect(w.out).toBeUndefined();
+                mobx.runInAction(() => ready.set(true));
+                await p;
+                expect(w.out).toEqual([1, 2]);
+            });
+
+            it("after suspend/resume", async () => {
+                const W = buildW();
+                let w = new W();
+                await h.boot({ APP: w });
+                w.m(1, { b: 2 });
+                await flushMicrotasks();
+                await h.shutdown();
+                w = new W();
+                await h.boot({ APP: w });
+                await flushMicrotasks();
+                expect(w.out).toBeUndefined();
+                mobx.runInAction(() => ready.set(true));
+                await new Promise(r => setTimeout(r, 10));
+                expect(w.out).toEqual([1, 2]);
+            });
         });
     });
 });

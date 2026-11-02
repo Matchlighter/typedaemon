@@ -8,7 +8,8 @@ export interface ExecutorOptions {
     try_locs: number[][];
     marked_locs: number[];
     context_name?: string;
-    parameter_names?: string[];
+    /** Current values of the method's bound parameter identifiers, keyed by name */
+    parameter_scope?: () => Record<string, any>;
 }
 
 const Op = Object.prototype;
