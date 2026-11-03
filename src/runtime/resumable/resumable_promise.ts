@@ -2,6 +2,7 @@
 import { ExtensiblePromise } from "@matchlighter/common_library/promises";
 
 import { ResumableStore } from ".";
+import { decodeGraph } from "../../common/graph_json";
 import { serializable } from "../../common/util";
 import { current } from "../../hypervisor/current";
 import { logMessage } from "../../hypervisor/logging";
@@ -164,14 +165,17 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
                 }
             }
 
-            // If not suspended, convert to error SettledPromise
-            if (!obj.suspended || obj.force_suspended) {
+            if (obj.settled) {
+                // Serialize settled promises as SettledPromise. A settled one needn't have been paused: eg. one held (not
+                //   awaited) by a resumable, which nothing re-assesses once it settles
+                if (!SettledPromise.can_suspend(obj)) {
+                    obj = new SettledPromise({ result: "reject_error", value: "Promise result can't be persisted" });
+                } else if (!(obj instanceof SettledPromise)) {
+                    obj = SettledPromise.for_resumable(obj);
+                }
+            } else if (!obj.suspended || obj.force_suspended) {
+                // If not suspended, convert to error SettledPromise
                 obj = new SettledPromise({ result: "reject_error", value: "Promise would not suspend" });
-            }
-
-            // Serialize settled promises as SettledPromise
-            if (obj.settled && !(obj instanceof SettledPromise)) {
-                obj = SettledPromise.for_resumable(obj);
             }
 
             let sdata;
@@ -340,6 +344,27 @@ export abstract class ResumablePromise<T = any> extends ExtensiblePromise<T> {
 
     protected can_suspend() {
         return true;
+    }
+
+    /**
+     * Why this isn't suspended (while the store is shutting down), if it isn't: the first reason it can't be persisted
+     *   as it stands. `undefined` when it is suspended, or only waits for whatever awaits it to suspend.
+     */
+    suspendBlocker(): string | undefined {
+        if (this.suspended && !this.force_suspended) return;
+        if (this.settled) {
+            return SettledPromise.can_suspend(this) ? undefined : "its result can't be persisted";
+        }
+        if (this.has_non_resumable_awaiters) return "it is awaited by non-resumable code (eg. a plain async function, or a .then()/.catch())";
+        for (const awaitee of this.awaiting_for()) {
+            if (!(awaitee instanceof ResumablePromise)) return "it awaits a non-resumable Promise (eg. one returned by a plain async function)";
+        }
+        if (!this.can_suspend()) return this.cannot_suspend_reason();
+    }
+
+    /** Why `can_suspend()` says no */
+    protected cannot_suspend_reason() {
+        return "it can't be suspended";
     }
 
     private has_non_resumable_awaiters = false;
@@ -623,11 +648,24 @@ export class FailedResume extends ResumablePromise<any> {
             type: data.script ? 'script' : 'resumable',
             owner: String(data.scope.owner),
             method: data.scope.method,
-            params: data.scope.parameters ?? [],
+            params: FailedResume.parameters(data),
             startedAt: data.started_at ?? this.createdAt,
             restarts: data.restarts ?? 0,
             failure: { error: this.error?.message ?? String(this.error), attempts: this.attempts },
         };
+    }
+
+    /**
+     * The call parameters of `@resumable` data (see resumable_method decodeResumableFrame; older data has them in `scope`).
+     *   The data failed to resume, possibly because it is corrupt: listing it must not fail too, so it shows none then.
+     */
+    private static parameters(data: any): unknown[] {
+        try {
+            // Promises in the frame (persisted as dependencies) show as undefined
+            return (data.frame ? decodeGraph(data.frame, () => undefined).parameters : data.scope.parameters) ?? [];
+        } catch {
+            return [];
+        }
     }
 
     /** Give up on it: whatever awaits it sees a cancellation, and it is no longer persisted */

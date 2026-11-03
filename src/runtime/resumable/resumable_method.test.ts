@@ -1,4 +1,5 @@
 import { Deferred, compileApp, flushMicrotasks, useResumableHarness } from "../../../test/helpers/resumable";
+import { decodeResumableFrame } from "./resumable_method";
 import { PromiseCancelled } from "./resumable_promise";
 
 const APP_SOURCE = `
@@ -107,6 +108,26 @@ export class Worker {
     }
 
     @resumable
+    async aliased() {
+        const r = [];
+        const holder = { r, self: null };
+        holder.self = holder;
+        await Deferred.get("b");
+        r.push(1);
+        return this.finish([holder.r.length, holder.self === holder]);
+    }
+
+    @resumable
+    async catchesThenAwaits() {
+        try {
+            throw new TypeError("boom");
+        } catch (e) {
+            await Deferred.get("b");
+            return this.finish([e instanceof TypeError, e instanceof Error, e.name, e.message, e.stack.includes("boom")]);
+        }
+    }
+
+    @resumable
     async versioned() {
         await Deferred.get("b");
         return this.finish("v1");
@@ -189,11 +210,12 @@ describe("@resumable", () => {
                 expect.objectContaining({
                     type: "@resumable",
                     data: expect.objectContaining({
-                        scope: { owner: "APP", method: "addAfter", parameters: [1] },
+                        scope: { owner: "APP", method: "addAfter" },
                     }),
                 }),
                 expect.objectContaining({ type: "test:deferred" }),
             ]));
+            expect(decodeResumableFrame(persisted.find(p => p.type == "@resumable").data).parameters).toEqual([1]);
             expect(w1.events).toEqual([]);
 
             const w2 = await bootWorker();
@@ -255,6 +277,39 @@ describe("@resumable", () => {
             new Deferred("b");
             w1.compound(1);
             await h.shutdown();
+
+            const w2 = await bootWorker();
+            Deferred.get("b").resolve(2);
+            await flushMicrotasks();
+            expect(w2.events).toEqual([3]);
+        });
+
+        it("preserves shared references and cycles across locals and temporaries", async () => {
+            const w1 = await bootWorker();
+            new Deferred("b");
+            w1.aliased();
+            await h.shutdown();
+
+            const w2 = await bootWorker();
+            Deferred.get("b").resolve(null);
+            await flushMicrotasks();
+            expect(w2.events).toEqual([[1, true]]);
+        });
+
+        it("resumes executor data persisted in the pre-reference-preserving format", async () => {
+            const w1 = await bootWorker();
+            new Deferred("b");
+            w1.compound(1);
+            await h.shutdown();
+
+            // Rewrite as an older version wrote it: state/temporaries/completions/arg/sent/rval as independent plain values
+            const persisted = h.persisted();
+            const entry = persisted.find(p => p.type == "@resumable");
+            const { frame, ...rest } = entry.data;
+            expect(frame).toBeDefined();
+            const { parameters, ...parts } = decodeResumableFrame(entry.data);
+            entry.data = { ...rest, ...parts, scope: { ...rest.scope, parameters } };
+            require("fs").writeFileSync(h.file, JSON.stringify(persisted));
 
             const w2 = await bootWorker();
             Deferred.get("b").resolve(2);
@@ -347,9 +402,9 @@ describe("@resumable", () => {
             await flushMicrotasks();
             resolveNative("native");
 
-            expect(await shutdown).toEqual([
-                expect.objectContaining({ type: "@resumable", data: expect.objectContaining({ arg: "native" }) }),
-            ]);
+            const persisted = await shutdown;
+            expect(persisted).toEqual([expect.objectContaining({ type: "@resumable" })]);
+            expect(decodeResumableFrame(persisted[0].data).arg).toBe("native");
             expect(w1.events).toEqual([]);
 
             const w2 = await bootWorker();
@@ -371,13 +426,16 @@ describe("@resumable", () => {
                 return await shutdown;
             }
 
+            const failures = () => h.lastSave.failed.map(f => f.error.message);
+
             it("force-suspends methods blocked on non-resumable promises", async () => {
                 const w = await bootWorker();
                 w.pending = new Promise(() => { });
                 w.awaitsPending();
 
-                // Nothing depends on it, so the forcibly-failed method is dropped
-                expect(await shutdownWithTimeout()).toBeNull();
+                // Nothing depends on it, so the forcibly-failed method is dropped (but for a record listing it as failed)
+                expect(await shutdownWithTimeout()).toEqual([expect.objectContaining({ type: "suspend_failed" })]);
+                expect(failures()).toEqual([expect.stringMatching(/APP\.awaitsPending.*awaits a non-resumable Promise/)]);
             });
 
             it("propagates the failure to resumable awaiters", async () => {
@@ -401,7 +459,8 @@ describe("@resumable", () => {
                 new Deferred("b");
                 w.takesCallback(() => "called");
 
-                expect(await shutdownWithTimeout()).toBeNull();
+                expect(await shutdownWithTimeout()).toEqual([expect.objectContaining({ type: "suspend_failed" })]);
+                expect(failures()).toEqual([expect.stringMatching(/APP\.takesCallback.*parameters\[0\] is a function/)]);
             });
 
             it("does not suspend methods holding non-serializable locals", async () => {
@@ -409,8 +468,41 @@ describe("@resumable", () => {
                 new Deferred("b");
                 w.holdsFunction();
 
-                expect(await shutdownWithTimeout()).toBeNull();
+                expect(await shutdownWithTimeout()).toEqual([expect.objectContaining({ type: "suspend_failed" })]);
+                expect(failures()).toEqual([expect.stringMatching(/APP\.holdsFunction.*state\.fn is a function/)]);
             });
+
+            it("still saves (and resumes) the methods that could suspend", async () => {
+                const w = await bootWorker();
+                new Deferred("b");
+                new Deferred("tick0");
+                w.holdsFunction();
+                w.counter(1);
+
+                const persisted = await shutdownWithTimeout();
+                expect(failures()).toHaveLength(1);
+                expect(persisted.filter(s => s.type === "@resumable").map(s => s.data.scope.method)).toEqual(["counter"]);
+
+                jest.useRealTimers();
+                const w2 = await bootWorker();
+                Deferred.get("tick0").resolve(0);
+                await flushMicrotasks();
+                expect(w2.events).toEqual([0]);
+            });
+        });
+
+        it("persists an Error held in a local, restoring it as an Error", async () => {
+            const w = await bootWorker();
+            new Deferred("b");
+            w.catchesThenAwaits();
+            await h.shutdown();
+            expect(h.lastSave.failed).toEqual([]);
+
+            const w2 = await bootWorker();
+            Deferred.get("b").resolve(0);
+            await flushMicrotasks();
+            // The subclass is not kept: it comes back as a plain Error carrying the original name, message and stack
+            expect(w2.events).toEqual([[false, true, "TypeError", "boom", true]]);
         });
     });
 

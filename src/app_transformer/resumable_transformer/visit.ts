@@ -25,7 +25,11 @@ const regen_import = template(`
 export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<any> => {
   // let root;
   let importedRuntime = false;
+  // Only the decorated method's body is regenerated. Nested async fns/arrows/methods/generators
+  // inside it stay plain JS (td-epy); they still close over the hoisted `state.<name>` vars.
+  const regenTargets = new WeakSet();
   return {
+    // Not reached by traversal: index.ts calls it on the decorated method, then traverses with `Function` only.
     Method(path, state) {
       let node = path.node;
 
@@ -50,6 +54,7 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<
         node.generator,
         node.async,
       );
+      regenTargets.add(container);
 
       path.get("body").set("body", [
         t.returnStatement(
@@ -71,7 +76,7 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<
       exit: util.wrapWithTypes(t, function (path, state) {
         let node = path.node;
 
-        if (!shouldRegenerate(node, state)) return;
+        if (!regenTargets.has(node) || !shouldRegenerate(node, state)) return;
 
         // if this is an ObjectMethod, we need to convert it to an ObjectProperty
         path = replaceShorthandObjectMethod(path);
@@ -158,9 +163,11 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<
           t.objectProperty(t.identifier("try_locs"), emitter.getTryLocsList() || t.nullLiteral()),
           t.objectProperty(t.identifier("marked_locs"), emitter.getLocIndices() || t.nullLiteral()),
           t.objectProperty(t.identifier("context_name"), t.stringLiteral(contextId.name)),
-          t.objectProperty(t.identifier("parameter_names"), t.arrayExpression([
-            ...(state.method_params ?? []).map(p => t.stringLiteral(p.name))
-          ])),
+          // The method's parameter bindings as the call bound them (its args through its destructuring/defaults/rest): taken
+          //   before the body runs, so not a live view. A resume re-binds them from the same (persisted) args.
+          t.objectProperty(t.identifier("parameter_scope"), t.objectExpression(
+            paramBindingNames(t, state.method_params).map(name => t.objectProperty(t.identifier(name), t.identifier(name)))
+          )),
         ]))
 
         let wrapCall = t.callExpression(
@@ -215,6 +222,18 @@ export const getVisitor = ({ types: t }: typeof import("@babel/core")): Visitor<
     }
   }
 };
+
+// Names bound by a method's parameter list (identifiers inside patterns, defaults, rest)
+function paramBindingNames(t, params = []) {
+  const names = new Set<string>();
+  for (const param of params) {
+    const p = t.isTSParameterProperty(param) ? param.parameter : param;
+    for (const name of Object.keys(t.getBindingIdentifiers(p))) {
+      if (name !== "this") names.add(name);
+    }
+  }
+  return [...names];
+}
 
 // Check if a node should be transformed by regenerator
 function shouldRegenerate(node, state) {
@@ -320,7 +339,7 @@ let argumentsThisVisitor = {
   },
 
   Identifier: function (path, state) {
-    if (path.node.name === "arguments" && util.isReference(path)) {
+    if (path.node.name === "arguments" && util.isVariableUse(path)) {
       util.replaceWithOrRemove(path, state.getArgsId());
       state.usesArguments = true;
     }

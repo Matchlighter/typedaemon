@@ -7,7 +7,7 @@ import { APP_BABEL_CONFIG } from "../../src/app_transformer";
 import * as regen_executor from "../../src/runtime/regen_executor";
 import * as resumable_runtime from "../../src/runtime/resumable";
 import { ResumablePromise, SerializeContext } from "../../src/runtime/resumable/resumable_promise";
-import { ResumableStore } from "../../src/runtime/resumable/resumable_store";
+import { ResumableStore, type SaveResult } from "../../src/runtime/resumable/resumable_store";
 import { useTempDir } from "./fs";
 
 process.env.BROWSERSLIST_IGNORE_OLD_DATA = "true";
@@ -92,6 +92,8 @@ export const flushMicrotasks = () => new Promise<void>(resolve => setImmediate(r
 export class ResumableHarness {
     file: string;
     store: ResumableStore;
+    /** What the last \`shutdown()\` reported */
+    lastSave: SaveResult;
     private original_get_store: typeof ResumablePromise.get_store;
 
     setup(file: string) {
@@ -118,7 +120,7 @@ export class ResumableHarness {
 
     /** Suspend and persist the current run, returning what was written to disk (if anything) */
     async shutdown() {
-        await this.store.save();
+        this.lastSave = await this.store.save();
         return this.persisted();
     }
 

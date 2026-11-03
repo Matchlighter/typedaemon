@@ -3,7 +3,7 @@ import { InvertedWeakMap } from "@matchlighter/common_library/data/inverted_weak
 
 import { AsyncLocalStorage } from "async_hooks";
 import { Executor } from "../regen_executor";
-import { serializable } from "../../common/util";
+import { decodeGraph, encodeGraph, findUnencodable, type EncodedGraph, type GraphExternals } from "../../common/graph_json";
 import { CancellableResumablePromise, ResumablePromise, SerializeContext, type ResumableDescription } from "./resumable_promise";
 
 const RESUMABLE_CONTEXT_ID = Symbol("resumable_serialized_id");
@@ -12,7 +12,43 @@ export const EXECUTOR_FACTORY = Symbol("builder");
 interface SerializedScope {
     owner: string;
     method: string;
+    /** Legacy (pre-`frame`) only */
+    parameters?: any[];
+}
+
+/**
+ * Everything the method's code can reach: persisted as a single graph (`encodeGraph`) so that references shared between
+ * them (eg. a local and a temporary holding the same array) or cycles survive a suspend as one object, not copies.
+ * ResumablePromises in it (eg. `const p = sleep(1); await x; await p`) are persisted as dependencies of the method.
+ */
+interface ExecutionFrame {
     parameters: any[];
+    state: any;
+    temporaries: Record<string, any>;
+    completions: { type: string, arg?: any }[];
+    arg: any;
+    sent: any;
+    rval: any;
+}
+
+const isResumablePromise = (v: object) => v instanceof ResumablePromise;
+
+/**
+ * The persisted frame of a `@resumable`, including from data written before frames were a single graph.
+ * `requireDependency` gives the dependency (by its index) that a ResumablePromise of the frame was persisted as.
+ */
+export function decodeResumableFrame(data: any, requireDependency?: (index: number) => any): ExecutionFrame {
+    if (data.frame) return decodeGraph(data.frame as EncodedGraph, requireDependency);
+    // Legacy: each part was serialized independently (plain JSON)
+    return {
+        parameters: data.scope.parameters,
+        state: data.state,
+        temporaries: data.temporaries,
+        completions: data.completions,
+        arg: data.arg,
+        sent: data.sent,
+        rval: data.rval,
+    };
 }
 
 interface HotScope {
@@ -33,9 +69,10 @@ ResumablePromise.defineClass<ResumableMethod<any>>({
     resumer: (data, { require }) => {
         const scope = data.scope;
         const dep = require(data.pending_promise);
+        const frame = decodeResumableFrame(data, require);
 
         const owner = resumable.lookup_owner(scope.owner);
-        const executor: Executor<any> = owner[scope.method][EXECUTOR_FACTORY].call(owner, ...scope.parameters);
+        const executor: Executor<any> = owner[scope.method][EXECUTOR_FACTORY].call(owner, ...frame.parameters);
 
         // TODO How to handle unregistered owner?
 
@@ -49,23 +86,24 @@ ResumablePromise.defineClass<ResumableMethod<any>>({
         }
 
         Object.assign(executor, {
-            ...data.temporaries,
-            state: data.state,
-            ...(data.completions && { completions: data.completions }),
-            arg: data.arg,
-            sent: data.sent,
+            ...frame.temporaries,
+            state: frame.state,
+            ...(frame.completions && { completions: frame.completions }),
+            arg: frame.arg,
+            sent: frame.sent,
             actionType: data.actionType,
             // Using mark index makes things more stable if the expressions of the resumable change, but flow changes will still be problematic
             prev: newIndexedMarks[data.prevIndex] || data.prev,
             next: newIndexedMarks[data.nextIndex] || data.next,
             done: data.done,
-            rval: data.rval,
+            rval: frame.rval,
         });
 
         const rthmd = new ResumableMethod(executor);
         rthmd['scope'] = {
-            ...scope,
             owner,
+            method: scope.method,
+            parameters: frame.parameters,
         }
         rthmd.startedAt = data.started_at ?? rthmd.startedAt;
         rthmd.restarts = (data.restarts ?? 0) + 1;
@@ -164,18 +202,13 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
             scope: {
                 owner: this.scope.owner[RESUMABLE_CONTEXT_ID],
                 method: this.scope.method,
-                parameters: this.scope.parameters,
             } as SerializedScope,
             started: exc._started,
             started_at: this.startedAt,
             restarts: this.restarts,
             script: this.is_script,
 
-            state: exc.state,
-            temporaries: exc.temporaries,
-            completions: exc.completions,
-            arg: exc.arg,
-            sent: exc.sent,
+            frame: encodeGraph(this.frame(), { is: isResumablePromise, encode: (p) => context.ref(p as ResumablePromise) } satisfies GraphExternals),
             actionType: exc.actionType,
 
             marked_locations: exc.options.marked_locs,
@@ -185,16 +218,35 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
             nextIndex: exc.options.marked_locs.indexOf(exc.next as any),
 
             done: exc.done,
-            rval: exc.rval,
         }
+    }
+
+    private frame(): ExecutionFrame {
+        const exc = this.executor;
+        return {
+            parameters: this.scope.parameters,
+            state: exc.state,
+            temporaries: exc.temporaries,
+            completions: exc.completions,
+            arg: exc.arg,
+            sent: exc.sent,
+            rval: exc.rval,
+        };
+    }
+
+    /** The first part of the frame (eg. `state.fn`) that can't be persisted, as a message */
+    private unpersistable() {
+        const bad = findUnencodable(this.frame(), undefined, isResumablePromise);
+        return bad && `${bad.path} is ${bad.what}, which can't be persisted`;
     }
 
     protected can_suspend() {
         if (!super.can_suspend()) return false;
-        const exc = this.executor;
-        if (!serializable(exc.state, []) || !serializable(exc.temporaries, []) || !serializable(exc.completions, [])) return false;
-        if (!serializable(exc.arg, []) || !serializable(this.scope.parameters, [])) return false;
-        return true;
+        return !this.unpersistable();
+    }
+
+    protected cannot_suspend_reason() {
+        return this.unpersistable() ?? super.cannot_suspend_reason();
     }
 
     protected do_unsuspend(): void {
@@ -246,7 +298,10 @@ export class ResumableMethod<T> extends CancellableResumablePromise<T> {
  * Mark a method as resumable. When the app or TypeDaemon shutdown, the current execution
  * state will be saved and reloaded when the app starts again.
  * 
- * NB: All variables must be JSON serializable.
+ * NB: All variables must be JSON serializable (Errors are kept as their name, message and stack; ResumablePromises, eg. a
+ * `sleep()` not awaited yet, are persisted with the method). One that holds anything else
+ * (eg. a function) at shutdown is given up on: it will not resume (it is listed as failed until discarded), and the shutdown
+ * reports why (see `ResumableStore.save`).
  */
 export const resumable = (f, context: ClassMethodDecoratorContext) => {
     function start_wrapped(...args) {

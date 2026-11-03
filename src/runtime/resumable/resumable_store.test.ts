@@ -110,6 +110,17 @@ describe('ResumableStore.list', () => {
         expect(f).toBeInstanceOf(FailedResume);
     });
 
+    it('lists a failed resume whose persisted frame is corrupt, without its params', () => {
+        failedResume({ data: { scope: { owner: 'APPLICATION', method: 'gone' }, frame: { root: { '@': 9 }, objects: [] } } });
+        expect(store.list()).toMatchObject([{ status: 'failed', method: 'gone', params: [] }]);
+    });
+
+    it('lists the params of a failed resume whose frame holds a promise', () => {
+        const frame = { root: { '@': 0 }, objects: [{ parameters: { '@': 1 }, state: { '@': 2 } }, ['a'], { p: { '@': 3 } }, 0], externals: [3] };
+        failedResume({ data: { scope: { owner: 'APPLICATION', method: 'gone' }, frame } });
+        expect(store.list()).toMatchObject([{ status: 'failed', method: 'gone', params: ['a'] }]);
+    });
+
     it('counts attempts across restarts', async () => {
         failedResume({ failed_attempts: 2 });
         expect(store.list()[0].failure!.attempts).toBe(3);
@@ -123,6 +134,44 @@ describe('ResumableStore.list', () => {
         await store.save();
         expect(store.list()[0].status).toBe('suspended');
         a.finish();
+    });
+});
+
+describe('ResumableStore.save: given up on at shutdown', () => {
+    /** Never reaches a point where it can be persisted */
+    class Stuck extends Described {
+        protected can_suspend() { return false; }
+        protected cannot_suspend_reason() { return 'state.fn is a function'; }
+    }
+    const timeout = ResumableStore.SUSPEND_TIMEOUT_MS;
+    beforeAll(() => { ResumableStore.SUSPEND_TIMEOUT_MS = 20; });
+    afterAll(() => { ResumableStore.SUSPEND_TIMEOUT_MS = timeout; });
+
+    it('is listed as failed after the restart, with what was called and why', async () => {
+        new Stuck(description({ method: 'stuck', params: [1, 'x', () => 1], startedAt: 7, restarts: 2 }));
+        const { failed } = await store.save();
+        expect(failed).toHaveLength(1);
+
+        store = new ResumableStore({ file: path.join(dir, 'state.json') }, {});
+        expect(await store.load()).toEqual([]);
+        const [row] = store.list();
+        expect(row).toMatchObject({ status: 'failed', owner: 'APPLICATION', method: 'stuck', startedAt: 7, restarts: 2 });
+        expect(row.params).toEqual([1, 'x', expect.stringMatching(/function/)]);
+        expect(row.failure!.error).toMatch(/could not be suspended.*state\.fn is a function/);
+    });
+
+    it('stays listed until discarded', async () => {
+        new Stuck(description({ method: 'stuck' }));
+        await store.save();
+        for (let restart = 0; restart < 2; restart++) {
+            store = new ResumableStore({ file: path.join(dir, 'state.json') }, {});
+            await store.load();
+            expect(store.list().map(r => [r.method, r.status])).toEqual([['stuck', 'failed']]);
+            if (restart == 1) store.discard(store.list()[0].id);
+            await flush();
+            await store.save();
+        }
+        expect(fs.existsSync(path.join(dir, 'state.json'))).toBe(false);
     });
 });
 

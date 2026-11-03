@@ -51,13 +51,9 @@ class StateWaiter extends ResumablePromise<void> {
             try {
                 const executor = context.executor;
                 const scope = {
+                    ...executor.options.parameter_scope,
                     _this: context?.scope?.owner,
                     [executor.options.context_name]: executor,
-                }
-                if (executor.options.parameter_names) {
-                    for (let i = 0; i < executor.options.parameter_names.length; i++) {
-                        scope[executor.options.parameter_names[i]] = context?.scope?.parameters[i];
-                    }
                 }
                 const res = current.application.appModule._eval_in_module(this.expr, scope);
                 return res();

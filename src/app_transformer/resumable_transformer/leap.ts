@@ -83,16 +83,12 @@ function TryEntry(firstLoc, catchEntry, finallyEntry) {
 inherits(TryEntry, Entry);
 export { TryEntry }
 
-function CatchEntry(firstLoc, paramId) {
+function CatchEntry(firstLoc) {
   Entry.call(this);
 
-  const t = getTypes();
-
-  t.assertLiteral(firstLoc);
-  t.assertIdentifier(paramId);
+  getTypes().assertLiteral(firstLoc);
 
   this.firstLoc = firstLoc;
-  this.paramId = paramId;
 }
 
 inherits(CatchEntry, Entry);

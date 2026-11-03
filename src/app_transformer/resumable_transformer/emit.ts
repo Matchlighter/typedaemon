@@ -105,6 +105,27 @@ export class Emitter {
     return lhs;
   };
 
+  // Emits `yield arg` (suspending until resumed at `after`), returning the expression for the value sent back in.
+  emitYield(arg, after = this.loc(), loc?) {
+    const t = util.getTypes();
+    this.emitAssign(this.contextProperty("next"), after);
+
+    let ret = t.returnStatement(t.cloneDeep(arg) || null);
+    // Preserve the `yield` location so that source mappings for the statements
+    // link back to the yield properly.
+    ret.loc = loc;
+    this.emit(ret);
+    this.mark(after);
+
+    return this.contextProperty("sent");
+  };
+
+  // Emits `await arg`, ie. what the AwaitExpression visitor's `yield _awrap(arg)` lowers to.
+  emitAwait(arg) {
+    const t = util.getTypes();
+    return this.emitYield(t.callExpression(util.runtimeProperty("_awrap"), [arg]));
+  };
+
   // Shorthand for an assignment statement.
   assign(lhs, rhs) {
     const t = util.getTypes();
@@ -538,15 +559,21 @@ export class Emitter {
         return self.explodeExpression(path.get("expression"));
 
       case "ForInStatement":
+      case "ForOfStatement":
         head = this.loc();
         after = this.loc();
 
-        // Remaining keys, as a plain array (not an iterator closure) so that it can be persisted when suspending
-        let keysTmpVar = self.makeTempVar();
+        // The remaining keys (for-in) / values (for-of) are materialized up front into a plain array, reversed so the loop can
+        // `pop()` them in order. A live iterator (as upstream regenerator uses) is a closure that can't be persisted when
+        // suspending; an array can.
+        // Tradeoff (for-of): the iterable is drained eagerly before the first iteration, so infinite/lazy iterables hang, and
+        // values produced after the loop starts (eg. a generator reacting to the loop body) aren't seen. `for await` only
+        // supports sync iterables (each value is awaited); async iterables are rejected at runtime.
+        let listTmpVar = self.makeTempVar();
         self.emitAssign(
-          keysTmpVar,
+          listTmpVar,
           t.callExpression(
-            util.runtimeProperty("keys"),
+            util.runtimeProperty(stmt.type == "ForInStatement" ? "keys" : stmt.await ? "awaitValues" : "values"),
             [self.explodeExpression(path.get("right"))]
           )
         );
@@ -554,17 +581,18 @@ export class Emitter {
         self.mark(head);
 
         self.jumpIf(
-          t.unaryExpression("!", t.memberExpression(t.cloneDeep(keysTmpVar), t.identifier("length"), false)),
+          t.unaryExpression("!", t.memberExpression(t.cloneDeep(listTmpVar), t.identifier("length"), false)),
           after
         );
 
-        self.emitAssign(
-          stmt.left,
-          t.callExpression(
-            t.memberExpression(t.cloneDeep(keysTmpVar), t.identifier("pop"), false),
-            []
-          )
+        let item: types.Expression = t.callExpression(
+          t.memberExpression(t.cloneDeep(listTmpVar), t.identifier("pop"), false),
+          []
         );
+        if (stmt.type == "ForOfStatement" && stmt.await) {
+          item = self.emitAwait(item);
+        }
+        self.emitAssign(stmt.left, item);
 
         self.leapManager.withEntry(
           new leap.LoopEntry(after, head, labelId),
@@ -688,10 +716,7 @@ export class Emitter {
         let handler = stmt.handler;
 
         let catchLoc = handler && this.loc();
-        let catchEntry = catchLoc && new leap.CatchEntry(
-          catchLoc,
-          handler.param
-        );
+        let catchEntry = catchLoc && new leap.CatchEntry(catchLoc);
 
         let finallyLoc = stmt.finalizer && this.loc();
         let finallyEntry = finallyLoc &&
@@ -725,13 +750,11 @@ export class Emitter {
             self.updateContextPrevLoc(self.mark(catchLoc));
 
             let bodyPath = path.get("handler.body");
-            let safeParam = self.makeTempVar();
+            // `catch {}` binds nothing, so the exception needn't be kept.
+            let safeParam = handler.param && self.makeTempVar();
             self.clearPendingException(tryEntry.firstLoc, safeParam);
 
-            bodyPath.traverse(catchParamVisitor, {
-              getSafeParam: () => t.cloneDeep(safeParam),
-              catchParamName: handler.param.name
-            });
+            if (safeParam) bindCatchParam(path.get("handler"), safeParam, () => self.makeTempVar());
 
             self.leapManager.withEntry(catchEntry, function () {
               self.explodeStatement(bodyPath);
@@ -909,6 +932,118 @@ export class Emitter {
     return result;
   };
 
+  /**
+   * Explodes a callee (or tag) that is invoked after later siblings leap, keeping the `this` it would have been called with:
+   *   a member's object is held so the member is invoked on it; any other callee is held unqualified.
+   */
+  explodeCallee(calleePath, hasLeapingChildren) {
+    const t = util.getTypes();
+    if (calleePath.isMemberExpression()) {
+      const object = this.explodeReceiver(calleePath.get("object"), hasLeapingChildren);
+      const property = calleePath.node.computed
+        ? this.explodeViaTempVar(null, calleePath.get("property"), hasLeapingChildren)
+        : calleePath.node.property;
+      return t.memberExpression(t.cloneDeep(object), property, calleePath.node.computed);
+    }
+
+    if (this.isStableAcrossLeaps(calleePath)) return calleePath.node;
+    const callee = this.explodeViaTempVar(null, calleePath, hasLeapingChildren);
+    // A temporary is a member of the context; `(0, context.tN)` keeps it from being invoked with the context as `this`
+    return t.isMemberExpression(callee) ? unqualified(callee) : callee;
+  };
+
+  /** Explodes the object of a member that is used after later siblings leap (e.g. as `this` for a call) */
+  explodeReceiver(objectPath, hasLeapingChildren) {
+    if (this.isStableAcrossLeaps(objectPath)) return objectPath.node;
+    return this.explodeViaTempVar(this.makeTempVar(), objectPath, hasLeapingChildren);
+  };
+
+  /**
+   * Whether a callee/receiver can be read after later siblings leap instead of being held in a temporary first. Upstream
+   *   regenerator holds anything but a literal; we also skip `this` (or its `_this` alias), constant bindings (eg. imports,
+   *   module-level consts, unassigned params) and globals (eg. `Array`, `String.raw`). Skipping matters because temporaries
+   *   are persisted when suspending, and these values (the owner instance, functions) can't be. A global reassigned while
+   *   the method is suspended at a leap is the one deviation: the call sees the new value (as it would after a resume anyway).
+   */
+  isStableAcrossLeaps(path) {
+    const t = util.getTypes();
+    const node = path.node;
+    if (t.isThisExpression(node) || t.isSuper(node)) return true;
+    if (!t.isIdentifier(node)) return false;
+    const binding = path.scope.getBinding(node.name);
+    return binding ? binding.constant : true;
+  };
+
+  /**
+   * Explodes one link of an optional chain, jumping to `nullishLoc` (the chain's `undefined` result) where an optional
+   *   link's object/callee is nullish. Returns the link's (not yet evaluated) value expression.
+   */
+  explodeOptionalChainLink(path, nullishLoc) {
+    if (path.isOptionalMemberExpression()) return this.explodeChainMember(path, nullishLoc).member;
+    assert.ok(path.isOptionalCallExpression());
+    return this.explodeOptionalCall(path, nullishLoc);
+  };
+
+  /** The value of the object of a chain link (an inner link, or the chain's base), held so later leaps can't reorder its evaluation */
+  explodeChainObject(objectPath, nullishLoc) {
+    const isChainLink = objectPath.isOptionalMemberExpression() || objectPath.isOptionalCallExpression();
+    return isChainLink
+      ? this.emitAssign(this.makeTempVar(), this.explodeOptionalChainLink(objectPath, nullishLoc))
+      : this.explodeReceiver(objectPath, true);
+  };
+
+  jumpIfNullish(value, nullishLoc) {
+    const t = util.getTypes();
+    this.jumpIf(t.binaryExpression("==", t.cloneDeep(value), t.nullLiteral()), nullishLoc);
+  };
+
+  /** A member link of a chain: its held `object`, and the `member` read on it */
+  explodeChainMember(memberPath, nullishLoc) {
+    const t = util.getTypes();
+    const object = this.explodeChainObject(memberPath.get("object"), nullishLoc);
+    if (memberPath.node.optional) this.jumpIfNullish(object, nullishLoc);
+    const property = memberPath.node.computed
+      ? this.explodeViaTempVar(null, memberPath.get("property"), true)
+      : memberPath.node.property;
+    return { object, member: t.memberExpression(t.cloneDeep(object), property, memberPath.node.computed) };
+  };
+
+  explodeOptionalCall(path, nullishLoc) {
+    const t = util.getTypes();
+    const calleePath = path.get("callee");
+    let callee;
+    let thisArg = null;
+    if (calleePath.isMemberExpression() || calleePath.isOptionalMemberExpression()) {
+      ({ object: thisArg, member: callee } = this.explodeChainMember(calleePath, nullishLoc));
+    } else {
+      callee = this.explodeChainObject(calleePath, nullishLoc);
+    }
+
+    const args = () => path.get("arguments").map(argPath => t.cloneDeep(this.explodeElement(argPath, true)));
+    if (!path.node.optional) {
+      // As for CallExpression, a member callee is read on its held object after the arguments
+      return t.callExpression(thisArg ? callee : unqualified(callee), args());
+    }
+
+    // An optional callee is read and tested before the arguments, which it may skip
+    callee = this.emitAssign(this.makeTempVar(), callee);
+    this.jumpIfNullish(callee, nullishLoc);
+    if (thisArg) {
+      return t.callExpression(t.memberExpression(t.cloneDeep(callee), t.identifier("call")), [t.cloneDeep(thisArg), ...args()]);
+    }
+    return t.callExpression(unqualified(callee), args());
+  };
+
+  /** Explodes an array element / call argument / object spread: an expression, a `SpreadElement`, or a hole */
+  explodeElement(path, hasLeapingChildren) {
+    const t = util.getTypes();
+    if (!path.node) return null;
+    if (path.isSpreadElement()) {
+      return t.spreadElement(this.explodeViaTempVar(null, path.get("argument"), hasLeapingChildren));
+    }
+    return this.explodeViaTempVar(null, path, hasLeapingChildren);
+  };
+
   explodeExpression(path, ignoreResult?) {
     const t = util.getTypes();
     let expr = path.node;
@@ -967,74 +1102,16 @@ export class Emitter {
           argPath => meta.containsLeap(argPath.node)
         );
 
-        let injectFirstArg = null;
-
-        if (t.isMemberExpression(calleePath.node)) {
-          if (hasLeapingArgs) {
-            // If the arguments of the CallExpression contained any yield
-            // expressions, then we need to be sure to evaluate the callee
-            // before evaluating the arguments, but if the callee was a member
-            // expression, then we must be careful that the object of the
-            // member expression still gets bound to `this` for the call.
-
-            // `this` (or its `_this` alias) can't change across a yield, so it needs no temporary. Skipping one matters here
-            //   because temporaries are persisted when suspending, and the owner instance isn't serializable.
-            let objectPath = calleePath.get("object");
-            let newObject = (t.isThisExpression(objectPath.node) ||
-              (t.isIdentifier(objectPath.node) && objectPath.scope.getBinding(objectPath.node.name)?.constant))
-              ? objectPath.node
-              : self.explodeViaTempVar(
-                // Assign the exploded callee.object expression to a temporary
-                // variable so that we can use it twice without reevaluating it.
-                self.makeTempVar(),
-                objectPath,
-                hasLeapingChildren
-              );
-
-            let newProperty = calleePath.node.computed
-              ? self.explodeViaTempVar(null, calleePath.get("property"), hasLeapingChildren)
-              : calleePath.node.property;
-
-            injectFirstArg = newObject;
-
-            newCallee = t.memberExpression(
-              t.memberExpression(
-                t.cloneDeep(newObject),
-                newProperty,
-                calleePath.node.computed
-              ),
-              t.identifier("call"),
-              false
-            );
-
-          } else {
-            newCallee = self.explodeExpression(calleePath);
-          }
-
+        if (t.isMemberExpression(calleePath.node) && !hasLeapingArgs) {
+          newCallee = self.explodeExpression(calleePath);
         } else {
-          newCallee = self.explodeViaTempVar(null, calleePath, hasLeapingChildren);
-
-          if (t.isMemberExpression(newCallee)) {
-            // If the callee was not previously a MemberExpression, then the
-            // CallExpression was "unqualified," meaning its `this` object
-            // should be the global object. If the exploded expression has
-            // become a MemberExpression (e.g. a context property, probably a
-            // temporary variable), then we need to force it to be unqualified
-            // by using the (0, object.property)(...) trick; otherwise, it
-            // will receive the object of the MemberExpression as its `this`
-            // object.
-            newCallee = t.sequenceExpression([
-              t.numericLiteral(0),
-              t.cloneDeep(newCallee)
-            ]);
-          }
+          // If the arguments contain any yield expressions, the callee must be evaluated before them, still bound to
+          //   the `this` it would have been called with.
+          newCallee = self.explodeCallee(calleePath, hasLeapingChildren);
         }
 
         if (hasLeapingArgs) {
-          newArgs = argsPath.map(argPath => self.explodeViaTempVar(null, argPath, hasLeapingChildren));
-          if (injectFirstArg) newArgs.unshift(injectFirstArg);
-
-          newArgs = newArgs.map(arg => t.cloneDeep(arg));
+          newArgs = argsPath.map(argPath => t.cloneDeep(self.explodeElement(argPath, hasLeapingChildren)));
         } else {
           newArgs = path.node.arguments;
         }
@@ -1043,21 +1120,27 @@ export class Emitter {
 
       case "NewExpression":
         return finish(t.newExpression(
-          self.explodeViaTempVar(null, path.get("callee"), hasLeapingChildren),
-          path.get("arguments").map(function (argPath) {
-            return self.explodeViaTempVar(null, argPath, hasLeapingChildren);
-          })
+          self.isStableAcrossLeaps(path.get("callee"))
+            ? expr.callee
+            : self.explodeViaTempVar(null, path.get("callee"), hasLeapingChildren),
+          path.get("arguments").map(argPath => self.explodeElement(argPath, hasLeapingChildren))
         ));
 
       case "ObjectExpression":
         return finish(t.objectExpression(
           path.get("properties").map(function (propPath) {
             if (propPath.isObjectProperty()) {
+              // A computed key is evaluated before its value
+              const key = propPath.node.computed
+                ? self.explodeViaTempVar(null, propPath.get("key"), hasLeapingChildren)
+                : propPath.node.key;
               return t.objectProperty(
-                propPath.node.key,
+                key,
                 self.explodeViaTempVar(null, propPath.get("value"), hasLeapingChildren),
                 propPath.node.computed
               );
+            } else if (propPath.isSpreadElement()) {
+              return self.explodeElement(propPath, hasLeapingChildren);
             } else {
               return propPath.node;
             }
@@ -1066,17 +1149,7 @@ export class Emitter {
 
       case "ArrayExpression":
         return finish(t.arrayExpression(
-          path.get("elements").map(function (elemPath) {
-            if (!elemPath.node) {
-              return null;
-            } if (elemPath.isSpreadElement()) {
-              return t.spreadElement(
-                self.explodeViaTempVar(null, elemPath.get("argument"), hasLeapingChildren)
-              );
-            } else {
-              return self.explodeViaTempVar(null, elemPath, hasLeapingChildren);
-            }
-          })
+          path.get("elements").map(elemPath => self.explodeElement(elemPath, hasLeapingChildren))
         ));
 
       case "SequenceExpression":
@@ -1103,6 +1176,8 @@ export class Emitter {
 
         if (expr.operator === "&&") {
           self.jumpIfNot(left, after);
+        } else if (expr.operator === "??") {
+          self.jumpIf(t.binaryExpression("!=", t.cloneDeep(left), t.nullLiteral()), after);
         } else {
           assert.strictEqual(expr.operator, "||");
           self.jumpIf(left, after);
@@ -1156,6 +1231,18 @@ export class Emitter {
           // If this is a simple assignment, the left hand side does not need
           // to be read before the right hand side is evaluated, so we can
           // avoid the more complicated logic below.
+          if (t.isPattern(expr.left)) {
+            // A destructuring target is evaluated (computed keys, defaults) only after the right hand
+            //   side, so it can stay whole as long as nothing inside it leaps.
+            if (meta.containsLeap(expr.left)) {
+              throw path.get("left").buildCodeFrameError("await inside a destructuring pattern is not supported in resumable functions");
+            }
+            return finish(t.assignmentExpression(
+              expr.operator,
+              expr.left,
+              self.explodeExpression(path.get("right"))
+            ));
+          }
           return finish(t.assignmentExpression(
             expr.operator,
             self.explodeExpression(path.get("left")),
@@ -1218,19 +1305,52 @@ export class Emitter {
           return result;
         }
 
-        self.emitAssign(self.contextProperty("next"), after);
-
-        let ret = t.returnStatement(t.cloneDeep(arg) || null);
-        // Preserve the `yield` location so that source mappings for the statements
-        // link back to the yield properly.
-        ret.loc = expr.loc;
-        self.emit(ret);
-        self.mark(after);
-
-        return self.contextProperty("sent");
+        return self.emitYield(arg, after, expr.loc);
 
       case "ClassExpression":
         return finish(self.explodeClass(path));
+
+      case "OptionalMemberExpression":
+      case "OptionalCallExpression": {
+        const nullishLoc = this.loc();
+        after = this.loc();
+        const value = self.explodeOptionalChainLink(path, nullishLoc);
+        if (ignoreResult) {
+          self.emit(value);
+        } else {
+          result = self.emitAssign(self.makeTempVar(), value);
+        }
+        self.jump(after);
+        self.mark(nullishLoc);
+        if (!ignoreResult) self.emitAssign(t.cloneDeep(result), t.unaryExpression("void", t.numericLiteral(0)));
+        self.mark(after);
+        return result;
+      }
+
+      case "TemplateLiteral": {
+        const exprPaths = path.get("expressions");
+        return finish(t.templateLiteral(expr.quasis, exprPaths.map((exprPath, i) => {
+          let value = self.explodeViaTempVar(null, exprPath, hasLeapingChildren);
+          // Each substitution is converted to a string before the next is evaluated
+          if (i < exprPaths.length - 1 && !t.isLiteral(value)) {
+            value = self.emitAssign(self.makeTempVar(), t.templateLiteral(
+              [t.templateElement({ raw: "", cooked: "" }), t.templateElement({ raw: "", cooked: "" }, true)],
+              [t.cloneDeep(value)]
+            ));
+          }
+          return value;
+        })));
+      }
+
+      case "TaggedTemplateExpression":
+        // Kept as a tagged template (rather than a call) so the template object keeps its per-site identity and `raw`
+        return finish(t.taggedTemplateExpression(
+          self.explodeCallee(path.get("tag"), hasLeapingChildren),
+          t.templateLiteral(
+            expr.quasi.quasis,
+            path.get("quasi.expressions").map(exprPath => self.explodeViaTempVar(null, exprPath, hasLeapingChildren))
+          )
+        ));
 
       default:
         throw new Error(
@@ -1270,6 +1390,12 @@ export class Emitter {
   };
 }
 
+/** `(0, callee)`: the callee as a value, so that a member callee is not invoked with its object as `this` */
+function unqualified(callee) {
+  const t = util.getTypes();
+  return t.sequenceExpression([t.numericLiteral(0), t.cloneDeep(callee)]);
+}
+
 function getDeclError(node) {
   return new Error(
     "all declarations should have been transformed into " +
@@ -1277,21 +1403,29 @@ function getDeclError(node) {
     JSON.stringify(node));
 }
 
-let catchParamVisitor = {
-  Identifier: function (path, state) {
-    if (path.node.name === state.catchParamName && util.isReference(path)) {
-      util.replaceWithOrRemove(path, state.getSafeParam());
-    }
-  },
+// Rewrites the catch clause's param bindings to context temps: an Identifier param becomes the
+// caught-exception temp itself; a pattern param gets a temp per bound name, destructured from
+// the exception temp at the top of the body.
+function bindCatchParam(handlerPath, exceptionTemp, makeTempVar) {
+  const t = util.getTypes();
+  const param = handlerPath.node.param;
 
-  Scope: function (path, state) {
-    if (path.scope.hasOwnBinding(state.catchParamName)) {
-      // Don't descend into nested scopes that shadow the catch
-      // parameter with their own declarations.
-      path.skip();
-    }
+  const bodyPath = handlerPath.get("body");
+  const temps = new Map(); // binding -> temp
+  const names = t.isIdentifier(param) ? [param.name] : Object.keys(t.getBindingIdentifiers(param));
+  for (const name of names) {
+    temps.set(handlerPath.scope.getBinding(name), t.isIdentifier(param) ? exceptionTemp : makeTempVar());
   }
-};
+  if (!t.isIdentifier(param)) {
+    bodyPath.unshiftContainer("body", t.expressionStatement(
+      t.assignmentExpression("=", t.cloneDeep(param), t.cloneDeep(exceptionTemp))
+    ));
+  }
+
+  for (const { path, binding } of util.findBindingUses(bodyPath, temps)) {
+    util.replaceVariableUse(path, t.cloneDeep(temps.get(binding)));
+  }
+}
 
 function isValidCompletion(record) {
   let type = record.type;

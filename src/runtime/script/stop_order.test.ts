@@ -8,6 +8,7 @@ import { flushPluginAnnotations } from "../../plugins/base";
 import { script } from ".";
 import { resumable } from "..";
 import { ResumableScriptStoreManager } from "./resumable";
+import { decodeResumableFrame } from "../resumable/resumable_method";
 
 /** One method per `shutdown` mode, all queued so that the second call is not started */
 const source = `
@@ -114,7 +115,7 @@ describe("application stop with scripts of every shutdown mode", () => {
 
             const saved = await h.shutdown();
             const scripts = saved.filter(s => s.type === "@resumable");
-            expect(scripts.map(s => [s.data.scope.method, s.data.scope.parameters, s.data.started, s.data.script]))
+            expect(scripts.map(s => [s.data.scope.method, decodeResumableFrame(s.data).parameters, s.data.started, s.data.script]))
                 .toEqual([["suspended", ["a"], true, true], ["suspended", ["b"], false, true]]);
         });
 
@@ -168,7 +169,7 @@ describe("application stop with scripts of every shutdown mode", () => {
 
             await app.cleanups.cleanup();
             const saved = await h.shutdown();
-            expect(saved.some(s => s.type === "@resumable" && s.data.scope.parameters[0] === "a")).toBe(true);
+            expect(saved.some(s => s.type === "@resumable" && decodeResumableFrame(s.data).parameters[0] === "a")).toBe(true);
         });
 
         it("a run that was started before the stop is still cancelled by the cleanups", async () => {

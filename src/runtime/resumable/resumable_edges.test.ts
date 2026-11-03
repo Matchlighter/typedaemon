@@ -362,39 +362,51 @@ describe("ResumableStore suspend edge cases", () => {
 
 describe("ResumableStore suspend timeouts", () => {
     const h = useResumableHarness();
+    const defaultTimeout = ResumableStore.SUSPEND_TIMEOUT_MS;
 
     beforeEach(async () => {
         jest.useFakeTimers();
+        ResumableStore.SUSPEND_TIMEOUT_MS = 1000;
         await h.boot();
     });
-    afterEach(() => { jest.useRealTimers(); });
+    afterEach(() => {
+        jest.useRealTimers();
+        ResumableStore.SUSPEND_TIMEOUT_MS = defaultTimeout;
+    });
 
-    it("gives up on a resumable that will neither finish nor suspend, and still saves the rest", async () => {
-        const log = jest.spyOn(console, "log").mockImplementation(() => { });
-        try {
-            const stuck = new Stubborn();
-            new Waiter([new Deferred("d")], "w");
+    it("waits up to SUSPEND_TIMEOUT_MS for everything to suspend, then gives up on what didn't and saves the rest", async () => {
+        new Stubborn();
+        new Waiter([new Deferred("d")], "w");
 
-            let saved = false;
-            const saving = h.store.save().then(() => { saved = true; });
-            await jest.advanceTimersByTimeAsync(5000); // wait for it to finish
-            expect(saved).toBe(false);
-            await jest.advanceTimersByTimeAsync(5000); // wait for it to suspend after forcing
-            await saving;
+        let saved = false;
+        const saving = h.store.save().then(() => { saved = true; });
+        await jest.advanceTimersByTimeAsync(999);
+        expect(saved).toBe(false);
+        await jest.advanceTimersByTimeAsync(1);
+        await saving;
 
-            expect(saved).toBe(true);
-            expect(log).toHaveBeenCalledWith("NOT SUSPENDED:", stuck);
-            expect(h.persisted().map(s => s.type).sort()).toEqual(["test:deferred", "test:waiter"]);
-        } finally {
-            log.mockRestore();
-        }
+        expect(saved).toBe(true);
+        expect(h.persisted().map(s => s.type).sort()).toEqual(["test:deferred", "test:waiter"]);
+        expect(h.store.state).toBe("suspended");
+    });
+
+    it("reports each resumable that failed to suspend, with why", async () => {
+        new Stubborn();
+        new Waiter([new Promise(() => { })], "plain");
+        const saving = h.store.save();
+        await jest.advanceTimersByTimeAsync(1000);
+        const { failed } = await saving;
+
+        expect(failed.map(f => f.error.message).sort()).toEqual([
+            expect.stringMatching(/Stubborn.*can't be suspended/),
+            expect.stringMatching(/Waiter.*awaits a non-resumable Promise/),
+        ]);
     });
 
     it("a resumable that would not suspend is not carried over the restart", async () => {
         new Waiter([new Promise(() => { })], "plain");
         const saving = h.store.save();
-        await jest.advanceTimersByTimeAsync(5000); // finish wait
-        await jest.advanceTimersByTimeAsync(5000); // suspend wait
+        await jest.advanceTimersByTimeAsync(1000);
         await saving;
 
         jest.useRealTimers();
@@ -436,6 +448,6 @@ describe("serializing a reference to a non-resumable promise", () => {
         expect(Deferred.get("other")).toBeDefined();
         const o = outcome(PlainRef.made.plain);
         await flushMicrotasks();
-        expect(o.error?.message).toBe("Promise would not suspend"); // (the stand-in itself was not suspended)
+        expect(o.error?.message).toBe("Cannot suspend non-resumable Promise");
     });
 });

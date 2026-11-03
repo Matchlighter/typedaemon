@@ -97,44 +97,82 @@ export function deep_pojso(value: any) {
     return true;
 }
 
-export function serializable(value: any, serializer_keys: (string | symbol | ((v: any) => boolean))[]) {
+type SerializerKey = string | symbol | ((v: any) => boolean);
+
+/** Something `findUnserializable` rejected: where it is (eg. `state.fs[0]`) and what it is (eg. `a function (f)`) */
+export interface Unserializable {
+    path: string;
+    what: string;
+}
+
+function describeUnserializable(value: any, cycle: boolean): string {
+    if (cycle) return "a reference cycle";
+    if (typeof value == "function") return `a function (${value.name || "anonymous"})`;
+    const ctor = Object.getPrototypeOf(value)?.constructor?.name;
+    return ctor ? `a ${ctor} instance` : "an object that isn't plain data";
+}
+
+const pathKey = (key: string) => /^[A-Za-z_$][\w$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`;
+
+/**
+ * The first part of `value` that isn't plain data (primitives, plain objects, arrays) nor matches one of `serializer_keys`.
+ * Cyclic values are rejected (not JSON-serializable) unless `options.cycles` (eg. for `encodeGraph`).
+ * `root` names `value` in the returned path.
+ */
+export function findUnserializable(value: any, serializer_keys: SerializerKey[], options: { cycles?: boolean, root?: string } = {}): Unserializable | undefined {
+    // Objects already checked (true) or being checked (false - revisiting one means a cycle)
+    const visited = new Map<object, boolean>();
+
     function has_key(obj: any) {
         for (let k of serializer_keys) {
             if (typeof k == "function") {
                 if (k(obj)) return true;
             } else {
-                if (value[k]) return true;
+                if (obj[k]) return true;
             }
         }
         return false;
     }
 
-    if (Array.isArray(value)) {
-        for (let av of value) {
-            if (!serializable(av, serializer_keys)) return false;
-        }
-        return true;
-    }
+    function check(value: any, path: string): Unserializable | undefined {
+        if (value === null) return;
 
-    if (value === null) return true;
-
-    if (typeof value == "object") {
-        if (pojso(value)) {
-            for (let [k, v] of Object.entries(value)) {
-                if (!serializable(v, serializer_keys)) return false;
+        if (typeof value == "object") {
+            if (visited.has(value)) {
+                return visited.get(value) || options.cycles ? undefined : { path, what: describeUnserializable(value, true) };
             }
-            return true;
-        } else {
-            return has_key(value);
+
+            let entries: [string, any][];
+            if (Array.isArray(value)) {
+                entries = value.map((v, i) => [`[${i}]`, v]);
+            } else if (pojso(value)) {
+                entries = Object.entries(value).map(([k, v]) => [pathKey(k), v]);
+            } else {
+                return has_key(value) ? undefined : { path, what: describeUnserializable(value, false) };
+            }
+
+            visited.set(value, false);
+            for (let [k, v] of entries) {
+                const bad = check(v, path || !k.startsWith(".") ? path + k : k.slice(1));
+                if (bad) return bad;
+            }
+            visited.set(value, true);
+            return;
         }
+
+        if (typeof value == "function") {
+            return has_key(value) ? undefined : { path, what: describeUnserializable(value, false) };
+        }
+
+        // Primitive
     }
 
-    if (typeof value == "function") {
-        return has_key(value);
-    }
+    return check(value, options.root ?? "");
+}
 
-    // Primitive
-    return true;
+/** Whether `value` is plain data or matches one of `serializer_keys` (see `findUnserializable`) */
+export function serializable(value: any, serializer_keys: SerializerKey[], options: { cycles?: boolean } = {}) {
+    return !findUnserializable(value, serializer_keys, options);
 }
 
 export class PromiseTimedout extends Error { }
