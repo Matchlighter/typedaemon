@@ -52,7 +52,7 @@ interface Registries {
 }
 
 /** What the dashboard needs from the hypervisor (public API only) */
-export type DashboardHost = AppsHost & AppEntitiesHost & AppStorageHost & AppResumablesHost & AppSchedulesHost & SchedulesHost & ResumablesHost & AppHttpHost & AppConfigHost & LogsHost & PluginsHost & OrphanSourceHost & SystemHost & LifecycleHost & Pick<Hypervisor, 'stopApplication' | 'startApplication' | 'restartApplication'>;
+export type DashboardHost = AppsHost & AppEntitiesHost & AppStorageHost & AppResumablesHost & AppSchedulesHost & SchedulesHost & ResumablesHost & AppHttpHost & AppConfigHost & LogsHost & PluginsHost & OrphanSourceHost & SystemHost & LifecycleHost & Pick<Hypervisor, 'stopApplication' | 'startApplication' | 'restartApplication' | 'reloadConfig'>;
 
 /** Every topic and action, each over its own narrow source seam. Add new ones here */
 function registerAll({ topics, actions }: Registries, hypervisor: DashboardHost, lifecycle: ReturnType<typeof hypervisorLifecycleSource>) {
@@ -92,6 +92,7 @@ function registerAll({ topics, actions }: Registries, hypervisor: DashboardHost,
         topics.register('appHttp', appHttpTopic(hypervisorAppHttpSource(hypervisor))),
         topics.register('logs', logsTopic(hypervisorLogsSource(hypervisor))),
         topics.register('appConfig', appConfigTopic(hypervisorAppConfigSource(hypervisor))),
+        actions.register('config.reload', () => hypervisor.reloadConfig()),
         actions.register('app.restart', ({ id }) => hypervisor.restartApplication(id)),
         actions.register('app.stop', ({ id }) => hypervisor.stopApplication(id)),
         actions.register('app.start', ({ id }) => hypervisor.startApplication(id)),

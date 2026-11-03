@@ -152,6 +152,8 @@ export interface ActionMap {
     'script.cancel': { app: string; script: string; run: string };
     /** Give up a cross-app call still waiting for its target: the caller's promise rejects. Rejects when the call has started or is gone. `uuid` is `CrossCallRow.uuid` */
     'crossCall.cancel': { uuid: string };
+    /** Break-glass: re-read the config file now, as the file watcher would. Rejects with the load error, keeping the previous config */
+    'config.reload': {};
 }
 /** What an action hands back to the caller; actions not listed here return nothing */
 export interface ActionResultMap {
