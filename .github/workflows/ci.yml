@@ -1,0 +1,77 @@
+---
+name: CI
+
+# yamllint disable-line rule:truthy
+on:
+  # NOT pull_request_target: PR code (including forks) runs here, so it must never get secrets or a write token.
+  pull_request:
+  push:
+    branches:
+      - master
+
+# Read-only token for every job. Nothing below needs more.
+permissions:
+  contents: read
+
+# Cancel superseded runs for the same PR/branch
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Don't leave the token in .git/config where PR-controlled scripts could read it
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      # Runs the `postinstall` (patch-package); typecheck fails without those patches.
+      # Lockfile is enforced so a PR can't silently change resolved dependencies.
+      - run: yarn install --frozen-lockfile
+
+      - name: Typecheck
+        run: yarn tsc --noEmit
+
+      - name: Typecheck (public types)
+        run: yarn test:types
+
+      - name: Unit tests
+        run: yarn test
+
+  dashboard:
+    name: Dashboard typecheck & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: dashboard/yarn.lock
+
+      - run: yarn install --frozen-lockfile
+        working-directory: dashboard
+
+      - name: Typecheck
+        run: yarn typecheck
+        working-directory: dashboard
+
+      - name: Tests
+        run: yarn test
+        working-directory: dashboard
+        env:
+          # AppSchedulesTab.test.tsx asserts local-time output and was written in UTC-6 (MDT on its fixed date)
+          TZ: America/Denver
