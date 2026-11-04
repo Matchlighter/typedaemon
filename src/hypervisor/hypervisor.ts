@@ -24,7 +24,7 @@ import { Application } from "../runtime/application";
 import { internal_sleep } from "../util";
 import { AppLifecycle, ApplicationInstance } from "./application_instance";
 import { ConfigMerger, Configuration, NormalizedConfiguration, defaultConfig, readConfigFile } from "./config";
-import { AppConfigMerger, AppConfiguration, defaultAppConfig } from "./config_app";
+import { AppConfigMerger, AppConfiguration, AppEntryConfiguration, defaultAppConfig } from "./config_app";
 import { PluginConfigMerger, PluginConfiguration, defaultPluginConfig } from "./config_plugin";
 import { ControlServer } from "./control_server";
 import { startDashboardListener, type DashboardListener } from "../dashboard/listener";
@@ -437,8 +437,18 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
 
     /** Stop an app until it is started/restarted or the config is next reloaded */
     stopApplication(id: string) { return this.appInstances.stopInstance(id); }
-    /** Start an app (clearing a stop override) if not running */
-    startApplication(id: string) { return this.appInstances.startInstance(id); }
+    /**
+     * Start an app (clearing a stop override) if not running.
+     *
+     * With `config`, start an app that is not in the config file, using that config (same shape as a config-file app entry).
+     * It runs until stopped (`stopApplication`) or shutdown; config reloads do not touch it. Rejects if `id` is already configured or running.
+     */
+    async startApplication(id: string, config?: AppEntryConfiguration) {
+        if (!config) return this.appInstances.startInstance(id);
+        if (!config.source) throw new Error(`Application '${id}' needs a 'source'`);
+        const normalized = await this.normalizeAppConfig(this.currentConfig as Configuration, id, config as AppConfiguration);
+        return this.appInstances.startInstance(id, normalized);
+    }
     /** Re-initialize an app now; also starts a stopped one */
     restartApplication(id: string) { return this.appInstances.restartInstance(id); }
     /** True while an app is stopped by a runtime override (see `stopApplication`) */
@@ -492,6 +502,33 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
         }
     }
 
+    /** Apply defaults to an app's raw config entry and resolve its `source` */
+    private async normalizeAppConfig(cfg: DeepReadonly<Configuration>, id: string, raw_cfg: AppConfiguration): Promise<AppConfiguration> {
+        const appcfg = AppConfigMerger.mergeConfigs(defaultAppConfig, {
+            watch: {
+                config: cfg.daemon.watch?.app_configs,
+                source: cfg.daemon.watch?.app_source,
+            },
+            logging: {
+                file: cfg.logging.applications_file?.replaceAll("{app}", id),
+                level: cfg.logging.application,
+                system_level: cfg.logging.system,
+            }
+        }, raw_cfg);
+
+        appcfg.declared_source = raw_cfg.source;
+        const sourcePath = path.resolve(this.working_directory, raw_cfg.source);
+        // TODO Allow sourcePath to be GitHub URL
+        const resolved = await resolveSourceFile(sourcePath);
+        if (resolved) appcfg.source = resolved;
+
+        if (this.options.no_watching) {
+            appcfg.watch = { config: false, source: false };
+        }
+
+        return appcfg;
+    }
+
     private async readAndWatchConfig(file: string) {
         const no_watching = this.options.no_watching;
 
@@ -540,29 +577,7 @@ export class Hypervisor extends TypedEmitter<HypervisorEvents> {
 
             // Normalize application configs
             for (let [ak, raw_cfg] of Object.entries(cfg.apps)) {
-                const appcfg = AppConfigMerger.mergeConfigs(defaultAppConfig, {
-                    watch: {
-                        config: cfg.daemon.watch?.app_configs,
-                        source: cfg.daemon.watch?.app_source,
-                    },
-                    logging: {
-                        file: cfg.logging.applications_file?.replaceAll("{app}", ak),
-                        level: cfg.logging.application,
-                        system_level: cfg.logging.system,
-                    }
-                }, raw_cfg);
-
-                appcfg.declared_source = raw_cfg.source;
-                const sourcePath = path.resolve(this.working_directory, raw_cfg.source);
-                // TODO Allow sourcePath to be GitHub URL
-                const resolved = await resolveSourceFile(sourcePath);
-                if (resolved) appcfg.source = resolved;
-
-                if (no_watching) {
-                    appcfg.watch = { config: false, source: false }
-                }
-
-                cfg.apps[ak] = appcfg;
+                cfg.apps[ak] = await this.normalizeAppConfig(cfg, ak, raw_cfg);
             }
 
             // console.debug("Loaded Config", cfg)
