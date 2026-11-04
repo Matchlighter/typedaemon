@@ -123,7 +123,24 @@ export function injectModuleLookupPaths(paths: string[], dirs: { appModules: str
     return paths;
 }
 
-export function determineModuleContext(filename: string) {
+/** Name of the npm package a file belongs to (by its innermost `node_modules` dir), if it is in one */
+export function packageNameOf(filename: string): string | undefined {
+    const marker = `${path.sep}node_modules${path.sep}`;
+    const idx = filename.lastIndexOf(marker);
+    if (idx < 0) return undefined;
+    const parts = filename.slice(idx + marker.length).split(path.sep);
+    return parts[0].startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+}
+
+/** Does `filename` belong to a package matched by a `hosted_modules` entry (exact name, or RegExp tested on the name) */
+export function isHostedPackageFile(filename: string, hosted: readonly (string | RegExp)[] | undefined) {
+    if (!hosted?.length) return false;
+    const name = packageNameOf(filename);
+    if (!name) return false;
+    return hosted.some(h => h instanceof RegExp ? h.test(name) : h === name);
+}
+
+export function determineModuleContext(filename: string, hosted?: readonly (string | RegExp)[]) {
     if (filename.startsWith(TYPEDAEMON_PATH)) {
         let sys_rel = path.relative(TYPEDAEMON_PATH, filename);
 
@@ -144,7 +161,8 @@ export function determineModuleContext(filename: string) {
         }
     }
 
-    // TODO If hosted_module, "host"
+    // Packages the user asked to always load in the host (shared across apps)
+    if (isHostedPackageFile(filename, hosted)) return "host";
 
     return "sandbox";
 }
@@ -272,7 +290,7 @@ export async function createApplicationVM(app: ApplicationInstance) {
     const vmResolver: VMInternalResolver = vm['_resolver'];
 
     patch(vmResolver, 'pathContext', original => function (filename, filetype) {
-        return determineModuleContext(filename);
+        return determineModuleContext(filename, app.hypervisor.currentConfig?.hosted_modules);
     });
 
     // Can the specified file be loaded by the VM
