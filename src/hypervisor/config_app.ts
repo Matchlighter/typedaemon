@@ -19,6 +19,12 @@ export interface AppConfiguration {
 
     operating_directory?: string;
 
+    /**
+     * Allow app code to use blocking APIs (`fs.readFileSync`, `execSync`, ...). Disabled by default since they stall
+     * the event loop shared by every app.
+     */
+    allow_sync?: boolean;
+
     watch?: {
         config?: boolean;
         source?: boolean;
