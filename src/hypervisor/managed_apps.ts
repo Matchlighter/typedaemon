@@ -258,6 +258,16 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
 
     private stoppedOverrides = new Set<string>();
 
+    // Instances started with an explicit config (not in the config file); `sync` leaves them alone
+    private dynamicConfigs = new Map<string, C>();
+
+    /** True if `id` was started with an explicit config (see `startInstance`) */
+    isDynamic(id: string) { return this.dynamicConfigs.has(id) }
+
+    private configFor(id: string): C | undefined {
+        return this.dynamicConfigs.get(id) ?? this.options.getInstanceConfig(id);
+    }
+
     /** Stopped at runtime (e.g. from the dashboard): `sync` leaves it alone until the override is cleared */
     isStoppedOverride(id: string) { return this.stoppedOverrides.has(id) }
 
@@ -274,16 +284,37 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
         return cleared;
     }
 
-    /** Shut an instance down and keep it down until `startInstance`/`restartInstance` or its config entry changes */
+    /**
+     * Shut an instance down and keep it down until `startInstance`/`restartInstance` or its config entry changes.
+     * An instance that was started with an explicit config is forgotten entirely.
+     */
     async stopInstance(id: string) {
-        this.setOverride(id, true);
+        const dynamic = this.dynamicConfigs.has(id);
+        if (dynamic) this.dynamicConfigs.delete(id); else this.setOverride(id, true);
         const instance = this.instances[id];
         if (instance) await this._shutdownInstance(instance);
     }
 
-    /** Clear any override and start the instance if it is not running. Throws if the id is not in the config. */
-    async startInstance(id: string) {
-        const options = this.options.getInstanceConfig(id);
+    /**
+     * Clear any override and start the instance if it is not running. Throws if the id is not in the config.
+     *
+     * With `config`, start an instance that is not in the config file, using that config. Throws if `id` is in the
+     * config file or already running. It lives until stopped (or the Hypervisor shuts down); config reloads leave it alone.
+     */
+    async startInstance(id: string, config?: C) {
+        if (config) {
+            if (this.options.getInstanceConfig(id)) throw new Error(`${this.name} '${id}' is already configured`);
+            if (this.instances[id]) throw new Error(`${this.name} '${id}' is already running`);
+            this.dynamicConfigs.set(id, config);
+            try {
+                await this._startInstance(id, config);
+            } catch (ex) {
+                this.dynamicConfigs.delete(id);
+                throw ex;
+            }
+            return;
+        }
+        const options = this.configFor(id);
         if (!options) throw new Error(`${this.name} '${id}' is not configured`);
         this.setOverride(id, false);
         if (!this.instances[id]) await this._startInstance(id, options);
@@ -291,7 +322,7 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
 
     /** Shut down (if running) and start a fresh instance, immediately (no debounce) */
     async restartInstance(id: string, cause: StartCause = 'manual') {
-        const options = this.options.getInstanceConfig(id);
+        const options = this.configFor(id);
         if (!options) throw new Error(`${this.name} '${id}' is not configured`);
         this.setOverride(id, false);
         await this._restart(id, this.instances[id], cause, options);
@@ -365,7 +396,7 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
     }
 
     private _startInstance(id: string, options?: C, cause?: StartCause, changed?: string[]) {
-        options ||= this.options.getInstanceConfig(id);
+        options ||= this.configFor(id);
 
         let summary = this.options.summarizeInstance?.(options) || '';
         if (summary) summary = ` (${summary})`;
@@ -461,7 +492,7 @@ export class AppNamespace<C extends BaseInstanceConfig = BaseInstanceConfig, A e
 
         // Kill running apps that shouldn't be
         for (let [id, instance] of Object.entries(currentInstances)) {
-            if (!desired[id]) {
+            if (!desired[id] && !this.dynamicConfigs.has(id)) {
                 const p = this._shutdownInstance(instance);
                 syncPromises.push(p);
             }

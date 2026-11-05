@@ -194,6 +194,36 @@ describe('AppNamespace start cause', () => {
     });
 });
 
+describe('AppNamespace startInstance with explicit config', () => {
+    it('starts an app that is not in the config and survives sync', async () => {
+        const { ns } = setup();
+        await ns.startInstance('dyn', { source: 'd.ts' });
+        expect(ns.getInstance('dyn').state).toBe('started');
+        expect(ns.isDynamic('dyn')).toBe(true);
+        await Promise.all(ns.sync({ a: {}, b: {} }));
+        expect(ns.getInstance('dyn')).toBeDefined();
+    });
+
+    it('rejects configured or running ids', async () => {
+        const { ns } = setup();
+        await expect(ns.startInstance('a', { source: 'x.ts' })).rejects.toThrow(/already configured/);
+        await ns.startInstance('dyn', { source: 'd.ts' });
+        await expect(ns.startInstance('dyn', { source: 'd.ts' })).rejects.toThrow(/already running/);
+    });
+
+    it('restart reuses the explicit config; stop forgets it', async () => {
+        const { ns } = setup();
+        await ns.startInstance('dyn', { source: 'd.ts' });
+        await ns.restartInstance('dyn');
+        expect(ns.getInstance('dyn').options).toEqual({ source: 'd.ts' });
+        await ns.stopInstance('dyn');
+        expect(ns.getInstance('dyn')).toBeUndefined();
+        expect(ns.isDynamic('dyn')).toBe(false);
+        expect(ns.isStoppedOverride('dyn')).toBe(false);
+        await expect(ns.startInstance('dyn')).rejects.toThrow(/not configured/);
+    });
+});
+
 describe('AppNamespace shutdown', () => {
     it('marks a still-starting instance stopping right away instead of after its start finishes', async () => {
         const { ns } = setup();
