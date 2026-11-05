@@ -61,7 +61,11 @@ export interface Configuration {
 
     path_maps?: Record<string, string[]>;
 
-    /** List of modules that will be imported by the Hypervisor and passed to requiring apps (rather than apps importing their own instance of the module) */
+    /**
+     * Packages that always load in the host (Hypervisor) and are shared with requiring apps, rather than each app loading its own instance.
+     * Strings match a package name exactly (`"lodash"`, `"@scope/pkg"`); RegExps are tested against the package name.
+     * Resolution still follows the app's lookup paths; only where the module is evaluated changes.
+     */
     hosted_modules?: (string | RegExp)[];
 
     /**
