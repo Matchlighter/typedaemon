@@ -3,6 +3,7 @@ import { PATCHES } from "./base";
 
 import "./mobx";
 import "./net";
+import "./sync_apis";
 
 export function patchModule(id: string, mod: any) {
     const patches = PATCHES.filter(p => {
