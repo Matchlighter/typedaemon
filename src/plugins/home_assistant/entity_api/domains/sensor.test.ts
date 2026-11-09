@@ -21,4 +21,9 @@ describe("TDSensor discovery", () => {
         expect(dd.state_class).toBe("total");
         expect(dd.last_reset_value_template).toContain("last_reset");
     });
+
+    it("omits state_class for non-numeric device classes (HA rejects it)", async () => {
+        const { dd } = await discovered(new TDSensor("uuid:ent1", { device_class: "timestamp" }));
+        expect(dd).not.toHaveProperty("state_class");
+    });
 });
