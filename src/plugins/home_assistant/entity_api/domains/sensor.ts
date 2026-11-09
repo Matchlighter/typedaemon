@@ -4,6 +4,9 @@ import { EntityClass, EntityOptionsCommon, HATemplate, discoveryPassOptions } fr
 
 type SensorDeviceClass = string;
 
+/** Device classes whose state isn't numeric; HA rejects any `state_class` with these */
+const NON_NUMERIC_DEVICE_CLASSES = ["date", "enum", "timestamp"];
+
 export interface SensorOptions extends EntityOptionsCommon {
     /** The type/class of the sensor to set the icon in the frontend. The device_class can be null. */
     device_class?: SensorDeviceClass;
@@ -17,7 +20,7 @@ export interface SensorOptions extends EntityOptionsCommon {
     /** The number of decimals which should be used in the sensor’s state after rounding. */
     suggested_display_precision?: number;
 
-    /** The state_class of the sensor. */
+    /** The state_class of the sensor. Defaults to `measurement`, except for non-numeric device classes (date, enum, timestamp). */
     state_class?: "measurement" | "total" | "total_increasing";
 
     /** Defines the units of measurement of the sensor, if any. The unit_of_measurement can be null. */
@@ -30,14 +33,16 @@ export interface SensorOptions extends EntityOptionsCommon {
     last_reset_value_template?: HATemplate;
 }
 
-export class TDSensor extends EntityClass<number, {}, SensorOptions> {
+/** `timestamp`/`date` sensors take a `Date` (or ISO string); `null` = unknown */
+export class TDSensor extends EntityClass<number | string | Date | null, {}, SensorOptions> {
     static domain = "sensor";
 
     static { this._defaultAutocleaner(); }
 
     protected discovery_data() {
         const dd = super.discovery_data();
-        const state_class = this.options?.state_class || "measurement";
+        const non_numeric = NON_NUMERIC_DEVICE_CLASSES.includes(this.options?.device_class);
+        const state_class = this.options?.state_class || (non_numeric ? undefined : "measurement");
         Object.assign(dd, {
             ...discoveryPassOptions(this.options, [
                 "device_class",
@@ -47,7 +52,7 @@ export class TDSensor extends EntityClass<number, {}, SensorOptions> {
                 "unit_of_measurement",
             ]),
 
-            state_class,
+            ...(state_class ? { state_class } : {}),
         })
         // HA only accepts last_reset_value_template together with state_class "total".
         if (state_class === "total") {
@@ -60,7 +65,7 @@ export class TDSensor extends EntityClass<number, {}, SensorOptions> {
         // TODO
     }
 
-    protected _publishState(state: RawStatePayload<number>) {
+    protected _publishState(state: RawStatePayload<number | string | Date | null>) {
         // TODO last_reset
         return super._publishState({ ...state, last_reset: null })
     }
